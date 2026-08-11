@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
+import { useKeepAwake } from "expo-keep-awake";
 import { Link } from "expo-router";
 
 import { FixedLoop, FrameTimer, TICK_MS } from "@/game/core/loop";
@@ -32,7 +33,14 @@ import {
   summariseFlight,
   type FlightLog,
 } from "@/game/bench/flight-recorder";
-import { APP_STATE, LifecycleProbe, type AppStateCode } from "@/game/bench/lifecycle";
+import {
+  APP_STATE,
+  APP_STATE_LABEL,
+  LifecycleProbe,
+  MEM_TRIAL_MIN_SECONDS,
+  type AppStateCode,
+  type LifecycleSnapshot,
+} from "@/game/bench/lifecycle";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Palette } from "@/constants/theme";
 
@@ -130,9 +138,21 @@ function heapMb(): number {
 }
 
 export default function Bench() {
+  // The screen locking is what invalidated four leak trials: a suspended app gets discarded by iOS
+  // for reasons that have nothing to do with our memory use, and the flight log cannot tell that
+  // apart from a real kill after the fact. Holding the display on removes the confound at the source
+  // rather than detecting it later.
+  useKeepAwake();
+
   const [count, setCount] = useState<number>(5000);
   const [hud, setHud] = useState(true);
   const [readout, setReadout] = useState<Readout>(EMPTY);
+  /**
+   * Shown live rather than only in the post-mortem. The whole point of the warning counter is that
+   * it lets a trial be ended on purpose — which is useless if the number is only legible after the
+   * process dies.
+   */
+  const [life, setLife] = useState<LifecycleSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<FlightLog | null>(null);
   const recorderRef = useRef<FlightRecorder | null>(null);
@@ -312,6 +332,7 @@ export default function Bench() {
             lastError,
             life: probe.snapshot(Date.now()),
           });
+          setLife(probe.snapshot(Date.now()));
           void recorder.persist();
         }
       };
@@ -427,6 +448,23 @@ export default function Bench() {
         <Text style={styles.row}>
           upload {(readout.uploadBytes / 1024).toFixed(0)}KB/frame ·{" "}
           {readout.heapMb >= 0 ? `heap ${readout.heapMb.toFixed(1)}MB` : "heap n/a (Hermes)"}
+        </Text>
+        {/*
+          iOS warns before it kills. So this counter, not time-until-death, is the memory instrument:
+          a full warm window in the foreground at zero warnings clears memory outright, and the run
+          can be stopped by hand at that point without losing anything.
+        */}
+        <Text style={life && life.memWarn > 0 ? styles.error : styles.row}>
+          {APP_STATE_LABEL[life?.state ?? APP_STATE.active]} · left foreground {life?.bgCount ?? 0}× (
+          {((life?.bgMs ?? 0) / 1000).toFixed(0)}s) · {life?.memWarn ?? 0} mem warnings
+          {life && life.memWarn > 0 ? ` (first ${life.firstMemWarnS}s)` : ""}
+        </Text>
+        <Text style={styles.dim}>
+          {life && life.memWarn > 0
+            ? "MEMORY PRESSURE IS REAL — the leak exists and the first-warning time bounds it"
+            : readout.warmSeconds >= MEM_TRIAL_MIN_SECONDS && (life?.bgMs ?? 0) <= 30_000
+              ? "MEMORY CLEARED — safe to stop now, a kill would add nothing"
+              : `keep it foregrounded and awake for ${MEM_TRIAL_MIN_SECONDS / 60}m to clear memory`}
         </Text>
         <Text style={styles.dim}>
           {Platform.OS} · buffer {readout.bufferW}×{readout.bufferH} @{readout.scale}x · maxTex{" "}

@@ -98,6 +98,58 @@ export class LifecycleProbe {
 }
 
 /**
+ * How long a foregrounded trial must run before "zero memory warnings" is worth anything. iOS will
+ * happily hold a bloated process for a few minutes; fifteen is the same warm window Gate A uses, and
+ * it is long enough that a leak big enough to kill us would have already triggered a warning.
+ */
+export const MEM_TRIAL_MIN_SECONDS = 900;
+
+/**
+ * How much time out of the foreground disqualifies a trial. A couple of seconds of `inactive` from a
+ * notification banner is noise; half a minute suspended means the OS had its own reasons.
+ */
+export const MAX_BACKGROUND_MS = 30_000;
+
+/**
+ * Verdict for a run the human *stopped* rather than one the OS killed.
+ *
+ * This is the path that matters day to day: waiting for a kill costs 15-40 minutes and, worse, a kill
+ * is ambiguous. A warning counter is not. If the app sat in the foreground for the full warm window
+ * and iOS never once complained about memory, then memory is not what is wrong — and that conclusion
+ * is available without letting anything die.
+ */
+export function explainStop(last: LifecycleSnapshot | null, elapsedSeconds: number): string[] {
+  if (!last) return ["lifecycle not recorded (older trial) — memory pressure unknown"];
+  const lines: string[] = [];
+  const backgrounded = last.bgMs > MAX_BACKGROUND_MS;
+  lines.push(
+    `stopped by hand after ${Math.floor(elapsedSeconds / 60)}m${String(elapsedSeconds % 60).padStart(2, "0")}s · ${(last.bgMs / 1000).toFixed(0)}s not-foreground · ${last.memWarn} memory warning${last.memWarn === 1 ? "" : "s"}`,
+  );
+  if (last.memWarn > 0) {
+    lines.push(
+      `MEMORY PRESSURE IS REAL — first warning at ${last.firstMemWarnS}s. The leak exists; that timestamp bounds it.`,
+    );
+    return lines;
+  }
+  if (backgrounded) {
+    lines.push(
+      `TRIAL INCONCLUSIVE — spent ${(last.bgMs / 1000).toFixed(0)}s outside the foreground; keep the screen awake and rerun`,
+    );
+    return lines;
+  }
+  if (elapsedSeconds < MEM_TRIAL_MIN_SECONDS) {
+    lines.push(
+      `TOO SHORT to clear memory — needs ${MEM_TRIAL_MIN_SECONDS / 60} foreground minutes, got ${(elapsedSeconds / 60).toFixed(1)}`,
+    );
+    return lines;
+  }
+  lines.push(
+    "MEMORY CLEARED — full warm window in the foreground, iOS never warned. Stopping here was the right call; a kill would have added nothing.",
+  );
+  return lines;
+}
+
+/**
  * Turn the lifecycle tail of a dead run into a verdict. Returned separately from the frame stats
  * because this is the line that decides whether the trial counts at all.
  */

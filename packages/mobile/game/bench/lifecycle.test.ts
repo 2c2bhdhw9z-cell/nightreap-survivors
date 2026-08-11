@@ -6,7 +6,13 @@
  * reclaiming a suspended app. So the counters are checked against hand-computed timelines.
  */
 
-import { APP_STATE, LifecycleProbe, explainDeath } from "./lifecycle";
+import {
+  APP_STATE,
+  LifecycleProbe,
+  MEM_TRIAL_MIN_SECONDS,
+  explainDeath,
+  explainStop,
+} from "./lifecycle";
 import { summariseFlight, type FlightLog, type FlightSample } from "./flight-recorder";
 
 let failures = 0;
@@ -123,6 +129,59 @@ section("death verdicts");
   );
 }
 
+section("stopped-trial verdicts");
+{
+  const clean = new LifecycleProbe(T0);
+  check(
+    "a full foreground window with no warnings clears memory",
+    explainStop(clean.snapshot(T0 + 1_000_000), 1_000).join(" | ").includes("MEMORY CLEARED"),
+  );
+  check(
+    "stopping early does not clear anything",
+    explainStop(clean.snapshot(T0 + 400_000), 400).join(" | ").includes("TOO SHORT"),
+    `at ${MEM_TRIAL_MIN_SECONDS}s minimum`,
+  );
+
+  const blipped = new LifecycleProbe(T0);
+  blipped.setState(APP_STATE.inactive, T0 + 10_000);
+  blipped.setState(APP_STATE.active, T0 + 13_000);
+  check(
+    "a 3s notification banner does not disqualify a trial",
+    explainStop(blipped.snapshot(T0 + 1_000_000), 1_000).join(" | ").includes("MEMORY CLEARED"),
+  );
+
+  const locked = new LifecycleProbe(T0);
+  locked.setState(APP_STATE.background, T0 + 10_000);
+  locked.setState(APP_STATE.active, T0 + 300_000);
+  check(
+    "a real suspension does disqualify it",
+    explainStop(locked.snapshot(T0 + 1_000_000), 1_000).join(" | ").includes("TRIAL INCONCLUSIVE"),
+  );
+
+  const warned = new LifecycleProbe(T0);
+  warned.noteMemoryWarning(T0 + 90_000);
+  const wl = explainStop(warned.snapshot(T0 + 200_000), 200).join(" | ");
+  check(
+    "a warning outranks the duration rule — a short trial that warned is still a finding",
+    wl.includes("MEMORY PRESSURE IS REAL") && !wl.includes("TOO SHORT"),
+    wl,
+  );
+
+  const warnedBg = new LifecycleProbe(T0);
+  warnedBg.setState(APP_STATE.background, T0 + 10_000);
+  warnedBg.setState(APP_STATE.active, T0 + 300_000);
+  warnedBg.noteMemoryWarning(T0 + 400_000);
+  check(
+    "a warning outranks the foreground rule too",
+    explainStop(warnedBg.snapshot(T0 + 500_000), 500).join(" | ").includes("MEMORY PRESSURE IS REAL"),
+  );
+
+  check(
+    "an older stopped trial admits it cannot say",
+    explainStop(null, 1_000).join(" | ").includes("unknown"),
+  );
+}
+
 section("flight log integration");
 {
   const sample = (t: number, life?: FlightSample["life"]): FlightSample => ({
@@ -154,9 +213,28 @@ section("flight log integration");
   check("it still reports the death time", deadLines.includes("DIED at 2306s"));
 
   const clean: FlightLog = { ...dead, cleanExit: true };
+  const cleanLines = summariseFlight(clean).join(" | ");
   check(
-    "a clean exit is not given a death verdict",
-    !summariseFlight(clean).join(" | ").includes("TRIAL INCONCLUSIVE"),
+    "a clean exit is not called a death",
+    !cleanLines.includes("DIED") && cleanLines.includes("exited cleanly"),
+    cleanLines,
+  );
+  check(
+    "a stopped trial still gets a memory verdict — this is the whole point",
+    cleanLines.includes("stopped by hand") && cleanLines.includes("TRIAL INCONCLUSIVE"),
+    cleanLines,
+  );
+
+  const awakeProbe = new LifecycleProbe(T0);
+  const awake: FlightLog = {
+    ...dead,
+    cleanExit: true,
+    samples: [sample(2, awakeProbe.snapshot(T0 + 2_000)), sample(1_100, awakeProbe.snapshot(T0 + 1_100_000))],
+  };
+  check(
+    "a full foreground window stopped by hand clears memory",
+    summariseFlight(awake).join(" | ").includes("MEMORY CLEARED"),
+    summariseFlight(awake).join(" | "),
   );
 
   const legacy: FlightLog = { ...dead, samples: [sample(2), sample(844)] };

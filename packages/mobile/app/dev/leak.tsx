@@ -39,11 +39,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
+import { useKeepAwake } from "expo-keep-awake";
 import { Link } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { FlightRecorder, summariseFlight, type FlightLog } from "@/game/bench/flight-recorder";
-import { APP_STATE, LifecycleProbe, type AppStateCode } from "@/game/bench/lifecycle";
+import {
+  APP_STATE,
+  APP_STATE_LABEL,
+  LifecycleProbe,
+  MEM_TRIAL_MIN_SECONDS,
+  type AppStateCode,
+  type LifecycleSnapshot,
+} from "@/game/bench/lifecycle";
 import { compileSpriteProgram } from "@/game/render/shader";
 import { Palette } from "@/constants/theme";
 
@@ -74,6 +82,12 @@ const nowMs: () => number =
     : () => Date.now();
 
 export default function Leak() {
+  // The screen locking is what invalidated four leak trials: a suspended app gets discarded by iOS
+  // for reasons that have nothing to do with our memory use, and the flight log cannot tell that
+  // apart from a real kill after the fact. Holding the display on removes the confound at the source
+  // rather than detecting it later.
+  useKeepAwake();
+
   const [mode, setMode] = useState<Mode>("present");
   const [amp, setAmp] = useState<number>(1);
   const [armed, setArmed] = useState(false);
@@ -83,6 +97,7 @@ export default function Leak() {
   const [callsPerFrame, setCallsPerFrame] = useState(0);
   const [previous, setPrevious] = useState<FlightLog | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [life, setLife] = useState<LifecycleSnapshot | null>(null);
 
   const rafRef = useRef<number | null>(null);
   const recorderRef = useRef<FlightRecorder | null>(null);
@@ -288,6 +303,7 @@ export default function Leak() {
               lastError: null,
               life: probe.snapshot(Date.now()),
             });
+            setLife(probe.snapshot(Date.now()));
             worst = 0;
             void recorder.persist();
           }
@@ -334,8 +350,18 @@ export default function Leak() {
               {mode} ×{amp} · {frames} frames · {(bytesPerFrame / 1024).toFixed(0)}KB/frame ·{" "}
               {callsPerFrame} draws/frame
             </Text>
+            <Text style={life && life.memWarn > 0 ? styles.error : styles.row}>
+              {APP_STATE_LABEL[life?.state ?? APP_STATE.active]} · left foreground{" "}
+              {life?.bgCount ?? 0}× ({((life?.bgMs ?? 0) / 1000).toFixed(0)}s) ·{" "}
+              {life?.memWarn ?? 0} mem warnings
+              {life && life.memWarn > 0 ? ` (first ${life.firstMemWarnS}s)` : ""}
+            </Text>
             <Text style={styles.dim}>
-              Let it die. Reopen this screen with the same mode selected and read PREVIOUS RUN.
+              {life && life.memWarn > 0
+                ? "MEMORY PRESSURE IS REAL — let this one run to the kill, the death time is now meaningful"
+                : elapsed >= MEM_TRIAL_MIN_SECONDS && (life?.bgMs ?? 0) <= 30_000
+                  ? "MEMORY CLEARED for this mode — stop it, the verdict is already in the log"
+                  : `${MEM_TRIAL_MIN_SECONDS / 60}m foregrounded clears this mode. Waiting for a kill is no longer required.`}
             </Text>
           </>
         ) : (

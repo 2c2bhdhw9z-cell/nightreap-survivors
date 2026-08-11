@@ -488,3 +488,24 @@ inconclusive even when warnings did arrive.
 Only one trial matters now, and it is cheap: **any mode, screen kept awake and foregrounded.**
 If it dies with warnings, the leak hunt resumes with a real timestamp. If it dies with none, the
 whole present/draw/upload/layers matrix has been measuring iOS app suspension for four sessions.
+
+### Stopping a trial on purpose is now the intended workflow
+Follow-up to the lifecycle probe. Stopping at 30 minutes was the right instinct but it used to
+destroy the trial: `summariseFlight` only printed a verdict when `cleanExit === false`, so a run
+ended by hand wrote a log that said nothing. That is why all four watched trials are blanks.
+
+- `explainStop(last, elapsedSeconds)` added; `summariseFlight` now prints a verdict on **both**
+  endings. `MEM_TRIAL_MIN_SECONDS = 900`, `MAX_BACKGROUND_MS = 30_000`.
+- Precedence, tested: **a memory warning outranks both the duration rule and the foreground rule.**
+  A 3-minute trial that warned is a finding, not a short trial. A 3-second `inactive` blip from a
+  notification banner does not disqualify anything; 30s+ actually suspended does.
+- Live readout on both `/dev/bench` and `/dev/leak`: app state, foreground excursions, warning
+  count, and the standing verdict — `keep it foregrounded… ` → `MEMORY CLEARED — safe to stop now`
+  → `MEMORY PRESSURE IS REAL`. Verified rendering in Chrome/SwiftShader.
+- **`expo-keep-awake@15.0.8`** installed (Metro stopped first, one `npx expo install`, restarted;
+  `curl localhost:4300` → 200). `useKeepAwake()` in both dev screens: fixes the confound at the
+  source instead of detecting it afterwards.
+- `lifecycle.test.ts` now 28 checks incl. the precedence rules and both flight-log endings. PASS.
+  The old assertion "a clean exit is not given a death verdict" was inverted by design and rewritten.
+
+**Trial protocol now: 15 foreground minutes, then read the line and stop. No kill required.**

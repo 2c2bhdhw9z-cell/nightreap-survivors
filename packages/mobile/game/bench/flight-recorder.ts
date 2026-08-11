@@ -17,7 +17,7 @@
  */
 
 import type { LifecycleSnapshot } from "./lifecycle";
-import { explainDeath } from "./lifecycle";
+import { explainDeath, explainStop } from "./lifecycle";
 
 export interface FlightSample {
   /** Seconds since the run started. */
@@ -147,8 +147,12 @@ export function summariseFlight(log: FlightLog): string[] {
       : `PREVIOUS RUN DIED at ${last.t}s — no clean exit (OS kill or hard crash)`,
   );
   lines.push(`device ${log.device} · ${last.quads} quads · ${s.length} samples`);
-  if (!log.cleanExit) {
-    for (const line of explainDeath(last.life ?? null)) lines.push(line);
+  // Both endings get a verdict now. Printing one only on death is what made four stopped trials
+  // worthless: the run ended, the log said nothing, and the evidence went in the bin.
+  for (const line of log.cleanExit
+    ? explainStop(last.life ?? null, last.t)
+    : explainDeath(last.life ?? null)) {
+    lines.push(line);
   }
 
   if (first.heapMb >= 0 && last.heapMb >= 0) {
