@@ -67,6 +67,26 @@ export class QuadStorm {
   rotatedShare = 0.2;
   drawHud = true;
 
+  /**
+   * Multiplies every quad's on-screen size without changing how many are submitted.
+   *
+   * This is the bisection that makes a bad frame time attributable. Two very different problems
+   * produce the same slow number: the GPU shading too many blended pixels (fill-rate bound), or
+   * the cost of pushing each quad through JS and the driver (per-quad bound). Halving the size
+   * quarters the pixels and leaves the quad count untouched:
+   *   - frame time drops roughly 4x  -> fill-rate bound, and the fix is overdraw, not quad count
+   *   - frame time barely moves      -> per-quad bound, and shrinking sprites will not save us
+   * Without this the only honest report is "it is slow", which does not point anywhere.
+   */
+  sizeScale = 1;
+
+  /**
+   * Total quad area submitted last draw, in world pixels. Multiply by the camera scale squared to
+   * get blended device pixels, then divide by the buffer to read overdraw as a multiple of the
+   * screen. Accumulated during draw because only draw knows what was actually submitted.
+   */
+  submittedArea = 0;
+
   constructor(atlas: Atlas, capacity: number) {
     this.capacity = capacity;
     this.x = new Float32Array(capacity);
@@ -189,8 +209,11 @@ export class QuadStorm {
   /** Submit every layer. `alpha` interpolates between the last two ticks. */
   draw(r: Renderer, alpha: number): void {
     const n = this.count;
+    this.submittedArea = 0;
     if (n === 0) return;
 
+    const size = this.sizeScale;
+    const scaled = size !== 1;
     const rotatedFrom = n - Math.floor(n * this.rotatedShare);
     const perLayer = Math.ceil(n / STORM_LAYERS.length);
 
@@ -204,7 +227,12 @@ export class QuadStorm {
         const ix = this.px[i] + (this.x[i] - this.px[i]) * alpha;
         const iy = this.py[i] + (this.y[i] - this.py[i]) * alpha;
         const frame = this.frames[this.frameIdx[i]];
-        if (i >= rotatedFrom) {
+        this.submittedArea += frame.w * frame.h * size * size;
+        if (scaled) {
+          // Scaled path skips the rotated variant on purpose: mixing two changes at once would
+          // make the fill-rate reading unattributable, which is the whole point of the toggle.
+          b.drawScaled(frame, ix, iy, size, size, this.color[i]);
+        } else if (i >= rotatedFrom) {
           const a = this.angle[i];
           b.drawRotated(frame, ix, iy, this.cos[a], this.sin[a], this.color[i]);
         } else {

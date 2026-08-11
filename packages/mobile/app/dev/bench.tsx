@@ -67,6 +67,12 @@ interface Readout {
   scale: number;
   maxTexture: number;
   highp: boolean;
+  /** What is actually rasterising. "SwiftShader"/"software" here explains a bad number outright. */
+  gpu: string;
+  /** Blended device pixels per frame, as a multiple of the drawing buffer. */
+  overdraw: number;
+  /** On-screen size multiplier applied to every quad, for the fill-rate bisection. */
+  sizeScale: number;
   /** Sim ticks completed. tick/60 should track the warm clock; if it lags, the sim is stalling. */
   tick: number;
   /** Rendered frames the JS loop has issued. Alive JS, not necessarily alive GL. */
@@ -101,6 +107,9 @@ const EMPTY: Readout = {
   scale: 1,
   maxTexture: 0,
   highp: false,
+  gpu: "?",
+  overdraw: 0,
+  sizeScale: 1,
   tick: 0,
   frames: 0,
   ticksThisFrame: 0,
@@ -146,6 +155,11 @@ export default function Bench() {
 
   const [count, setCount] = useState<number>(5000);
   const [hud, setHud] = useState(true);
+  /**
+   * Quad size multiplier. 1 is the gate scene. 0.5 quarters the pixels while submitting exactly
+   * the same number of quads, which separates a fill-rate wall from a per-quad wall.
+   */
+  const [sizeScale, setSizeScale] = useState(1);
   const [readout, setReadout] = useState<Readout>(EMPTY);
   /**
    * Shown live rather than only in the post-mortem. The whole point of the warning counter is that
@@ -173,6 +187,7 @@ export default function Bench() {
   // Refs so control changes reach the running loop without tearing down the GL context.
   const countRef = useRef(count);
   const hudRef = useRef(hud);
+  const sizeRef = useRef(sizeScale);
   const rafRef = useRef<number | null>(null);
 
   // One subscription for the screen's lifetime. Feeds whichever probe the current run created, so
@@ -196,6 +211,7 @@ export default function Bench() {
 
   countRef.current = count;
   hudRef.current = hud;
+  sizeRef.current = sizeScale;
 
   const resetMeasurement = useCallback(() => {
     timerRef.current?.clear();
@@ -263,6 +279,7 @@ export default function Bench() {
         try {
           if (storm.activeCount !== countRef.current) storm.setCount(countRef.current);
           storm.drawHud = hudRef.current;
+          storm.sizeScale = sizeRef.current;
 
           loop.advance(now);
           renderer.beginFrame(loop.stats.alpha);
@@ -302,6 +319,13 @@ export default function Bench() {
             scale: renderer.camera.scale,
             maxTexture: renderer.maxTextureSize,
             highp: renderer.hasHighp,
+            gpu: renderer.gpuName,
+            // World area -> device pixels -> multiples of the screen. Alpha-blended quads pay for
+            // every layer they stack, so this is the number a tile-based mobile GPU actually feels.
+            overdraw:
+              (storm.submittedArea * renderer.camera.scale * renderer.camera.scale) /
+              (bufferW * bufferH || 1),
+            sizeScale: sizeRef.current,
             tick: loop.stats.tick,
             frames: loop.stats.frames,
             ticksThisFrame: loop.stats.ticksThisFrame,
@@ -470,6 +494,14 @@ export default function Bench() {
           {Platform.OS} · buffer {readout.bufferW}×{readout.bufferH} @{readout.scale}x · maxTex{" "}
           {readout.maxTexture} · {readout.highp ? "highp" : "mediump"}
         </Text>
+        <Text style={isSoftwareGpu(readout.gpu) ? styles.error : styles.dim}>
+          gpu: {readout.gpu}
+          {isSoftwareGpu(readout.gpu) ? " — SOFTWARE RENDERING, no GPU, this number is void" : ""}
+        </Text>
+        <Text style={styles.dim}>
+          overdraw {readout.overdraw.toFixed(1)}x screen · quad size {readout.sizeScale}x
+          {readout.sizeScale !== 1 ? " (FILL TEST — not a gate number)" : ""}
+        </Text>
 
         {previous && previous.samples.length > 0 ? (
           <View style={styles.prev}>
@@ -504,6 +536,15 @@ export default function Bench() {
           ))}
           <Pressable onPress={() => setHud((v) => !v)} style={[styles.btn, hud && styles.btnOn]}>
             <Text style={[styles.btnText, hud && styles.btnTextOn]}>HUD</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setSizeScale((v) => (v === 1 ? 0.5 : 1));
+              resetMeasurement();
+            }}
+            style={[styles.btn, sizeScale !== 1 && styles.btnOn]}
+          >
+            <Text style={[styles.btnText, sizeScale !== 1 && styles.btnTextOn]}>HALF SIZE</Text>
           </Pressable>
           <Pressable onPress={resetMeasurement} style={styles.btn}>
             <Text style={styles.btnText}>reset</Text>
@@ -579,3 +620,13 @@ const styles = StyleSheet.create({
   },
   prevTitle: { color: Palette.gold, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
 });
+
+/**
+ * Chrome falls back to SwiftShader, its CPU rasteriser, on devices or drivers it does not trust.
+ * The picture is identical and the speed is not, so a benchmark that does not check this can spend
+ * a week optimising a renderer that was never touching the GPU.
+ */
+function isSoftwareGpu(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes("swiftshader") || n.includes("software") || n.includes("llvmpipe");
+}

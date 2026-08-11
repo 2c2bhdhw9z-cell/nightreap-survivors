@@ -77,6 +77,13 @@ export class Renderer {
   readonly maxTextureSize: number;
   /** Whether highp is available in fragment shaders. Logged in the dev menu, affects UV bleed. */
   readonly hasHighp: boolean;
+  /**
+   * What is actually drawing. On Android Chrome this is the difference between a real Mali GPU
+   * and Chrome quietly falling back to SwiftShader, its software rasteriser — which looks
+   * identical on screen and is roughly ten times slower. Without this string a bad benchmark
+   * number is unattributable, so it is read once at construction and shown in the dev readout.
+   */
+  readonly gpuName: string;
 
   constructor(gl: WebGLRenderingContext) {
     this.gl = gl;
@@ -85,6 +92,7 @@ export class Renderer {
     this.maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;
     const precision = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, gl.HIGH_FLOAT);
     this.hasHighp = !!precision && precision.precision > 0;
+    this.gpuName = readGpuName(gl);
   }
 
   /** Bind the atlas. One call at load; every layer then draws from the same texture. */
@@ -185,4 +193,26 @@ export class Renderer {
     this.batch.dispose();
     this.gl.deleteProgram(this.program.program);
   }
+}
+
+/**
+ * Best-effort GPU identity. The unmasked strings sit behind an optional extension that some
+ * browsers withhold for fingerprinting reasons, and the masked fallback is often just
+ * "WebKit WebGL", so every step is guarded and an unknown answer is a valid answer.
+ */
+function readGpuName(gl: WebGLRenderingContext): string {
+  try {
+    const ext = gl.getExtension("WEBGL_debug_renderer_info") as {
+      UNMASKED_RENDERER_WEBGL?: number;
+    } | null;
+    if (ext && typeof ext.UNMASKED_RENDERER_WEBGL === "number") {
+      const name = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) as unknown;
+      if (typeof name === "string" && name.length > 0) return name;
+    }
+    const masked = gl.getParameter(gl.RENDERER) as unknown;
+    if (typeof masked === "string" && masked.length > 0) return masked;
+  } catch {
+    // Some drivers throw rather than return null. An unreadable name is not worth a crash.
+  }
+  return "unknown";
 }
