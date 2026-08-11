@@ -80,8 +80,23 @@ export class SpriteBatcher {
   private quadCount = 0;
   private boundTexture: WebGLTexture | null = null;
 
+  /**
+   * Cached upload views, one per power-of-two byte bucket.
+   *
+   * `bufferSubData` needs a view covering exactly the bytes we want to send, and `subarray` returns
+   * a *new view object* every call — cheap, but five per frame at 60fps is 18,000 short-lived
+   * objects a minute handed across the JSI bridge to native GL. On a warm phone that is GC churn at
+   * best and retained native memory at worst; an iPhone running this benchmark froze at ~1:15 and
+   * was OOM-killed by the OS at ~9:30 with the simulation provably clean.
+   *
+   * So views are created once, lazily, per size bucket and reused forever. A flush rounds its byte
+   * count up to the next bucket, uploading at most 2x the bytes it needs — a fixed, predictable
+   * cost that trades a little bus bandwidth for zero allocation in steady state.
+   */
+  private readonly uploadViews: (Uint8Array | undefined)[] = [];
+
   /** Per-frame counters for the dev-menu overlay. */
-  readonly stats = { quads: 0, drawCalls: 0, flushes: 0, textureSwaps: 0 };
+  readonly stats = { quads: 0, drawCalls: 0, flushes: 0, textureSwaps: 0, uploadBytes: 0 };
 
   constructor(gl: WebGLRenderingContext, prog: SpriteProgram) {
     this.gl = gl;
@@ -151,6 +166,7 @@ export class SpriteBatcher {
     this.stats.drawCalls = 0;
     this.stats.flushes = 0;
     this.stats.textureSwaps = 0;
+    this.stats.uploadBytes = 0;
     this.boundTexture = null;
   }
 
@@ -309,14 +325,33 @@ export class SpriteBatcher {
     if (this.quadCount === 0) return;
     const gl = this.gl;
     const byteCount = this.quadCount * VERTS_PER_QUAD * BYTES_PER_VERT;
-    // subarray is a view, not a copy — no allocation.
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.bytes.subarray(0, byteCount));
+    const view = this.uploadView(byteCount);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, view);
     gl.drawElements(gl.TRIANGLES, this.quadCount * 6, gl.UNSIGNED_SHORT, 0);
 
     this.stats.quads += this.quadCount;
     this.stats.drawCalls++;
     this.stats.flushes++;
+    this.stats.uploadBytes += view.byteLength;
     this.quadCount = 0;
+  }
+
+  /**
+   * A reused view covering at least `byteCount` bytes. Bucketed by power of two so the cache holds
+   * at most ~14 views for the lifetime of the batcher and nothing is allocated per frame.
+   */
+  private uploadView(byteCount: number): Uint8Array {
+    // Vertex data is 64 bytes per quad, so the smallest meaningful bucket is 64.
+    let bucket = 6; // 2^6 = 64
+    while (1 << bucket < byteCount) bucket++;
+    const size = 1 << bucket;
+    let view = this.uploadViews[bucket];
+    if (view === undefined) {
+      view =
+        size >= this.bytes.byteLength ? this.bytes : new Uint8Array(this.staging, 0, size);
+      this.uploadViews[bucket] = view;
+    }
+    return view;
   }
 
   get pending(): number {

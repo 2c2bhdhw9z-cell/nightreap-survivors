@@ -57,6 +57,8 @@ export interface RendererStats {
   drawCalls: number;
   textureSwaps: number;
   layerSwitches: number;
+  /** Vertex bytes uploaded this frame. Flat across a run, or something is growing that shouldn't. */
+  uploadBytes: number;
 }
 
 export class Renderer {
@@ -170,6 +172,7 @@ export class Renderer {
       drawCalls: s.drawCalls,
       textureSwaps: s.textureSwaps,
       layerSwitches: this.layerSwitches,
+      uploadBytes: s.uploadBytes,
     };
   }
 

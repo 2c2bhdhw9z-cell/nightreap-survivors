@@ -25,8 +25,14 @@ import { Link } from "expo-router";
 
 import { FixedLoop, FrameTimer, TICK_MS } from "@/game/core/loop";
 import { createDebugAtlas } from "@/game/render/atlas";
-import { Renderer } from "@/game/render/renderer";
+import { Renderer, type RendererStats } from "@/game/render/renderer";
 import { QuadStorm } from "@/game/bench/quad-storm";
+import {
+  FlightRecorder,
+  summariseFlight,
+  type FlightLog,
+} from "@/game/bench/flight-recorder";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Palette } from "@/constants/theme";
 
 const PRESETS = [1000, 2500, 5000, 8000] as const;
@@ -60,6 +66,10 @@ interface Readout {
   ticksThisFrame: number;
   /** ms since the sim tick counter last changed. Anything over ~100 is a stall. */
   simStaleMs: number;
+  /** Vertex bytes handed to GL last frame. Should be flat; growth means the batcher is leaking. */
+  uploadBytes: number;
+  /** JS heap MB where the engine reports it, else -1. Climbing = the OOM-kill explanation. */
+  heapMb: number;
   /** Exceptions thrown inside the frame callback. Must stay 0. */
   frameErrors: number;
   lastError: string | null;
@@ -86,6 +96,8 @@ const EMPTY: Readout = {
   frames: 0,
   ticksThisFrame: 0,
   simStaleMs: 0,
+  uploadBytes: 0,
+  heapMb: -1,
   frameErrors: 0,
   lastError: null,
 };
@@ -100,11 +112,41 @@ const nowMs: () => number =
     ? () => performance.now()
     : () => Date.now();
 
+/**
+ * JS heap in MB, when the engine will tell us.
+ *
+ * Hermes does not implement `performance.memory`, so on iOS this usually returns -1 and the
+ * flight recorder falls back to the upload-bytes and tick traces instead. It is read anyway
+ * because on web (and on Hermes builds that do expose it) a climbing heap identifies a leak in
+ * seconds rather than after a nine-minute wait for the OS to kill us.
+ */
+function heapMb(): number {
+  const perf = globalThis.performance as unknown as
+    | { memory?: { usedJSHeapSize?: number } }
+    | undefined;
+  const used = perf?.memory?.usedJSHeapSize;
+  return typeof used === "number" ? used / (1024 * 1024) : -1;
+}
+
 export default function Bench() {
   const [count, setCount] = useState<number>(5000);
   const [hud, setHud] = useState(true);
   const [readout, setReadout] = useState<Readout>(EMPTY);
   const [error, setError] = useState<string | null>(null);
+  const [previous, setPrevious] = useState<FlightLog | null>(null);
+  const recorderRef = useRef<FlightRecorder | null>(null);
+
+  // Recover the last run's tail before this one starts overwriting it. An OS kill leaves no error
+  // and no chance to screenshot, so the previous flight is the only evidence we ever get.
+  useEffect(() => {
+    let live = true;
+    void FlightRecorder.readPrevious(AsyncStorage).then((log) => {
+      if (live) setPrevious(log);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // Refs so control changes reach the running loop without tearing down the GL context.
   const countRef = useRef(count);
@@ -144,7 +186,13 @@ export default function Bench() {
 
       const loop = new FixedLoop(() => storm.tick());
 
-      let stats = { quads: 0, drawCalls: 0, textureSwaps: 0, layerSwitches: 0 };
+      let stats: RendererStats = {
+        quads: 0,
+        drawCalls: 0,
+        textureSwaps: 0,
+        layerSwitches: 0,
+        uploadBytes: 0,
+      };
       let lastFrameStart = -1;
       let lastReport = 0;
       let frameErrors = 0;
@@ -153,6 +201,14 @@ export default function Bench() {
       let lastTickChangeAt = nowMs();
       // Wall clock for the warm timer only — it measures minutes, where 1ms resolution is fine.
       const startedAtWall = Date.now();
+
+      const recorder = new FlightRecorder(
+        AsyncStorage,
+        `${Platform.OS} ${bufferW}x${bufferH}`,
+        startedAtWall,
+      );
+      recorderRef.current = recorder;
+      let lastFlight = 0;
 
       const frame = () => {
         rafRef.current = requestAnimationFrame(frame);
@@ -209,9 +265,32 @@ export default function Bench() {
             frames: loop.stats.frames,
             ticksThisFrame: loop.stats.ticksThisFrame,
             simStaleMs: now - lastTickChangeAt,
+            uploadBytes: stats.uploadBytes,
+            heapMb: heapMb(),
             frameErrors,
             lastError,
           });
+        }
+
+        // Snapshot to disk every 2s. Frequent enough to catch the trend, rare enough that the
+        // instrument cannot be what makes the app miss frames.
+        if (now - lastFlight >= 2000) {
+          lastFlight = now;
+          recorder.push({
+            t: Math.floor((Date.now() - startedAtWall) / 1000),
+            quads: stats.quads,
+            tick: loop.stats.tick,
+            frames: loop.stats.frames,
+            p50: timer.percentile(0.5),
+            p99: timer.percentile(0.99),
+            droppedTicks: loop.stats.droppedTicks,
+            uploadBytes: stats.uploadBytes,
+            heapMb: heapMb(),
+            simStaleMs: now - lastTickChangeAt,
+            frameErrors,
+            lastError,
+          });
+          void recorder.persist();
         }
       };
 
@@ -224,6 +303,8 @@ export default function Bench() {
   useEffect(() => {
     return () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      // Marks the log clean, so next launch can tell "user left" from "the OS killed us".
+      void recorderRef.current?.persist(true);
     };
   }, []);
 
@@ -316,10 +397,37 @@ export default function Bench() {
           {warm ? " ✓" : ` / ${WARM_MINUTES}m`} · tick {TICK_MS.toFixed(2)}ms · {readout.frames}{" "}
           frames
         </Text>
+        {/*
+          The OOM trace. uploadBytes must be flat across the whole run — if it climbs, the batcher
+          is handing native GL more data every frame and the process death is ours to fix. heap is
+          -1 on Hermes, which is why uploadBytes carries the argument on iOS.
+        */}
+        <Text style={styles.row}>
+          upload {(readout.uploadBytes / 1024).toFixed(0)}KB/frame ·{" "}
+          {readout.heapMb >= 0 ? `heap ${readout.heapMb.toFixed(1)}MB` : "heap n/a (Hermes)"}
+        </Text>
         <Text style={styles.dim}>
           {Platform.OS} · buffer {readout.bufferW}×{readout.bufferH} @{readout.scale}x · maxTex{" "}
           {readout.maxTexture} · {readout.highp ? "highp" : "mediump"}
         </Text>
+
+        {previous && previous.samples.length > 0 ? (
+          <View style={styles.prev}>
+            <Text style={styles.prevTitle}>PREVIOUS RUN</Text>
+            {summariseFlight(previous).map((line) => (
+              <Text
+                key={line}
+                style={
+                  line.startsWith("PREVIOUS RUN DIED") || line.startsWith("MEMORY IS CLIMBING")
+                    ? styles.error
+                    : styles.dim
+                }
+              >
+                {line}
+              </Text>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.controls}>
           {PRESETS.map((n) => (
@@ -401,4 +509,13 @@ const styles = StyleSheet.create({
   btnOn: { backgroundColor: Palette.gold, borderColor: Palette.goldLit },
   btnText: { color: Palette.bone, fontSize: 12, fontWeight: "600" },
   btnTextOn: { color: Palette.ink },
+  // The recovered flight log. Boxed off so it is obviously not live data.
+  prev: {
+    marginTop: 10,
+    paddingTop: 8,
+    gap: 2,
+    borderTopWidth: 1,
+    borderTopColor: Palette.stone,
+  },
+  prevTitle: { color: Palette.gold, fontSize: 10, fontWeight: "700", letterSpacing: 1 },
 });

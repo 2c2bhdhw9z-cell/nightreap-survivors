@@ -145,3 +145,55 @@ already be fixed by the same change.
 iPhone: exp://nightre-oqwfyiy-preview-4300.runable.site pasted into the **Safari address bar**
 (offers "Open in Expo Go"). REVVL: same URL in Expo Go, or plain Chrome for a browser number.
 5000 preset, HUD on, ~15 min warm, then screenshot. REVVL is the device that decides WebGL vs Skia.
+
+## Bench crash investigation — 2026-08-11 (session 3)
+
+Symptom from Brett's iPhone 17 Pro Max (Expo Go): background sprites froze at ~1:15–1:30,
+readout panel kept reporting ~58.8fps, app vanished straight to the iOS home screen at ~9:30
+with no error screen.
+
+**Straight-to-home-screen with no error screen = iOS jetsam.** The OS killed the process for
+memory. That single cause explains both symptoms: memory climbs, presentation stalls first,
+kill comes later.
+
+### Ruled out: the simulation
+`game/bench/soak.test.ts` (new) drives `QuadStorm.tick()` headlessly with no GL at all.
+20 minutes of sim (72,000 ticks) at 5,000 quads:
+
+    moving=5000/5000 · nonFinite=0 · outside=0 · maxAbs=574.0
+    72000 ticks in 2142ms (29.7us/tick) · heapGrowth=0KB
+
+No freeze, no NaN, no saturation, no allocation. The sim is not the bug. The freeze is the
+renderer holding the last frame while JS keeps looping.
+
+### Fixed
+- **Bug 1 (frame timing) — DONE.** `Date.now()` has 1ms integer resolution and cannot measure a
+  16.67ms budget, which is why all four percentiles read a flat `17.0ms`. Now `performance.now()`
+  via a `nowMs()` helper; `Date.now()` kept only for the warm clock, where 1ms is fine.
+  **Every Gate A number before this fix is void, including the 58.8fps iPhone result.**
+- **`SpriteBatcher.flush` allocated per flush.** `this.bytes.subarray(0, byteCount)` returns a new
+  view *object* every call — the old comment claimed "no allocation", which is true of the backing
+  memory but not the wrapper. Five per frame at 60fps = 18,000 short-lived objects a minute crossing
+  the JSI bridge into native GL. Replaced with views cached per power-of-two byte bucket: ~14 views
+  for the batcher's lifetime, uploading at most 2x the needed bytes. Verified flat at 540,672
+  bytes/frame across a whole run.
+- **Freeze is now visible instead of silent.** `drawHeartbeat` draws two GL-side bars (gold = one
+  rendered frame, cyan = one sim tick) so a stalled sim can't read as 60fps. Frame callback wrapped
+  in try/catch with an error counter — a throw used to be invisible because rAF is rescheduled on
+  the first line. Overlay now shows sim-vs-real clock, ticks/frame, stale ms, upload KB/frame, heap.
+
+### Flight recorder — the key addition
+`game/bench/flight-recorder.ts`. A jetsam kill gives no notification, no unwind, and no chance to
+render, so asking Brett to screenshot the panel before it dies is asking for the impossible. The
+bench now writes a 90-sample tail to AsyncStorage every 2s and displays the *previous* run's log on
+mount. Verified in software GL: after a hard reload it correctly reported
+`PREVIOUS RUN DIED at 54s — no clean exit (OS kill or hard crash)` plus heap slope, sim-behind, and
+the freeze moment.
+
+### Open — what the next iPhone run decides
+Note `heapMb` is -1 on Hermes (`performance.memory` unimplemented), so on iOS the argument rests on
+`uploadBytes` and the tick trace.
+- If it now survives → the subarray churn was the leak; carry on.
+- If `uploadBytes` stays flat and it still dies at ~9:30 → the leak is **inside expo-gl's native
+  side**, not ours, and nothing in `game/render/` can fix it. **That is a Gate A failure and the
+  trigger to pivot to native Skia**, which is contained to `game/render/` by design.
