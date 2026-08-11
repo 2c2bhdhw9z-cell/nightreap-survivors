@@ -20,13 +20,26 @@
  */
 
 import type { Atlas, Frame } from "../render/atlas";
-import { packColor, type PackedColor } from "../render/batcher";
+import { packColor, packHex, type PackedColor } from "../render/batcher";
 import { Renderer, type LayerId } from "../render/renderer";
 
 /** World layers the storm spreads across, in submission order. */
 const STORM_LAYERS: LayerId[] = ["pickups", "enemies", "player", "projectiles"];
 
 const TRIG_STEPS = 256;
+
+/**
+ * Packed once at module scope, not per frame. `Renderer.color()` calls `packHex()`, which does
+ * `hex.slice(1)` — a fresh string every call. Seven calls per frame across the heartbeat and the
+ * synthetic HUD is ~420 short-lived strings a second. Too small to explain an OOM, but the
+ * zero-allocation contract says `new` inside a tick is a bug, and that includes strings.
+ */
+const HUD_TRACK = packHex("#2a2740", 220);
+const HUD_GOLD = packHex("#e0be5a");
+const HUD_CYAN = packHex("#5ad4e0");
+const HUD_INK = packHex("#0b0a12", 200);
+const HUD_BONE = packHex("#e6e3d6");
+const HUD_CRIMSON = packHex("#c8384a");
 
 export class QuadStorm {
   readonly capacity: number;
@@ -226,15 +239,12 @@ export class QuadStorm {
 
     const slots = 24;
     const slotW = vw / slots;
-    const track = Renderer.color("#2a2740", 220);
-    const gold = Renderer.color("#e0be5a");
-    const cyan = Renderer.color("#5ad4e0");
 
-    b.drawRect(white, 0, vh - 22, vw, 4, track);
-    b.drawRect(white, (frames % slots) * slotW, vh - 22, slotW, 4, gold);
+    b.drawRect(white, 0, vh - 22, vw, 4, HUD_TRACK);
+    b.drawRect(white, (frames % slots) * slotW, vh - 22, slotW, 4, HUD_GOLD);
 
-    b.drawRect(white, 0, vh - 16, vw, 4, track);
-    b.drawRect(white, (tick % slots) * slotW, vh - 16, slotW, 4, cyan);
+    b.drawRect(white, 0, vh - 16, vw, 4, HUD_TRACK);
+    b.drawRect(white, (tick % slots) * slotW, vh - 16, slotW, 4, HUD_CYAN);
   }
 
   /**
@@ -250,26 +260,22 @@ export class QuadStorm {
     const vw = r.camera.worldViewW;
     const vh = r.camera.worldViewH;
 
-    const ink = Renderer.color("#0b0a12", 200);
-    const gold = Renderer.color("#e0be5a");
-    const bone = Renderer.color("#e6e3d6");
-    const crimson = Renderer.color("#c8384a");
 
     // XP bar: track plus fill.
-    b.drawRect(white, 0, 0, vw, 6, ink);
-    b.drawRect(white, 0, 0, vw * 0.42, 6, gold);
+    b.drawRect(white, 0, 0, vw, 6, HUD_INK);
+    b.drawRect(white, 0, 0, vw * 0.42, 6, HUD_GOLD);
 
     // Weapon and passive slots — twelve panels, the real HUD's worst case.
     for (let i = 0; i < 12; i++) {
       const sx = 4 + (i % 6) * 20;
       const sy = 10 + Math.floor(i / 6) * 20;
-      b.drawRect(panel, sx, sy, 18, 18, bone);
-      b.draw(gem, sx + 9, sy + 14, gold);
+      b.drawRect(panel, sx, sy, 18, 18, HUD_BONE);
+      b.draw(gem, sx + 9, sy + 14, HUD_GOLD);
     }
 
     // Boss bar.
-    b.drawRect(white, vw * 0.2, vh - 10, vw * 0.6, 4, ink);
-    b.drawRect(white, vw * 0.2, vh - 10, vw * 0.6 * 0.73, 4, crimson);
+    b.drawRect(white, vw * 0.2, vh - 10, vw * 0.6, 4, HUD_INK);
+    b.drawRect(white, vw * 0.2, vh - 10, vw * 0.6 * 0.73, 4, HUD_CRIMSON);
 
     // Damage numbers: 3 quads each, since a bitmap glyph is one quad per character.
     for (let i = 0; i < 48; i++) {
@@ -277,7 +283,7 @@ export class QuadStorm {
       const hy = ((i * 37) % 100) / 100;
       const dx = 8 + hx * (vw - 24);
       const dy = 24 + hy * (vh - 60);
-      const tint = i % 7 === 0 ? crimson : bone;
+      const tint = i % 7 === 0 ? HUD_CRIMSON : HUD_BONE;
       b.draw(white, dx, dy, tint);
       b.draw(white, dx + 5, dy, tint);
       b.draw(white, dx + 10, dy, tint);
