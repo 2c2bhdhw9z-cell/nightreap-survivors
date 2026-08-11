@@ -509,3 +509,33 @@ ended by hand wrote a log that said nothing. That is why all four watched trials
   The old assertion "a clean exit is not given a death verdict" was inverted by design and rewritten.
 
 **Trial protocol now: 15 foreground minutes, then read the line and stop. No kill required.**
+
+## Phase 1 — started 2026-08-11 (session 5)
+
+### `game/sim/stats.ts` + `game/sim/modifiers.ts` DONE
+- `STAT_NAMES` misalignment fixed by **deriving it from `STAT`** instead of retyping the parallel
+  list. A hand-written parallel list is the exact thing that drifted in the first place.
+- Added a load-time guard: `STAT_COUNT` must equal `Object.keys(STAT).length`, or throw. Appending a
+  stat without widening the count would have left it outside every table and silently read 0.
+- `ModifierStack.resolve` has **three tiers**: `add` (flat sums) → `mul` (percent, pooled per stat so
+  truncation happens exactly once) → `scale` (compounding, sorted canonically) → `clampAll()`.
+- Hurry = `scale(timeScale, 2000)`. Hyper = `scale(enemySpeed/enemyHealth/spawnRate, 1200)` +
+  `mul(goldGain, 500)`. Disjoint stat sets, zero sim branches. **Phase 1 gate item met.**
+
+### The order-independence test almost lied
+First version used factors `1100, 1234, 1777` on base 1000. It passed — and it also passed with
+`sortScales()` deleted. `/tmp/ordercheck.ts` over 200,000 random (base, factors) triples:
+**96.3% are order-dependent under sequential integer truncation, 3.7% are not.** I had picked one of
+the 3.7%.
+Replaced with base 97 / factors `1382, 2162, 2461`, which yields **four** different answers across
+the six orderings. Verified by commenting out `sortScales()`: 2 checks fail. The test now bites.
+Lesson worth keeping: for any "order doesn't matter" claim, prove the ordering was ambiguous in the
+first place — the test file now asserts that explicitly as its own check.
+
+### Numbers
+- `sim.test.ts` 71 checks PASS. 20,000 resolves of a 40-modifier stack: **62ms, 3.1us each,
+  heapGrowth=0KB**.
+- `bun run test:game` now **6 suites, all PASS**. typecheck 3/3, lint 0/0.
+
+### Next
+`game/sim/entities.ts` — pooled entity arrays, then spawner + wave table + steering with separation.
