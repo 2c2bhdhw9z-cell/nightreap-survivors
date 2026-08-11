@@ -562,3 +562,28 @@ first place — the test file now asserts that explicitly as its own check.
 - Resolve allocates nothing: 20,000 resolves grew the heap 0.0KB.
 
 **Next:** entity arrays + spawner + wave table + walk-at-player steering with separation.
+
+## REVVL Gate A first measurement — 2026-08-11 (session 6)
+
+Crash fixed (keep-awake web path). Phone ran the bench correctly. Result:
+
+    5176 quads · 5 draws · 5 layers · buffer 720x1260 @3x
+    116.2ms p50 · 321.0ms p95 · 400.4ms p99 · 411.7ms worst
+    8.6 fps · 80.2% over 16.7ms · 408 dropped ticks
+    0 mem warnings · heap 19.6MB flat · sim 9.3s / real 16s
+
+8.6fps against a 60fps gate. 7x short. NOT a warm number (16s in), but 116ms p50 is not
+something 15 minutes of warming improves.
+
+UNATTRIBUTABLE as measured, hence the new diagnostics:
+- gpu name: Android Chrome may be on SwiftShader. Unknown until the user reports the line.
+- overdraw: the gate scene is 13.5x screen. 5176 blended quads inside a 240x420 world view at
+  scale 3. On a Mali-G57 MC2 that is ~12M blended pixels/frame. Plausible sole cause.
+- HALF SIZE: same count, quarter the pixels. 4x faster => fill bound. Flat => per-quad bound.
+
+CRITICAL CAVEAT: this is Chrome, not native. The iPhone 16.7ms number was native Expo Go.
+Browser WebGL on Android carries compositor overhead the shipped app never pays. Android
+manifest confirmed 200, so Expo Go on the REVVL is measurable and is the number that decides
+Gate A. Chrome is a lower bound, not the verdict.
+
+Next: user reports gpu line + HALF SIZE delta + native Expo Go run on the REVVL.
