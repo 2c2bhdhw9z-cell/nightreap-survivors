@@ -1,29 +1,51 @@
-import { StyleSheet, Text, View, ActivityIndicator } from "react-native";
+/**
+ * Dev launcher. This is an instrument panel, not player-facing UI, so it is deliberately plain and
+ * is not subject to the mock-first rule — no title screen, no art, nothing here ships.
+ *
+ * It exists for one reason: opening the preview used to land on the template's stock "Welcome"
+ * screen with no route into the benchmark, which reads as "the app did nothing".
+ */
+
+import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { usePing } from "@/queries/ping";
-import { useColors } from "@/hooks/use-colors";
+import { Link } from "expo-router";
+
+import { Palette, Grid } from "@/constants/theme";
+
+const STEPS = [
+  "Tap GATE A BENCH below.",
+  "Hit the 5000 preset.",
+  "Leave it running ~15 min so the phone gets warm.",
+  "Screenshot the panel once WARM reads ready.",
+] as const;
 
 export default function Index() {
-  const colors = useColors();
-  const ping = usePing();
-
   return (
-    <SafeAreaView
-      edges={["top", "left", "right"]}
-      style={[styles.container, { backgroundColor: colors.background }]}
-    >
-      <Text style={[styles.title, { color: colors.foreground }]}>Welcome</Text>
+    <SafeAreaView edges={["top", "left", "right"]} style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.kicker}>NIGHTREAP SURVIVORS</Text>
+        <Text style={styles.title}>Phase 0 — Engine</Text>
+      </View>
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {ping.isLoading ? (
-          <ActivityIndicator color={colors.primary} />
-        ) : ping.isError ? (
-          <Text style={{ color: colors.destructive }}>API Error</Text>
-        ) : (
-          <Text style={{ color: colors.mutedForeground }}>
-            API Status: {ping.data?.message}
+      <Link href="/dev/bench" style={styles.cta}>
+        <Text style={styles.ctaText}>GATE A BENCH</Text>
+      </Link>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>How to run the real test</Text>
+        {STEPS.map((step, i) => (
+          <Text key={step} style={styles.step}>
+            <Text style={styles.stepNum}>{i + 1}. </Text>
+            {step}
           </Text>
-        )}
+        ))}
+      </View>
+
+      <View style={styles.note}>
+        <Text style={styles.noteText}>
+          Numbers only count on real hardware. This browser preview falls back to software GL and
+          will look catastrophically slow — that is the preview, not the engine.
+        </Text>
       </View>
     </SafeAreaView>
   );
@@ -32,19 +54,68 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-    gap: 16,
+    backgroundColor: Palette.crypt,
+    padding: Grid * 3,
+    gap: Grid * 3,
+  },
+  header: {
+    gap: Grid,
+  },
+  kicker: {
+    color: Palette.gold,
+    fontSize: 11,
+    letterSpacing: 2,
   },
   title: {
-    fontSize: 28,
+    color: Palette.boneLit,
+    fontSize: 26,
     fontWeight: "700",
   },
-  card: {
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 12,
+  cta: {
+    backgroundColor: Palette.gold,
     borderWidth: 1,
+    borderColor: Palette.goldLit,
+    paddingVertical: Grid * 2,
+    paddingHorizontal: Grid * 2,
+    textAlign: "center",
+  },
+  ctaText: {
+    color: Palette.ink,
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
+  card: {
+    backgroundColor: Palette.stone,
+    borderTopWidth: 1,
+    borderTopColor: Palette.stoneLit,
+    padding: Grid * 2,
+    gap: Grid,
+  },
+  cardTitle: {
+    color: Palette.boneLit,
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: Grid / 2,
+  },
+  step: {
+    color: Palette.bone,
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  stepNum: {
+    color: Palette.cyanLit,
+    fontWeight: "700",
+  },
+  note: {
+    borderLeftWidth: 2,
+    borderLeftColor: Palette.crimson,
+    paddingLeft: Grid * 1.5,
+  },
+  noteText: {
+    color: Palette.ash,
+    fontSize: 12,
+    lineHeight: 18,
   },
 });

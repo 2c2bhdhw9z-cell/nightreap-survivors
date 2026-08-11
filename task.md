@@ -39,3 +39,44 @@ Plan of record: `/home/user/plan.md` (approved). This file tracks progress, deci
 ### Blockers / flags for the user
 - No `gh` CLI in the sandbox — GitHub linking is platform-side. Needs confirming from the Runable UI
   so Phase 0 can end with a real backup push.
+
+## Decisions added 2026-08-11
+- Injected tweak menus (iOSGods-style) assumed present at launch; see plan.md §5b addendum.
+  - Ladder submissions require mandatory server-side replay revalidation (was sampled).
+  - Co-op guests run plausibility checks on host events; modded host = session non-counting.
+- Dev menu visual direction: first mock generated at mocks/dev-menu_1786425984059.png,
+  awaiting user yes/no before any dev-menu screen code (mock-first HARD GATE).
+  - Known mock artifact: two steppers rendered "[·]" instead of "[+]" — text render glitch, not design.
+- Dev menu structure settled: 8 horizontally-scrolling tabs (SIM/SPAWN/RUN/BUILD/MOD/RNDR/DEV/INPT),
+  each its own scroll view. Pinned: top bar, status strip, search, tab bar, bottom taint warning.
+  Global search across all toggles + user-configurable FAVORITES row.
+  Tabbed mock: mocks/dev-menu-tabbed_1786426225031.png (BUILD tab, density proven).
+
+## Verified 2026-08-11 (first real verification pass)
+- `bun run typecheck` PASS (3/3 packages). WebGLRenderingContext DOM types resolve via
+  expo/tsconfig.base — structural-GL-interface fallback NOT needed. Assumption closed.
+- `bun run lint` PASS (konsistent 17 files + oxlint 66 files, 0 warnings 0 errors).
+- `bun run build` PASS.
+- Metro running on port 4300. `/dev/bench` route mounts.
+- expo-gl web support CONFIRMED (GLView -> WebGL canvas). Assumption closed.
+- Headless Chrome default = NO WebGL at all. Forced SwiftShader via
+  --use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader to run the harness.
+- HARNESS CORRECTNESS VERIFIED: 5172 quads -> 5 draw calls / 5 layers, procedural debug atlas
+  uploads and samples correctly, batcher packs pos/uv/colour correctly, overlay reports
+  p50/p95/p99 + dropped ticks + quad/draw/layer counts.
+- Software-GL baseline (MEANINGLESS for the gate, recorded only as a floor):
+  5172 quads @ 126.0ms p50 / 246.0ms p95 / 291.0ms p99, 7.9fps, 684 dropped ticks.
+- GATE A STILL UNDECIDED. Requires native hardware (REVVL + iPhone). Blocker for Phase 0 close.
+
+## Fixed 2026-08-11 — preview "open does nothing"
+Root cause was two separate bugs, both reproduced and fixed:
+1. `/` still rendered the stock template "Welcome" + failing API ping, with NO route into the
+   bench. Opening the preview looked like a no-op. -> rewrote app/(tabs)/index.tsx as a dev
+   launcher with a GATE A BENCH button + warm-test instructions. Navigation verified by click.
+2. `/dev/bench` HARD CRASHED to the error boundary ("Something went wrong / Browser does not
+   support WebGL") on any browser without WebGL, because GLView throws during render.
+   -> added webglAvailable() guard + explanatory fallback screen. Verified both paths:
+      no-WebGL browser shows the fallback, SwiftShader browser still renders 5172 quads / 5 draws.
+3. Bench overlay was illegible over the quad storm (no background). -> panel is now opaque ink
+   with a 1px stoneLit bottom border. Verified legible.
+typecheck + lint pass after each change.

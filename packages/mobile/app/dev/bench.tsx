@@ -187,6 +187,32 @@ export default function Bench() {
           ? `HOLDING 60fps at ${readout.quads} quads (warm)`
           : `holding 60fps at ${readout.quads} quads — cold, keep running`;
 
+  if (!webglAvailable()) {
+    return (
+      <SafeAreaView edges={["top", "left", "right"]} style={styles.root}>
+        <ScrollView contentContainerStyle={styles.panelInner}>
+          <Text style={[styles.verdict, { color: Palette.gold }]}>No WebGL on this browser</Text>
+          <Text style={styles.row}>
+            The benchmark needs a GPU context and this browser is not giving one out, so there is
+            nothing to measure. Mounting GLView anyway would just crash the screen.
+          </Text>
+          <Text style={styles.dim}>
+            This is expected in a headless or hardware-accelerated-disabled browser. Gate A is a
+            hardware question anyway — run this on the phone through Expo Go, where expo-gl gets a
+            real OpenGL ES context. Numbers from a software rasteriser would be meaningless.
+          </Text>
+          <View style={styles.controls}>
+            <Link href="/" asChild>
+              <Pressable style={styles.btn}>
+                <Text style={styles.btnText}>back</Text>
+              </Pressable>
+            </Link>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.root}>
       <GLView style={styles.gl} onContextCreate={onContextCreate} />
@@ -252,10 +278,35 @@ function fmt(ms: number): string {
   return `${ms.toFixed(1)}ms`;
 }
 
+/**
+ * On native this is always true — expo-gl owns a real GLES context. On web, GLView throws during
+ * render when the browser hands back no context, which takes the whole screen down through the
+ * error boundary and reports it as a crash rather than an unsupported browser.
+ */
+function webglAvailable(): boolean {
+  if (Platform.OS !== "web") return true;
+  try {
+    const canvas = document.createElement("canvas");
+    return Boolean(
+      canvas.getContext("webgl") ?? canvas.getContext("experimental-webgl"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.ink },
   gl: { ...StyleSheet.absoluteFillObject },
-  panel: { flexGrow: 0, maxHeight: 260 },
+  // Opaque, not translucent: the panel sits over 8,000 moving sprites and has to stay readable at
+  // a glance. An unreadable instrument is a broken instrument.
+  panel: {
+    flexGrow: 0,
+    maxHeight: 260,
+    backgroundColor: Palette.ink,
+    borderBottomWidth: 1,
+    borderBottomColor: Palette.stoneLit,
+  },
   panelInner: { padding: 12, gap: 4 },
   verdict: { fontSize: 15, fontWeight: "700" },
   row: { color: Palette.bone, fontSize: 13, fontVariant: ["tabular-nums"] },
