@@ -80,3 +80,14 @@ Root cause was two separate bugs, both reproduced and fixed:
 3. Bench overlay was illegible over the quad storm (no background). -> panel is now opaque ink
    with a 1px stoneLit bottom border. Verified legible.
 typecheck + lint pass after each change.
+
+## GitHub — live 2026-08-11
+- Private repo: github.com/2c2bhdhw9z-cell/nightreap-survivors (branch `main`, 111 files).
+- Push verified by fetch. `.env` confirmed NOT on remote (Turso token / S3 keys / auth secret safe).
+- Token stored in gitignored credential store, NOT in .git/config or the remote URL.
+- ACTION FOR USER: rotate the PAT — it was pasted in plain chat.
+- .gitignore hardened: `*.env` + `.git-credentials*` (a bare `.env` rule would not have caught
+  an `ask_secrets` file written as `.git-credentials.env`).
+- CONFIRMED BUG in plan: `.gitignore` line 73 excludes `scripts/`, so the planned
+  `scripts/replay-test.ts` would be silently untracked. Replay harness moves to
+  `packages/mobile/game/replay/` instead. Do not put version-controlled code in `scripts/`.
