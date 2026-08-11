@@ -70,14 +70,16 @@ export class FlightRecorder {
     private readonly store: FlightStore,
     device: string,
     startedAt: number,
+    /** Separate slot per experiment, so a leak trial cannot overwrite the Gate A log. */
+    private readonly key: string = FLIGHT_KEY,
   ) {
     this.log = { startedAt, cleanExit: false, device, samples: [] };
   }
 
   /** Read whatever the previous run left behind, before starting a new one. */
-  static async readPrevious(store: FlightStore): Promise<FlightLog | null> {
+  static async readPrevious(store: FlightStore, key: string = FLIGHT_KEY): Promise<FlightLog | null> {
     try {
-      const raw = await store.getItem(FLIGHT_KEY);
+      const raw = await store.getItem(key);
       if (!raw) return null;
       const parsed = JSON.parse(raw) as FlightLog;
       return Array.isArray(parsed.samples) ? parsed : null;
@@ -102,7 +104,7 @@ export class FlightRecorder {
     this.writing = true;
     this.dirty = false;
     try {
-      await this.store.setItem(FLIGHT_KEY, JSON.stringify(this.log));
+      await this.store.setItem(this.key, JSON.stringify(this.log));
     } catch {
       // A failed instrument write must never take down the thing being measured.
     } finally {

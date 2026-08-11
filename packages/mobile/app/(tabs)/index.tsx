@@ -31,6 +31,14 @@ export default function Index() {
         <Text style={styles.ctaText}>GATE A BENCH</Text>
       </Link>
 
+      {/*
+        Secondary because it answers a narrower question: the bench proves the frame rate, the leak
+        harness works out who is responsible for the memory that gets the process killed.
+      */}
+      <Link href="/dev/leak" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>LEAK ISOLATION</Text>
+      </Link>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>How to run the real test</Text>
         {STEPS.map((step, i) => (
@@ -70,6 +78,22 @@ const styles = StyleSheet.create({
     color: Palette.boneLit,
     fontSize: 26,
     fontWeight: "700",
+  },
+  ctaAlt: {
+    borderWidth: 1,
+    borderColor: Palette.stoneLit,
+    backgroundColor: Palette.ink,
+    paddingVertical: Grid * 2,
+    paddingHorizontal: Grid * 2,
+    textAlign: "center",
+    borderRadius: 4,
+  },
+  ctaAltText: {
+    color: Palette.bone,
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 1,
+    textAlign: "center",
   },
   cta: {
     backgroundColor: Palette.gold,

@@ -197,3 +197,56 @@ Note `heapMb` is -1 on Hermes (`performance.memory` unimplemented), so on iOS th
 - If `uploadBytes` stays flat and it still dies at ~9:30 → the leak is **inside expo-gl's native
   side**, not ours, and nothing in `game/render/` can fix it. **That is a Gate A failure and the
   trigger to pivot to native Skia**, which is contained to `game/render/` by design.
+
+## iPhone flight log recovered — 2026-08-11 (the decisive datapoint)
+
+Brett's iPhone 17 Pro Max, Expo Go, 5000 preset. Recovered PREVIOUS RUN block:
+
+    PREVIOUS RUN DIED at 844s — no clean exit (OS kill or hard crash)
+    device ios 1320x2868 · 5176 quads · 90 samples
+    heap not reported by this engine (JS heap unavailable)
+    sim tick 50652 vs 50640 expected (on time)
+    p50 16.7ms · p99 16.7ms · upload 528KB/frame
+
+The flight recorder worked exactly as designed — a jetsam kill left no screenshot opportunity and
+we got the data anyway.
+
+### What this settles
+- **The freeze is FIXED.** `sim tick 50652 vs 50640 expected (on time)` over the full 844s, and no
+  "sim froze between" line at all. The 1:15 freeze was the per-flush `subarray` allocation churn
+  (GC pauses starving the loop). It has not recurred.
+- **Timing fix confirmed landed.** `16.7ms`, not the old quantised `17.0ms` — `performance.now()`
+  is reporting sub-millisecond on Hermes.
+- **Speed is not the problem.** 5,176 quads at p50 = p99 = 16.7ms, vsync-locked, zero dropped
+  ticks, 14 minutes in and thermally warm. On raw performance an iPhone walks Gate A.
+- **The leak is NOT our vertex data.** `upload 528KB/frame` was identical in the first and last
+  sample. Nothing in the batcher grows.
+- **Lifetime improved 570s -> 844s** with the allocation fix, but it still dies. So there were two
+  separate problems, not one: allocation churn (fixed) and a real leak (open).
+
+### Caveat on p50 == p99 == 16.7ms
+Identical percentiles are still slightly suspicious even at sub-ms resolution. Frames are
+start-to-start under a rigid CADisplayLink, so near-zero jitter is plausible — but treat "perfectly
+flat" as unconfirmed until the REVVL, where throttling should produce visible spread. If the REVVL
+also reports four identical values, suspect the instrument again, not the hardware.
+
+### Remaining suspect: per-frame GL call marshalling inside expo-gl
+Hermes exposes no heap or RSS, so the only available instrument is *time until the OS kills us*.
+Built `app/dev/leak.tsx` to bisect it — three modes stripping one layer at a time
+(`present` = clear+endFrameEXP only / `draw` = static geometry, no upload / `upload` = bufferSubData
+per frame), each with a x1/x4/x16 amplifier that multiplies work per frame without changing the
+picture. Amplifying is what makes this affordable: at 14 min a trial, a x16 run that dies in ~50s
+turns an afternoon into minutes. Every mode+amplifier pair keeps its own flight log so trials cannot
+overwrite each other. Verified in software GL: `upload x16` correctly self-reported
+`DIED at 18s · upload 2000KB/frame`.
+
+Decision table:
+- `present` dies too              -> leak is in expo-gl frame presentation. Unfixable from
+                                     `game/render/`. **Gate A fails -> pivot to native Skia.**
+- only `upload` dies              -> per-frame bufferSubData. Fixable (persistent/double-buffered VBO).
+- `draw` and `upload` both die    -> per-draw-call marshalling. Fixable by cutting draw calls.
+- amplifier shortens death        -> leak scales with bytes/calls, naming the unit.
+- amplifier changes nothing       -> leaks per frame, not per call.
+
+**Gate A remains UNDECIDED and the REVVL warm number is still the actual gate.** iPhone is the feel
+target only.
