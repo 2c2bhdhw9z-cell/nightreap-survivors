@@ -354,3 +354,47 @@ covers termination, range, uniformity, the rejection path, and seed determinism.
 Note: `net.test.ts` passed earlier only because it happened to use non-power-of-two
 bounds. Two self-tests, two real bugs, both in code that had already typechecked and
 linted clean. Keep writing the harness before trusting the layer.
+
+## Dev gate + taint plumbing — 2026-08-11
+
+`game/dev/` — `channel.ts` · `registry.ts` · `devgate.ts` · `lint.ts` · `dev.test.ts`
+Run: `bun run test:game` (chains net → replay → dev). All three PASS.
+
+- **Registry, 41 panels: 24 SELF / 17 SYSTEM / 8 read-only.** Plan §5b's two lists are now
+  code, not prose. Each entry carries `tier`, `taint`, `readOnly`, optional kill-switch flag.
+- **`defineDevPanel` normalises any unrecognised tier to SYSTEM** — a typo locks a tool down
+  rather than shipping it. Verified with a deliberately mistyped `"Self"`.
+- **`DevGate.open` is the only door.** Taint applies on *open*, not on use: open godmode and
+  close it without touching anything and the run is still tainted. Pessimistic on purpose —
+  a false taint costs one leaderboard entry, a missed taint costs the ladder its meaning.
+- **Read-only panels taint nothing** (overlays, counters, atlas/audio inspectors, flight
+  recorder, screenshot, replay inspector), so debugging a real run stays free.
+- **Taint is on the run, not the save** — proven: next `ReplayRecorder` starts clean and
+  ladder-eligible.
+- No `clearTaint` exists on the client, asserted by test.
+- Chaos Sandbox Day: taints from tick zero, closes the public ladder, unlocks the menu
+  without the secret, and **still does not unlock SYSTEM**.
+- Internal channel: every run carries `DEV_CHANNEL`, never counts for the public ladder.
+- Guest can self-taint with `IMPLAUSIBLE_HOST` — the §5b addendum's co-op mitigation hook.
+
+### CI content-lint (this is what actually holds §5b together)
+`lint.ts` is run by `dev.test.ts`, so the build fails on any violation.
+- Data rules: unique ids, explicit tier, SELF+mutating must declare taint, read-only must
+  declare zero taint, `account.*`/`ladder.*`/`coop.*`/`ops.*` must be SYSTEM.
+- **Reachability is proved by construction, not by reading code:** two channels × 8 flag
+  combinations × 41 panels of real `DevGate` calls. Asserts no SYSTEM panel opens on public
+  under *any* flag combination, and that `reachable()` never disagrees with `open()` — a
+  greyed-out entry that would actually open is how a tier check gets bypassed by accident.
+- Source rules over the real files on disk: nothing in `game/dev/` imports a server-write
+  module (`SERVER_WRITE_MODULES` declared before those modules exist, so the rule is live
+  the day the first one lands), nothing in `game/dev/` imports RN/React/expo, and no file
+  outside the gate calls `findDevPanel`.
+- The linter is proved to bite: three planted bad files must produce exactly three
+  violations, one per rule.
+
+Nothing here is a security boundary and the file comments say so. Hermes decompiles and any
+client check is Frida-hookable. The gate makes the honest path correct and auditable and
+keeps SYSTEM tools out of a stranger's binary; **the only real boundary is server-side
+replay revalidation**, which `game/replay/` now measures at 1.63s per 30-minute run.
+
+New root script: `bun run test:game`.
