@@ -21,7 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
-import { useKeepAwake } from "expo-keep-awake";
+import { useScreenAwake } from "@/hooks/use-screen-awake";
 import { Link } from "expo-router";
 
 import { FixedLoop, FrameTimer, TICK_MS } from "@/game/core/loop";
@@ -142,7 +142,7 @@ export default function Bench() {
   // for reasons that have nothing to do with our memory use, and the flight log cannot tell that
   // apart from a real kill after the fact. Holding the display on removes the confound at the source
   // rather than detecting it later.
-  useKeepAwake();
+  useScreenAwake();
 
   const [count, setCount] = useState<number>(5000);
   const [hud, setHud] = useState(true);

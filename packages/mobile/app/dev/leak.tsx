@@ -39,7 +39,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
-import { useKeepAwake } from "expo-keep-awake";
+import { useScreenAwake } from "@/hooks/use-screen-awake";
 import { Link } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -86,7 +86,7 @@ export default function Leak() {
   // for reasons that have nothing to do with our memory use, and the flight log cannot tell that
   // apart from a real kill after the fact. Holding the display on removes the confound at the source
   // rather than detecting it later.
-  useKeepAwake();
+  useScreenAwake();
 
   const [mode, setMode] = useState<Mode>("present");
   const [amp, setAmp] = useState<number>(1);
