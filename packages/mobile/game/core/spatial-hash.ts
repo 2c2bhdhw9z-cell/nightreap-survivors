@@ -38,7 +38,11 @@ export class SpatialHash {
   private readonly itemBucket: Int32Array;
   private readonly itemSlot: Int32Array;
   private itemCount = 0;
-  private built = false;
+  /**
+   * True once `build` has run this tick. Queries against an unbuilt table return nothing rather
+   * than stale results, and callers check this before doing collision work at all.
+   */
+  built = false;
 
   constructor(cellSize: number, capacity: number, bucketCount = 4096) {
     this.cellSize = cellSize;

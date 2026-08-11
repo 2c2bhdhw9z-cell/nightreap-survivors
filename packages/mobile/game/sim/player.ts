@@ -131,6 +131,22 @@ export class PlayerStore {
   /** True while the player is actually moving, so the renderer can pick idle vs walk. */
   readonly moving = new Int32Array(MAX_PLAYERS);
 
+  /**
+   * Aim direction as a unit vector — the last direction the player actually moved.
+   *
+   * Directional weapons fire along this rather than along the current stick, so letting go of the
+   * stick to dodge does not make a volley fire at nothing. It stays a unit vector at all times,
+   * including at spawn, so a weapon can divide by it without a zero check.
+   */
+  readonly aimX = new Float32Array(MAX_PLAYERS);
+  readonly aimY = new Float32Array(MAX_PLAYERS);
+
+  /**
+   * 1 for every player able to act this tick. Handed to the weapon store so a downed player's
+   * weapons go quiet without the weapon code needing to know what "downed" means.
+   */
+  readonly upright = new Uint8Array(MAX_PLAYERS);
+
   /** Revives left, per player. Seeded from `STAT.revives`, spent on death. */
   readonly revivesLeft = new Int32Array(MAX_PLAYERS);
 
@@ -188,6 +204,9 @@ export class PlayerStore {
       this.health[i] = maxHealth;
       this.state[i] = i < n ? PLAYER_STATE.alive : PLAYER_STATE.dead;
       this.facing[i] = FACING.south;
+      this.aimX[i] = 0;
+      this.aimY[i] = 1;
+      this.upright[i] = 1;
       this.invuln[i] = 0;
       this.downTicks[i] = 0;
       this.reviveTicks[i] = 0;
@@ -346,6 +365,7 @@ export class PlayerStore {
     for (let i = 0; i < n; i++) {
       this.prevX[i] = this.x[i];
       this.prevY[i] = this.y[i];
+      this.upright[i] = this.state[i] === PLAYER_STATE.alive ? 1 : 0;
 
       if (this.invuln[i] > 0) this.invuln[i]--;
 
@@ -373,6 +393,11 @@ export class PlayerStore {
         this.x[i] += mx * speed * TICK_SECONDS;
         this.y[i] += my * speed * TICK_SECONDS;
         this.facing[i] = facingFor(mx, my, this.facing[i] as Facing);
+        const len = Math.hypot(mx, my);
+        if (len > 0.0001) {
+          this.aimX[i] = mx / len;
+          this.aimY[i] = my / len;
+        }
       }
       this.animTicks[i]++;
 

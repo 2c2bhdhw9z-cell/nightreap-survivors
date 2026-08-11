@@ -649,3 +649,47 @@ moves the player, which lands in the state hash), and `EnemyStore` gained a publ
 `neighbourScratch` so the player can ask the grid for nearby bodies without allocating.
 
 Perf: 4 players + 800 enemies, 3600 ticks — 24us per tick, 0.0KB heap growth.
+
+## Floor, weapons and projectiles — 2026-08-11 (session 7)
+
+### The ground under the player
+The stage floor is now drawn as tiles that repeat, with scenery (bones, stones, cracks) scattered
+through them by a rule instead of by hand. Two things matter about it:
+ - Walking a long way costs nothing extra. Half a million pixels from the spawn point draws exactly
+   the same number of tiles as standing still — 264. The floor can never be the reason a run slows
+   down late.
+ - Real bug found: the tile the player spawns on was always the same variant in every single run.
+   The scatter rule returned "zero" for that one spot, which the rule then treated as "always the
+   first tile". Fixed, so spawn now looks as varied as everywhere else.
+
+### Six weapons, one machine
+Whips, homing knives, a fan of bolts, a thrown axe, an orbiting tome and a damage aura are now all
+running off the same shared piece of code. Adding weapon seven costs a row of numbers, not new code.
+Levelling a weapon edits those numbers, and player upgrades (might, area, cooldown, extra
+projectiles, pierce, duration, speed) edit them again on the way out — so a might upgrade strengthens
+weapons you already own, which is the whole feeling of the genre.
+
+### Real bug found, and it was a bad one
+Re-ticking shapes started their damage clock at the full interval. The whip lives for exactly one
+interval, so it expired one tick before its turn ever came — it swung, looked perfect, and dealt
+literally zero damage. Nothing crashed and nothing logged; the weapon was purely cosmetic. Fixed so
+these shapes damage on the first tick they exist and then on the interval. Also removed a
+double-count that was quietly giving three weapons far more pierce than their numbers said.
+
+### What the new self-test proves (50 checks, all passing)
+All six weapon types actually damage enemies; a piercing shot cannot hit the same enemy twice on one
+pass; pierce is a budget that runs out; more enemies than the memory holds degrades to re-hitting
+instead of crashing; an aura damages immediately then exactly on its interval and does no crowd
+lookups in between (garlic on screen for a whole run is the most expensive mistake available here);
+refreshing an aura adopts new numbers without delaying damage already in flight; boomerangs turn
+around at half-life and get a second hit; axes fall under gravity; two orbiters sit opposite each
+other and follow a moving player; the whip alternates sides and hits both at once once levelled;
+every damage number is a whole number of at least one; the same seed produces identical combat and a
+different seed does not; guaranteed crits crit and no-crit weapons never do; heavy enemies ignore
+knockback; a downed player fires nothing but comes straight back into the fight on rescue; running
+out of room for shots or damage numbers degrades quietly instead of throwing.
+
+Performance, 800 enemies with all six weapons maxed: 45us per tick and zero allocation over 1800
+ticks. The frame budget is 16,667us.
+
+Suite status: 493 checks across 10 files, all green. typecheck and lint clean.
