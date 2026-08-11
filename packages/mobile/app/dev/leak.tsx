@@ -15,6 +15,12 @@
  *   present : clear + endFrameEXP. No buffers, no draws, no uploads. The absolute floor.
  *   draw    : static geometry uploaded once, then drawElements every frame. No per-frame upload.
  *   upload  : bufferSubData every frame, then drawElements. The real batcher's pattern.
+ *   layers  : five uniform2f camera writes per frame, each followed by its own drawElements.
+ *
+ * `layers` was added after present/draw/upload all survived 32-35 minutes on an iPhone 17 Pro Max
+ * while the real bench died at 844s. Those three modes never touch a uniform, but the renderer
+ * rewrites the camera uniform once per layer — five times a frame — which makes uniform marshalling
+ * the last untested difference between the harness that lives and the bench that dies.
  *
  * HOW TO READ THE RESULT
  *   - `present` dies too            -> the leak is inside expo-gl's frame presentation. Not fixable
@@ -40,8 +46,14 @@ import { FlightRecorder, summariseFlight, type FlightLog } from "@/game/bench/fl
 import { compileSpriteProgram } from "@/game/render/shader";
 import { Palette } from "@/constants/theme";
 
-type Mode = "present" | "draw" | "upload";
-const MODES: Mode[] = ["present", "draw", "upload"];
+type Mode = "present" | "draw" | "upload" | "layers";
+const MODES: Mode[] = ["present", "draw", "upload", "layers"];
+
+/**
+ * Layer switches per frame in `layers` mode, matching the renderer's real stack: five world/screen
+ * layers, each costing one `uniform2f` camera write plus its own `drawElements`.
+ */
+const LAYERS_PER_FRAME = 5;
 const AMPS = [1, 4, 16] as const;
 
 /** 2,000 quads is enough geometry to be representative without being the thing under test. */
@@ -172,7 +184,12 @@ export default function Leak() {
         const currentMode = mode;
         const currentAmp = amp;
         const perFrameBytes = currentMode === "upload" ? byteLength * currentAmp : 0;
-        const perFrameCalls = currentMode === "present" ? 0 : currentAmp;
+        const perFrameCalls =
+          currentMode === "present"
+            ? 0
+            : currentMode === "layers"
+              ? currentAmp * LAYERS_PER_FRAME
+              : currentAmp;
         setBytesPerFrame(perFrameBytes);
         setCallsPerFrame(perFrameCalls);
 
@@ -203,7 +220,16 @@ export default function Leak() {
 
           gl.clear(gl.COLOR_BUFFER_BIT);
 
-          if (currentMode !== "present") {
+          if (currentMode === "layers") {
+            // Camera uniform rewritten per layer, exactly as Renderer.layer() does. The value
+            // changes every frame so the driver cannot short-circuit a redundant upload.
+            for (let i = 0; i < currentAmp; i++) {
+              for (let l = 0; l < LAYERS_PER_FRAME; l++) {
+                gl.uniform2f(prog.uCamera, (frameCount + l) % 64, l * 8);
+                gl.drawElements(gl.TRIANGLES, QUADS * 6, gl.UNSIGNED_SHORT, 0);
+              }
+            }
+          } else if (currentMode !== "present") {
             for (let i = 0; i < currentAmp; i++) {
               if (currentMode === "upload") {
                 gl.bufferSubData(gl.ARRAY_BUFFER, 0, upload);
@@ -226,7 +252,7 @@ export default function Leak() {
             lastFlight = t;
             recorder.push({
               t: secs,
-              quads: currentMode === "present" ? 0 : QUADS * currentAmp,
+              quads: currentMode === "present" ? 0 : QUADS * perFrameCalls,
               tick: secs * 60,
               frames: frameCount,
               p50: secs > 0 ? (secs * 1000) / frameCount : 0,

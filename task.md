@@ -250,3 +250,48 @@ Decision table:
 
 **Gate A remains UNDECIDED and the REVVL warm number is still the actual gate.** iPhone is the feel
 target only.
+
+## Leak isolation results — 2026-08-11 (session 4)
+
+Three trials on iPhone 17 Pro Max, all ARMED and left running. **None died.**
+
+| mode | amp | lifetime | frames | upload | draws |
+|---|---|---|---|---|---|
+| upload | ×16 | 35m09s alive | 126,596 | 2000KB/frame | 16 |
+| draw | ×16 | 35m03s alive | 126,335 | 0KB/frame | 16 |
+| present | ×1 | 32m42s alive | 118,122 | 0KB/frame | 0 |
+
+→ expo-gl frame presentation, draw-call submission, and dynamic buffer uploads are all
+**CLEARED**. The bench died at 844s; these ran 2.3–2.5× longer at 16× the work.
+**Skia pivot is NOT triggered by this.** Gate A is still undecided on perf grounds only.
+
+### JS heap proven flat
+`/tmp/heapwatch.py` ran the real `/dev/bench` in Chrome+SwiftShader, 1000 preset,
+6 minutes / 11,033 frames. `usedJSHeapSize` sawtoothed 15.55–19.37MB, `totalJSHeapSize`
+pinned ~26.31MB. Net **-0.09MB/min**, **-53.4 bytes/frame**, `ERRORS: none`.
+→ **No JS leak.** The 844s kill is native-side memory, not Hermes heap.
+
+### Elimination table
+| suspect | verdict | evidence |
+|---|---|---|
+| sim logic / entity drift | clean | 72k-tick headless soak, heapGrowth=0KB |
+| vertex volume | clean | upload ×16 = 2MB/frame for 35 min |
+| draw-call count | clean | draw ×16 = 35 min |
+| expo-gl presentation | clean | present ×1 = 32 min |
+| JS heap | clean | -53.4 bytes/frame over 11k frames |
+| `subarray` per flush | FIXED | `uploadView()` pow2 cache; lifetime 570s → 844s |
+| uniform write marshalling | **UNTESTED** | new `layers` mode, 5 uniform2f/layer ×amp |
+
+### Next instrument: `layers` mode
+Only remaining difference between the surviving harness and the dying bench:
+the harness never writes a uniform, but `Renderer.layer()` calls `batch.setCamera()`
+→ `gl.uniform2f` 5× per frame. `layers` mode does `uniform2f` + `drawElements` per
+layer, `LAYERS_PER_FRAME = 5`, camera value varies per frame so the driver cannot
+elide a redundant upload. Verified in SwiftShader: `layers ×16 · 80 draws/frame`.
+
+If `layers ×16` dies fast on device → uniform marshalling is the leak, fixed by
+caching the camera uniform and skipping redundant writes.
+If it survives ~35 min → bisect `bench.tsx` in place instead (toggles for SIM / HUD /
+HEARTBEAT / PANEL / RECORDER). Bench-only elements still untested: the real
+`createDebugAtlas` texture, 5,176 per-sprite JS `draw()`/`drawRotated()` calls, the
+synthetic HUD, and the 4×/sec React panel re-render.
