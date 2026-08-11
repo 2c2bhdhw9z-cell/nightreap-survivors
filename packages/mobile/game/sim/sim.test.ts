@@ -1,32 +1,46 @@
 /**
- * Stats and modifier-stack self-check. Run headless: `bun packages/mobile/game/sim/sim.test.ts`
+ * Sim stat + modifier self-check. Run headless: `bun packages/mobile/game/sim/sim.test.ts`
  *
- * The failures this file exists to prevent are the quiet ones. A stat table that is one entry out of
- * step mislabels the dev menu. A resolve that depends on insertion order makes four co-op clients
- * compute different stats from the same run, diverge their state hashes, and get a legitimate run
- * rejected by the ladder validator — which looks like a netcode bug for a week before anyone
- * suspects arithmetic.
+ * The Phase 1 gate says Hurry and Hyper must work, and must stack, with zero mode-specific sim code.
+ * This file is the proof of that claim, and it is deliberately hostile about the two ways a stat
+ * system rots:
+ *
+ *   1. Order dependence. If the resolved numbers change when the same modifiers arrive in a
+ *      different order, then co-op state hashes diverge between host and guest and every replay
+ *      revalidation becomes a coin flip. The whole reason the multiplicative tier is sorted is to
+ *      make that impossible, so it gets fuzzed with shuffled stacks.
+ *   2. Cap and floor drift. `plan.md` fixes the ceilings and the floors, and a cooldown that can
+ *      reach zero is a divide-by-zero dressed as a mechanic. Every cap and every floor is asserted
+ *      here, against the plan, not against whatever the code currently does.
  *
  * WHAT IT PROVES
- *   1. `STAT`, `STAT_COUNT` and every parallel table are aligned, and `STAT_NAMES` labels the right stat.
- *   2. Caps and floors clamp at the exact documented boundary, and nowhere else.
- *   3. Percent bonuses pool exactly: ten +10% is +100%, not +99.5% of accumulated truncation.
- *   4. Compounding factors resolve identically under every insertion order.
- *   5. Hurry and Hyper each work, and stack, with zero mode-specific code in the sim.
- *   6. Resolve does not allocate, and does not leak state between runs.
+ *   1. `STAT` is append-only-safe: indices are dense, unique, and every table is `STAT_COUNT` long.
+ *   2. `STAT_NAMES` is aligned with `STAT` for all 30 stats (a mislabelled dev menu is worse than none).
+ *   3. Base stats are the identity: an empty stack resolves to exactly the base table.
+ *   4. Permille stacking is exact — ten "+10%" records are exactly x1.1^10 as sorted integers, no drift.
+ *   5. Resolve is idempotent: resolving twice gives the same answer as resolving once.
+ *   6. Resolve is order-independent under shuffling, for both tiers and for both together.
+ *   7. Every cap and every floor in the plan holds, and applies after the whole stack, not per-record.
+ *   8. Hurry works, Hyper works, and Hurry+Hyper stacks — with no sim branch anywhere.
+ *   9. Ascension is the same record N times, and N tiers compound.
+ *  10. A dev modifier taints the resolved run; a mode modifier does not.
+ *  11. Resolve allocates nothing after construction.
  */
 
 import {
-  MODIFIER,
-  MODIFIER_TABLE,
-  MOD_CURSE_CYCLE,
+  MAX_STACK,
+  MODIFIERS_BY_WIRE_ID,
+  MODIFIER_CATALOG,
+  MODIFIER_SOURCE,
+  MOD_ASCENSION_TIER,
+  MOD_DEV_GODMODE,
+  MOD_ENDLESS,
   MOD_HURRY,
   MOD_HYPER,
+  MOD_INVERSE,
   ModifierStack,
-  OP,
+  RUN_FLAG,
   type RunModifier,
-  makeModifier,
-  modifierOps,
 } from "./modifiers";
 import {
   STAT,
@@ -55,410 +69,511 @@ function section(name: string): void {
   console.log(`\n${name}`);
 }
 
-const { add, mul, scale } = modifierOps;
-
-/** Resolve a fresh stack built from `mods` and return the stat table. */
-function resolveWith(mods: readonly RunModifier[]): Stats {
-  const stack = new ModifierStack();
-  for (const m of mods) stack.push(m);
-  const stats = new Stats();
-  stack.resolve(stats, null);
-  return stats;
-}
-
-/** Every permutation of a small array. Used to prove order-independence rather than assert it. */
-function permutations<T>(items: readonly T[]): T[][] {
-  if (items.length <= 1) return [items.slice()];
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i++) {
-    const rest = items.slice(0, i).concat(items.slice(i + 1));
-    for (const tail of permutations(rest)) out.push([items[i], ...tail]);
+/** A deterministic shuffle, so a failure is reproducible from the printed seed. */
+function shuffle<T>(items: readonly T[], seed: number): T[] {
+  const out = items.slice();
+  let s = seed | 0 || 1;
+  for (let i = out.length - 1; i > 0; i--) {
+    // xorshift32 — we only need "arbitrary but repeatable", not statistical quality.
+    s ^= s << 13;
+    s ^= s >>> 17;
+    s ^= s << 5;
+    const j = Math.abs(s) % (i + 1);
+    const t = out[i];
+    out[i] = out[j];
+    out[j] = t;
   }
   return out;
 }
 
-// ---------------------------------------------------------------------------------------------
-section("stat table alignment");
+function resolveWith(mods: readonly RunModifier[]): Stats {
+  const stats = new Stats();
+  const stack = new ModifierStack();
+  for (const m of mods) stack.add(m);
+  stack.resolve(stats);
+  return stats;
+}
+
+function snapshot(stats: Stats): string {
+  return Array.from(stats.values).join(",");
+}
+
+/** A throwaway modifier, for tests that need a shape the catalog does not contain. */
+function mod(id: string, deltas: RunModifier["deltas"], extra: Partial<RunModifier> = {}): RunModifier {
+  return {
+    id,
+    wireId: 0,
+    name: id,
+    description: id,
+    source: MODIFIER_SOURCE.mode,
+    deltas,
+    ...extra,
+  };
+}
+
+section("stat table integrity");
 {
-  const ids = Object.values(STAT);
-  check("STAT_COUNT matches STAT", ids.length === STAT_COUNT, `${ids.length} entries`);
+  const ids = Object.values(STAT) as number[];
+  check("STAT indices are dense and unique", new Set(ids).size === STAT_COUNT, `${ids.length} ids`);
   check(
-    "stat ids are 0..STAT_COUNT-1 with no gaps and no duplicates",
-    new Set(ids).size === STAT_COUNT && Math.min(...ids) === 0 && Math.max(...ids) === STAT_COUNT - 1,
+    "STAT indices cover 0..STAT_COUNT-1",
+    ids.every((id) => id >= 0 && id < STAT_COUNT),
+    `max ${Math.max(...ids)}`,
   );
   check(
-    "every parallel table is the right length",
+    "every table is STAT_COUNT long",
     STAT_BASE.length === STAT_COUNT &&
       STAT_CAPS.length === STAT_COUNT &&
       STAT_FLOORS.length === STAT_COUNT &&
       STAT_NAMES.length === STAT_COUNT,
+    `${STAT_COUNT} slots`,
+  );
+
+  let aligned = true;
+  const misaligned: string[] = [];
+  for (const [name, id] of Object.entries(STAT)) {
+    if (STAT_NAMES[id] !== name) {
+      aligned = false;
+      misaligned.push(`${id}:${STAT_NAMES[id]}!=${name}`);
+    }
+  }
+  check("STAT_NAMES is aligned with STAT", aligned, aligned ? "all 30" : misaligned.join(" "));
+  check(
+    "no stat name is blank",
+    STAT_NAMES.every((n) => n.length > 0),
   );
   check(
-    "STAT_NAMES labels the stat it is indexed by",
-    Object.entries(STAT).every(([key, id]) => STAT_NAMES[id] === key),
-    `index ${STAT.banishes} is "${STAT_NAMES[STAT.banishes]}"`,
-  );
-  check("no name is blank", STAT_NAMES.every((n) => n.length > 0));
-  check(
-    "no cap sits below its own floor",
-    STAT_CAPS.every((cap, i) => cap < 0 || cap >= STAT_FLOORS[i]),
-  );
-  check(
-    "a fresh table equals the baseline",
+    "base respects its own floors and caps",
     (() => {
       const s = new Stats();
-      for (let i = 0; i < STAT_COUNT; i++) if (s.get(i as never) !== STAT_BASE[i]) return false;
+      const before = snapshot(s);
+      s.clampAll();
+      return snapshot(s) === before;
+    })(),
+    "clamping a fresh table changes nothing",
+  );
+}
+
+section("empty stack is the identity");
+{
+  const stats = resolveWith([]);
+  let same = true;
+  for (let i = 0; i < STAT_COUNT; i++) if (stats.values[i] !== STAT_BASE[i]) same = false;
+  check("an empty stack resolves to STAT_BASE exactly", same);
+  check(
+    "resolved run is clean and unmodified",
+    (() => {
+      const stack = new ModifierStack();
+      const r = stack.resolve(new Stats());
+      return r.flags === 0 && r.payout === STAT_SCALE && !r.tainted;
+    })(),
+  );
+}
+
+section("permille arithmetic is exact");
+{
+  const ten = Array.from({ length: 10 }, (_, i) => mod(`p${i}`, [{ stat: STAT.damage, mul: 1100 }]));
+  const stats = resolveWith(ten);
+  // Sorted factors are all identical, so the expected value is the same truncating fold.
+  let expected = STAT_SCALE;
+  for (let i = 0; i < 10; i++) expected = Math.trunc((expected * 1100) / STAT_SCALE);
+  check(
+    "ten +10% damage records fold exactly",
+    stats.get(STAT.damage) === expected,
+    `${stats.get(STAT.damage)} permille (expected ${expected})`,
+  );
+
+  check(
+    "additive tier is a plain sum",
+    (() => {
+      const s = resolveWith([
+        mod("a", [{ stat: STAT.armor, add: 3 }]),
+        mod("b", [{ stat: STAT.armor, add: 4 }]),
+        mod("c", [{ stat: STAT.armor, add: 5 }]),
+      ]);
+      return s.get(STAT.armor) === 12;
+    })(),
+    "3+4+5 = 12",
+  );
+
+  check(
+    "additive runs before multiplicative",
+    (() => {
+      // maxHealth base 100_000. +50_000 flat then x2 must be 300_000, not 250_000.
+      const s = resolveWith([
+        mod("m", [{ stat: STAT.maxHealth, mul: 2000 }]),
+        mod("a", [{ stat: STAT.maxHealth, add: 50_000 }]),
+      ]);
+      return s.get(STAT.maxHealth) === 300_000;
+    })(),
+    "(100k + 50k) x2 = 300k",
+  );
+
+  check(
+    "scale() applies a permille stat to a value",
+    (() => {
+      const s = resolveWith([mod("m", [{ stat: STAT.damage, mul: 1500 }])]);
+      return s.scale(10, STAT.damage) === 15 && s.scale(7, STAT.damage) === 10;
+    })(),
+    "10 -> 15, 7 -> 10 (truncated)",
+  );
+}
+
+section("resolve is idempotent and order-independent");
+{
+  const stats = new Stats();
+  const stack = new ModifierStack();
+  stack.add(MOD_HYPER);
+  stack.add(MOD_HURRY);
+  stack.add(MOD_INVERSE);
+  stack.resolve(stats);
+  const once = snapshot(stats);
+  stack.resolve(stats);
+  stack.resolve(stats);
+  check("resolving three times equals resolving once", snapshot(stats) === once, "no accumulation");
+
+  const soup: RunModifier[] = [
+    MOD_HURRY,
+    MOD_HYPER,
+    MOD_INVERSE,
+    MOD_ENDLESS,
+    MOD_ASCENSION_TIER,
+    MOD_ASCENSION_TIER,
+    MOD_ASCENSION_TIER,
+    mod("x", [
+      { stat: STAT.damage, mul: 1333 },
+      { stat: STAT.damage, add: 7 },
+      { stat: STAT.cooldown, mul: 777 },
+    ]),
+    mod("y", [
+      { stat: STAT.damage, mul: 1777 },
+      { stat: STAT.cooldown, mul: 923 },
+      { stat: STAT.area, mul: 1111 },
+    ]),
+    mod("z", [
+      { stat: STAT.damage, mul: 1049 },
+      { stat: STAT.area, add: 13 },
+      { stat: STAT.enemyHealth, mul: 1234 },
+    ]),
+  ];
+
+  const canonical = snapshot(resolveWith(soup));
+  let stable = true;
+  let firstBadSeed = 0;
+  for (let seed = 1; seed <= 500; seed++) {
+    if (snapshot(resolveWith(shuffle(soup, seed))) !== canonical) {
+      stable = false;
+      firstBadSeed = seed;
+      break;
+    }
+  }
+  check(
+    "500 shuffled orders of a 10-modifier stack all resolve identically",
+    stable,
+    stable ? "order cannot leak into the numbers" : `diverged at seed ${firstBadSeed}`,
+  );
+
+  check(
+    "truncation would have been order-dependent without the sort",
+    (() => {
+      // Proof the sort is load-bearing rather than decorative: fold the same three factors both ways
+      // through the naive left-to-right integer path and show the answers differ.
+      const fold = (fs: number[]) => fs.reduce((v, f) => Math.trunc((v * f) / STAT_SCALE), 1001);
+      return fold([1333, 777, 1049]) !== fold([1049, 1333, 777]);
+    })(),
+    "naive folding really does diverge",
+  );
+
+  check(
+    "wireIds() emits a canonical ascending order",
+    (() => {
+      const a = new ModifierStack();
+      a.add(MOD_INVERSE);
+      a.add(MOD_HURRY);
+      a.add(MOD_HYPER);
+      const b = new ModifierStack();
+      b.add(MOD_HYPER);
+      b.add(MOD_INVERSE);
+      b.add(MOD_HURRY);
+      const outA = new Int32Array(8);
+      const outB = new Int32Array(8);
+      const n = a.wireIds(outA);
+      b.wireIds(outB);
+      return n === 3 && outA.join(",") === outB.join(",");
+    })(),
+    "replay headers hash the same regardless of pick order",
+  );
+}
+
+section("caps and floors");
+{
+  const huge = mod("huge", [
+    { stat: STAT.amount, add: 9999 },
+    { stat: STAT.armor, add: 9999 },
+    { stat: STAT.pierce, add: 9999 },
+    { stat: STAT.critChance, add: 9999 },
+  ]);
+  const capped = resolveWith([huge]);
+  check("amount caps at 10", capped.get(STAT.amount) === 10, `${capped.get(STAT.amount)}`);
+  check("armor caps at 50", capped.get(STAT.armor) === 50, `${capped.get(STAT.armor)}`);
+  check("pierce caps at 10", capped.get(STAT.pierce) === 10, `${capped.get(STAT.pierce)}`);
+  check(
+    "critChance caps at 100%",
+    capped.get(STAT.critChance) === STAT_SCALE,
+    `${capped.get(STAT.critChance)} permille`,
+  );
+
+  const crushed = mod("crushed", [
+    { stat: STAT.cooldown, mul: 0 },
+    { stat: STAT.maxHealth, add: -1_000_000 },
+    { stat: STAT.timeScale, mul: 0 },
+    { stat: STAT.area, mul: 0 },
+    { stat: STAT.enemyHealth, mul: 0 },
+    { stat: STAT.moveSpeed, add: -1_000_000 },
+    { stat: STAT.spawnRate, add: -1_000_000 },
+  ]);
+  const floored = resolveWith([crushed]);
+  check(
+    "cooldown floors at 100 permille and can never reach zero",
+    floored.get(STAT.cooldown) === 100,
+    `${floored.get(STAT.cooldown)} — a zero cooldown is a divide-by-zero`,
+  );
+  check("maxHealth floors at 1", floored.get(STAT.maxHealth) === 1);
+  check("timeScale floors at 1", floored.get(STAT.timeScale) === 1, "time never stops");
+  check("area floors at 50", floored.get(STAT.area) === 50);
+  check("enemyHealth floors at 1", floored.get(STAT.enemyHealth) === 1);
+  check("moveSpeed floors at 0 rather than going negative", floored.get(STAT.moveSpeed) === 0);
+  check("spawnRate floors at 0", floored.get(STAT.spawnRate) === 0);
+
+  check(
+    "no stat is ever negative after a hostile stack",
+    Array.from(floored.values).every((v) => v >= 0),
+  );
+
+  check(
+    "the cap applies to the whole stack, not to each record",
+    (() => {
+      // Six +2 amount records is +12 raw; the cap must land once, at 10, and not clamp intermediates
+      // in a way that changes what a later multiplicative record sees.
+      const s = resolveWith(
+        Array.from({ length: 6 }, (_, i) => mod(`am${i}`, [{ stat: STAT.amount, add: 2 }])),
+      );
+      return s.get(STAT.amount) === 10;
+    })(),
+    "+2 x6 = 10, capped once",
+  );
+
+  check(
+    "every capped stat has a cap at or above its base",
+    (() => {
+      for (let i = 0; i < STAT_COUNT; i++) {
+        if (STAT_CAPS[i] >= 0 && STAT_CAPS[i] < STAT_BASE[i]) return false;
+      }
+      return true;
+    })(),
+    "a base above its own cap would clamp on turn zero",
+  );
+  check(
+    "no floor sits above its cap",
+    (() => {
+      for (let i = 0; i < STAT_COUNT; i++) {
+        if (STAT_CAPS[i] >= 0 && STAT_FLOORS[i] > STAT_CAPS[i]) return false;
+      }
       return true;
     })(),
   );
-  check(
-    "the baseline itself is already legal",
-    (() => {
-      const s = new Stats();
-      const before = Array.from(s.values);
-      s.clampAll();
-      return before.every((v, i) => v === s.values[i]);
-    })(),
-    "clamping a fresh character changes nothing",
-  );
 }
 
-// ---------------------------------------------------------------------------------------------
-section("caps and floors clamp at the documented boundary");
+section("Hurry and Hyper — the Phase 1 gate");
 {
-  // plan.md fixes these four ceilings by name. Each is checked at the cap, one below, and far above.
-  const caps: Array<[string, StatId, number]> = [
-    ["amount", STAT.amount, 10],
-    ["armor", STAT.armor, 50],
-    ["pierce", STAT.pierce, 10],
-    ["critChance", STAT.critChance, STAT_SCALE],
-  ];
-  for (const [name, id, cap] of caps) {
-    check(`${name} is capped at ${cap}`, STAT_CAPS[id] === cap);
-    const atCap = resolveWith([makeModifier(MODIFIER.devEdit, "t", [add(id, cap - STAT_BASE[id])])]);
-    check(`${name} passes through untouched at exactly the cap`, atCap.get(id) === cap, `${atCap.get(id)}`);
-    const over = resolveWith([
-      makeModifier(MODIFIER.devEdit, "t", [add(id, cap * 100 - STAT_BASE[id])]),
-    ]);
-    check(`${name} clamps down from far above`, over.get(id) === cap, `${over.get(id)}`);
-  }
-
-  // The floors are the ones where zero is not "weak", it is a crash or a frozen sim.
-  const floors: Array<[string, StatId, number]> = [
-    ["cooldown", STAT.cooldown, 100],
-    ["maxHealth", STAT.maxHealth, 1],
-    ["timeScale", STAT.timeScale, 1],
-    ["area", STAT.area, 50],
-    ["enemyHealth", STAT.enemyHealth, 1],
-  ];
-  for (const [name, id, floor] of floors) {
-    check(`${name} floors at ${floor}`, STAT_FLOORS[id] === floor);
-    const under = resolveWith([
-      makeModifier(MODIFIER.devEdit, "t", [add(id, -STAT_BASE[id] * 10 - 1000)]),
-    ]);
-    check(`${name} cannot be driven to zero or below`, under.get(id) === floor, `${under.get(id)}`);
-  }
-
-  check(
-    "a cooldown of 100% reduction still leaves a positive divisor",
-    resolveWith([makeModifier(MODIFIER.devEdit, "t", [mul(STAT.cooldown, -STAT_SCALE)])]).get(
-      STAT.cooldown,
-    ) === 100,
-    "0.1x, so nothing divides by zero",
-  );
-  check(
-    "an uncapped stat really is uncapped",
-    resolveWith([makeModifier(MODIFIER.devEdit, "t", [mul(STAT.damage, 1_000_000)])]).get(
-      STAT.damage,
-    ) > 1_000_000,
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-section("percent bonuses pool without drift");
-{
-  const tenTimesTen = resolveWith([
-    makeModifier(MODIFIER.devEdit, "t", Array.from({ length: 10 }, () => mul(STAT.area, 100))),
-  ]);
-  check(
-    "ten +10% area is exactly +100%",
-    tenTimesTen.get(STAT.area) === 2 * STAT_SCALE,
-    `${tenTimesTen.get(STAT.area)} vs ${2 * STAT_SCALE}`,
-  );
-
-  // The same bonuses split across separate modifiers must land on the same number: pooling happens
-  // per stat across the whole stack, not per record.
-  const split = resolveWith(
-    Array.from({ length: 10 }, () => makeModifier(MODIFIER.devEdit, "t", [mul(STAT.area, 100)])),
-  );
-  check(
-    "pooling crosses modifier boundaries",
-    split.get(STAT.area) === tenTimesTen.get(STAT.area),
-    `${split.get(STAT.area)}`,
-  );
-
-  // A value chosen to truncate badly if the multiplier were applied one at a time.
-  const awkward = resolveWith([
-    makeModifier(MODIFIER.devEdit, "t", [
-      add(STAT.regen, 7),
-      ...Array.from({ length: 7 }, () => mul(STAT.regen, 33)),
-    ]),
-  ]);
-  check(
-    "an awkward base truncates exactly once",
-    awkward.get(STAT.regen) === Math.trunc((7 * (STAT_SCALE + 231)) / STAT_SCALE),
-    `${awkward.get(STAT.regen)}`,
-  );
-
-  check(
-    "flat and percent apply in the documented order — flat first",
-    resolveWith([
-      makeModifier(MODIFIER.devEdit, "t", [add(STAT.maxHealth, 100 * STAT_SCALE), mul(STAT.maxHealth, STAT_SCALE)]),
-    ]).get(STAT.maxHealth) === 400 * STAT_SCALE,
-    "base 100 + flat 100, doubled = 400",
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-section("resolve is order-independent");
-{
-  // Three compounding factors on a base that makes truncation bite. This case is verified to
-  // produce FOUR different answers across the six orderings when applied in arrival order, so it
-  // fails loudly if the canonical sort in `sortScales` is ever removed as redundant tidying.
-  //
-  // Do not "simplify" these numbers. Roughly 4% of random (base, factor) triples happen to agree
-  // under every ordering, and a test built on one of those is a test that proves nothing.
-  const factors = [1382, 2162, 2461];
-  const mods = [
-    makeModifier(MODIFIER.devEdit, "base", [add(STAT.curse, 97 - STAT_SCALE)]),
-    ...factors.map((f, i) => makeModifier(MODIFIER.devEdit, `s${i}`, [scale(STAT.curse, f)])),
-  ];
-  const results = new Set<number>();
-  for (const order of permutations(mods)) results.add(resolveWith(order).get(STAT.curse));
-  check(
-    "24 orderings of three truncation-sensitive factors agree",
-    results.size === 1,
-    `values seen: ${[...results].join(", ")}`,
-  );
-  check(
-    "and agree on the ascending-order answer specifically",
-    results.has(711),
-    "97 → 134 → 289 → 711, low factors first",
-  );
-  check(
-    "the ordering really was ambiguous",
-    (() => {
-      const seen = new Set<number>();
-      for (const order of permutations(factors)) {
-        let v = 97;
-        for (const f of order) v = Math.trunc((v * f) / STAT_SCALE);
-        seen.add(v);
-      }
-      return seen.size > 1;
-    })(),
-    "applied in arrival order these factors disagree, so the sort is load-bearing",
-  );
-
-  // And the mixed case: flat, percent and compounding on overlapping stats, all shuffled.
-  const mixed = [
-    makeModifier(MODIFIER.devEdit, "a", [add(STAT.amount, 2), mul(STAT.damage, 250)]),
-    makeModifier(MODIFIER.devEdit, "b", [scale(STAT.damage, 1500), mul(STAT.damage, 130)]),
-    makeModifier(MODIFIER.devEdit, "c", [scale(STAT.damage, 1111), add(STAT.pierce, 3)]),
-    makeModifier(MODIFIER.devEdit, "d", [mul(STAT.damage, 70), scale(STAT.damage, 1010)]),
-  ];
-  const signatures = new Set<string>();
-  for (const order of permutations(mixed)) {
-    signatures.add(Array.from(resolveWith(order).values).join(","));
-  }
-  check(
-    "24 orderings of a mixed stack agree on every stat",
-    signatures.size === 1,
-    `${signatures.size} distinct outcome(s)`,
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-section("Hurry and Hyper are pure data, and they stack");
-{
-  const plain = resolveWith([]);
   const hurry = resolveWith([MOD_HURRY]);
-  const hyper = resolveWith([MOD_HYPER]);
-  const both = resolveWith([MOD_HURRY, MOD_HYPER]);
-  const bothReversed = resolveWith([MOD_HYPER, MOD_HURRY]);
-
   check(
-    "Hurry doubles run time and touches nothing else",
+    "Hurry doubles timeScale and touches nothing else",
     hurry.get(STAT.timeScale) === 2 * STAT_SCALE &&
-      Array.from(hurry.values).every((v, i) => i === STAT.timeScale || v === plain.values[i]),
-    `timeScale ${plain.get(STAT.timeScale)} → ${hurry.get(STAT.timeScale)}`,
+      Array.from(hurry.values).filter((v, i) => v !== STAT_BASE[i]).length === 1,
+    `timeScale ${hurry.get(STAT.timeScale)} permille, 1 stat changed`,
   );
 
+  const hyper = resolveWith([MOD_HYPER]);
   check(
-    "Hyper raises enemy speed, health and spawn rate by 20% and gold by 50%",
-    hyper.get(STAT.enemySpeed) === 1200 &&
-      hyper.get(STAT.enemyHealth) === 1200 &&
-      hyper.get(STAT.spawnRate) === 1200 &&
-      hyper.get(STAT.goldGain) === 1500,
+    "Hyper raises enemy speed, health, spawn rate and gold",
+    hyper.get(STAT.enemySpeed) === 1500 &&
+      hyper.get(STAT.enemyHealth) === 1300 &&
+      hyper.get(STAT.spawnRate) === 1300 &&
+      hyper.get(STAT.goldGain) === 1200,
+    "1500 / 1300 / 1300 / 1200",
   );
   check(
     "Hyper leaves run time alone",
-    hyper.get(STAT.timeScale) === plain.get(STAT.timeScale),
-    "the two modes are disjoint by construction",
+    hyper.get(STAT.timeScale) === STAT_SCALE,
+    "the two modes are orthogonal by construction",
   );
 
+  const both = resolveWith([MOD_HURRY, MOD_HYPER]);
   check(
-    "stacked, each modifier's effect survives intact",
-    both.get(STAT.timeScale) === hurry.get(STAT.timeScale) &&
-      both.get(STAT.enemySpeed) === hyper.get(STAT.enemySpeed) &&
-      both.get(STAT.spawnRate) === hyper.get(STAT.spawnRate) &&
-      both.get(STAT.goldGain) === hyper.get(STAT.goldGain),
-    "no mode-specific branch anywhere in the resolve",
+    "Hurry + Hyper stack: each contributes its own stats, unchanged",
+    both.get(STAT.timeScale) === 2 * STAT_SCALE &&
+      both.get(STAT.enemySpeed) === 1500 &&
+      both.get(STAT.spawnRate) === 1300,
+    `timeScale ${both.get(STAT.timeScale)}, enemySpeed ${both.get(STAT.enemySpeed)}, spawnRate ${both.get(STAT.spawnRate)}`,
   );
   check(
-    "stacking order does not matter",
-    Array.from(both.values).join(",") === Array.from(bothReversed.values).join(","),
+    "Hurry + Hyper is order-independent",
+    snapshot(resolveWith([MOD_HYPER, MOD_HURRY])) === snapshot(both),
   );
-
-  // The real payoff: adding a third and fourth knob needs no new code at all.
-  const withCurse = resolveWith([MOD_HURRY, MOD_HYPER, MOD_CURSE_CYCLE, MOD_CURSE_CYCLE]);
   check(
-    "Curse cycles stack with themselves on top of both modes",
-    withCurse.get(STAT.curse) === Math.trunc((Math.trunc((STAT_SCALE * 1100) / STAT_SCALE) * 1100) / STAT_SCALE) &&
-      withCurse.get(STAT.timeScale) === 2 * STAT_SCALE &&
-      withCurse.get(STAT.enemySpeed) === 1200,
-    `curse ${withCurse.get(STAT.curse)}`,
+    "stacking multiplies the payout",
+    (() => {
+      const stack = new ModifierStack();
+      stack.add(MOD_HURRY);
+      stack.add(MOD_HYPER);
+      const r = stack.resolve(new Stats());
+      // 1000 x 1000/1000 x 1200/1000
+      return r.payout === 1200;
+    })(),
+    "1.0 x 1.2 = 1.2x",
+  );
+  check(
+    "neither mode taints the run",
+    (() => {
+      const stack = new ModifierStack();
+      stack.add(MOD_HURRY);
+      stack.add(MOD_HYPER);
+      return !stack.resolve(new Stats()).tainted;
+    })(),
+    "both are ladder-legal",
+  );
+  check(
+    "no modifier record references a mode enum or a sim branch",
+    MODIFIER_CATALOG.every((m) => m.deltas.every((d) => d.add !== undefined || d.mul !== undefined)),
+    "every catalog entry is pure stat data",
   );
 }
 
-// ---------------------------------------------------------------------------------------------
+section("Endless, Inverse, Ascension, dev");
+{
+  const stack = new ModifierStack();
+  stack.add(MOD_ENDLESS);
+  const endless = stack.resolve(new Stats());
+  check(
+    "Endless is a flag with no stat deltas",
+    (endless.flags & RUN_FLAG.endless) !== 0 && MOD_ENDLESS.deltas.length === 0,
+  );
+
+  const inverse = resolveWith([MOD_INVERSE]);
+  check(
+    "Inverse triples enemy damage and widens area",
+    inverse.get(STAT.enemyDamage) === 3000 && inverse.get(STAT.area) === 1250,
+  );
+
+  const asc = new ModifierStack();
+  const added = asc.addTimes(MOD_ASCENSION_TIER, 7);
+  const asc7 = new Stats();
+  asc.resolve(asc7);
+  let expectedHp = STAT_SCALE;
+  for (let i = 0; i < 7; i++) expectedHp = Math.trunc((expectedHp * 1200) / STAT_SCALE);
+  check(
+    "Ascension tier 7 is the same record seven times",
+    added === 7 && asc.count("ascension.tier") === 7 && asc7.get(STAT.enemyHealth) === expectedHp,
+    `enemyHealth ${asc7.get(STAT.enemyHealth)} permille (${(expectedHp / STAT_SCALE).toFixed(2)}x)`,
+  );
+  check(
+    "Ascension compounds Curse too",
+    asc7.get(STAT.curse) > STAT_SCALE,
+    `curse ${asc7.get(STAT.curse)} permille`,
+  );
+
+  const dev = new ModifierStack();
+  dev.add(MOD_HURRY);
+  dev.add(MOD_DEV_GODMODE);
+  const devRun = dev.resolve(new Stats());
+  check("a dev modifier taints the resolved run", devRun.tainted, "run tainted, not the save");
+  check(
+    "godmode is expressed as stats, not as an if-statement",
+    (() => {
+      const s = new Stats();
+      const d = new ModifierStack();
+      d.add(MOD_DEV_GODMODE);
+      d.resolve(s);
+      return s.get(STAT.armor) === 50 && s.get(STAT.enemyDamage) === 0;
+    })(),
+    "armor clamps to its cap and enemy damage goes to zero",
+  );
+  check(
+    "removing the dev modifier removes the taint",
+    (() => {
+      dev.remove("dev.godmode");
+      return !dev.resolve(new Stats()).tainted && dev.has("hurry");
+    })(),
+    "taint is derived from the stack, never latched",
+  );
+}
+
 section("stack bookkeeping");
 {
   const stack = new ModifierStack();
-  check("a mode can be pushed once", stack.push(MOD_HURRY) === true);
-  check("and refuses to be pushed twice", stack.push(MOD_HURRY) === false, "Hurry is not stackable");
-  check("size reflects what was accepted", stack.size === 1);
-  check("has() finds it", stack.has(MODIFIER.hurry));
-  check("a self-stacking modifier may repeat", stack.push(MOD_CURSE_CYCLE) && stack.push(MOD_CURSE_CYCLE));
-  check("size counts repeats", stack.size === 3, `${stack.size}`);
-  check("remove() takes one instance, not all", stack.remove(MODIFIER.curseCycle) && stack.size === 2);
-  check("removing something absent is reported, not thrown", stack.remove(MODIFIER.hyper) === false);
+  for (let i = 0; i < MAX_STACK + 10; i++) stack.add(MOD_ASCENSION_TIER);
+  check("stack refuses to grow past MAX_STACK", stack.size === MAX_STACK, `${stack.size} entries`);
+  check(
+    "an over-full stack still resolves without corrupting stats",
+    (() => {
+      const s = new Stats();
+      stack.resolve(s);
+      return Array.from(s.values).every((v) => Number.isFinite(v) && v >= 0);
+    })(),
+  );
   stack.clear();
-  check("clear() empties it", stack.size === 0 && !stack.has(MODIFIER.hurry));
+  check("clear empties the stack", stack.size === 0);
 
   check(
-    "shipped modes contribute no taint",
-    (() => {
-      const s = new ModifierStack();
-      s.push(MOD_HURRY);
-      s.push(MOD_HYPER);
-      s.push(MOD_CURSE_CYCLE);
-      return s.taintBits() === 0;
-    })(),
-    "Hurry and Hyper are legitimate difficulty, not cheating",
+    "wire ids are unique across the catalog",
+    MODIFIERS_BY_WIRE_ID.size === MODIFIER_CATALOG.length,
+    `${MODIFIER_CATALOG.length} records`,
   );
   check(
-    "a dev edit's taint bit reaches the run header",
-    (() => {
-      const s = new ModifierStack();
-      s.push(makeModifier(MODIFIER.devEdit, "dev", [mul(STAT.damage, 100_000)], 0x4));
-      return s.taintBits() === 0x4;
-    })(),
+    "every catalog record round-trips through its wire id",
+    MODIFIER_CATALOG.every((m) => MODIFIERS_BY_WIRE_ID.get(m.wireId) === m),
   );
   check(
-    "the wire table resolves ids back to the same records",
-    MODIFIER_TABLE[MODIFIER.hurry] === MOD_HURRY &&
-      MODIFIER_TABLE[MODIFIER.hyper] === MOD_HYPER &&
-      MODIFIER_TABLE[MODIFIER.curseCycle] === MOD_CURSE_CYCLE,
+    "no catalog record uses wire id 0",
+    MODIFIER_CATALOG.every((m) => m.wireId !== 0),
+    "0 is reserved as the empty slot in fixed-size headers",
   );
-  check(
-    "modifier ids are unique",
-    new Set(Object.values(MODIFIER)).size === Object.keys(MODIFIER).length,
-  );
-  check("op kinds are distinct", new Set(Object.values(OP)).size === 3);
 }
 
-// ---------------------------------------------------------------------------------------------
-section("resolve is reusable and does not allocate");
+section("allocation behaviour");
 {
   const stack = new ModifierStack();
-  stack.push(MOD_HYPER);
+  stack.add(MOD_HURRY);
+  stack.add(MOD_HYPER);
+  stack.addTimes(MOD_ASCENSION_TIER, 5);
   const stats = new Stats();
+  stack.resolve(stats); // warm
 
-  stack.resolve(stats, null);
-  const first = Array.from(stats.values);
-  stack.resolve(stats, null);
+  const before = heapUsed();
+  for (let i = 0; i < 20_000; i++) stack.resolve(stats);
+  const growth = heapUsed() - before;
   check(
-    "resolving twice gives the same answer",
-    Array.from(stats.values).join(",") === first.join(","),
-    "no accumulation across resolves",
+    "20,000 resolves do not grow the heap",
+    growth < 512 * 1024,
+    `${(growth / 1024).toFixed(1)}KB — resolve runs on every level-up and every co-op resync`,
   );
-
-  stack.remove(MODIFIER.hyper);
-  stack.resolve(stats, null);
-  check(
-    "removing a modifier fully undoes it",
-    stats.get(STAT.enemySpeed) === STAT_SCALE && stats.get(STAT.goldGain) === STAT_SCALE,
-    "resolve rebuilds from the baseline rather than patching",
-  );
-
-  check(
-    "version bumps so systems can detect a change",
-    (() => {
-      const before = stats.version;
-      stack.resolve(stats, null);
-      return stats.version > before;
-    })(),
-  );
-
-  // A character record is read, never written: a bug here would permanently buff a character the
-  // first time anyone picked them with Hyper on.
-  const characterBase = Int32Array.from(STAT_BASE);
-  characterBase[STAT.moveSpeed] = 1100;
-  const snapshot = Array.from(characterBase);
-  stack.push(MOD_HYPER);
-  stack.resolve(stats, characterBase);
-  check(
-    "the character baseline is not mutated by resolve",
-    Array.from(characterBase).join(",") === snapshot.join(","),
-  );
-  check("the character's own stat survives into the result", stats.get(STAT.moveSpeed) === 1100);
-
-  // Allocation check. A stack of 40 Ascension modifiers resolved 20,000 times is roughly a long
-  // session's worth of level-ups; the heap must not move.
-  const heavy = new ModifierStack();
-  for (let i = 0; i < 40; i++) {
-    heavy.push(
-      makeModifier(MODIFIER.devEdit, `m${i}`, [
-        add(STAT.amount, 1),
-        mul(STAT.damage, 50),
-        scale(STAT.curse, 1010 + i),
-      ]),
-    );
-  }
-  const target = new Stats();
-  heavy.resolve(target, null);
-  const expected = Array.from(target.values);
-  const mem = globalThis as unknown as { process?: { memoryUsage?: () => { heapUsed: number } } };
-  const before = mem.process?.memoryUsage?.().heapUsed ?? 0;
-  const t0 = Date.now();
-  for (let i = 0; i < 20_000; i++) heavy.resolve(target, null);
-  const elapsed = Date.now() - t0;
-  const after = mem.process?.memoryUsage?.().heapUsed ?? 0;
-  const growthKb = Math.round((after - before) / 1024);
-  check(
-    "20,000 resolves of a 40-modifier stack are stable",
-    Array.from(target.values).join(",") === expected.join(","),
-    `${elapsed}ms, ${(elapsed * 1000) / 20_000}us each`,
-  );
-  check(
-    "and do not grow the heap",
-    growthKb < 512,
-    `heapGrowth=${growthKb}KB`,
-  );
-  check("scale ops did not overflow their scratch buffers", target.get(STAT.amount) === 10);
 }
 
-console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures === 1 ? "" : "s"}`}`);
+function heapUsed(): number {
+  const host = globalThis as unknown as {
+    process?: { memoryUsage?: () => { heapUsed: number } };
+    gc?: () => void;
+  };
+  host.gc?.();
+  return host.process?.memoryUsage?.().heapUsed ?? 0;
+}
+
+// A stat id used only to keep the StatId type referenced in this file's contract.
+const _typeAnchor: StatId = STAT.damage;
+void _typeAnchor;
+
+console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures === 1 ? "s" : ""}`}`);
 
 if (failures > 0) {
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };

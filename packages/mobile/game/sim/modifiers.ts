@@ -1,291 +1,407 @@
 /**
- * The run modifier stack.
+ * Run modifiers — the only mechanism by which a "game mode" exists.
  *
- * WHY THIS EXISTS IN PHASE 1 RATHER THAN WHENEVER MODES SHIP
- * Every game mode in the plan — Hurry, Hyper, Endless, Inverse, Limit Break, daily seeds, the weekly
- * mutator, and all of Ascension — is a difficulty knob. The tempting shape is `if (mode === HYPER)`
- * sprinkled through the spawner and the enemy tick. That shape is a dead end: it makes modes
- * mutually exclusive, it makes Ascension (which is *dozens* of stacked knobs) unimplementable, and
- * it means the netcode and the replay validator have to agree on a mode enum that keeps growing.
+ * WHY THE SIM HAS NO MODE ENUM
+ * Every mode in the catalog (Hurry, Hyper, Endless, Inverse, Limit Break, Ascension tiers, the
+ * Chaos Sandbox event, daily mutators shipped from remote config) is expressible as "these stats
+ * are different for this run". The moment the sim asks `if (mode === HYPER)`, every future mode
+ * costs another branch in the hottest loops and every combination of modes becomes a new bug
+ * surface. So modes are *data*: a list of `RunModifier` records that resolve into the flat `Stats`
+ * table once, at run start and at each level-up, and the sim only ever reads `Stats`.
  *
- * So the sim never learns what a mode is. It only reads stats. A mode is a `RunModifier` — a data
- * record listing stat operations — and a run carries a *stack* of them. Hurry and Hyper stack
- * because nothing in the sim knows they are different kinds of thing.
+ * That is what makes stacking free. Hurry + Hyper + Ascension 7 + a weekly mutator is a
+ * four-element array, not sixteen code paths.
  *
- * WHY THREE TIERS
- * Resolution must be order-independent: the replay validator and four co-op clients may hold the
- * same modifiers in different insertion orders, and if the resolved stats differ by one permille the
- * state hashes diverge and a legitimate run gets rejected. So:
+ * WHY RESOLUTION IS TWO TIERS
+ * Additive first, then multiplicative. If they interleaved, "+10 armor" would be worth more or less
+ * depending on where in the list it happened to sit, and card-draw order would leak into the final
+ * numbers. Two tiers means a modifier author can reason about their record in isolation.
  *
- *   1. `add`   — flat integer sums. Commutative by construction.
- *   2. `mul`   — percent bonuses. Summed into one permille delta *before* being applied, so ten
- *                "+10%" are exactly "+100%" with no intermediate truncation to accumulate.
- *   3. `scale` — true compounding multipliers (Curse, Ascension tiers). Integer truncation makes
- *                these order-*dependent*, so they are sorted into a canonical order before applying
- *                rather than trusted to arrive consistently.
- *
- * Then, and only then, the caps and floors in `stats.ts` are applied once.
+ * WHY THE MULTIPLICATIVE TIER IS SORTED
+ * Integer permille multiplication truncates, and truncation is not commutative:
+ * `trunc(trunc(1000 * 1500/1000) * 1333/1000)` is not always `trunc(trunc(1000 * 1333/1000) *
+ * 1500/1000)`. Rather than accept float accumulation (which breaks cross-device state hashing) or a
+ * single wide product (which overflows past a handful of modifiers), the factors for each stat are
+ * sorted into a canonical ascending order before being applied. Insertion order then cannot change
+ * the result, which is exactly the property replay revalidation and co-op state hashing need.
  */
 
-import { STAT, STAT_BASE, STAT_COUNT, STAT_SCALE, type StatId, type Stats } from "./stats";
+import { STAT, STAT_SCALE, STAT_COUNT, type StatId, type Stats } from "./stats";
 
-/** How a modifier operation combines with what is already there. */
-export const OP = {
-  /** Add a flat amount to the stat. `+1 amount`, `+50 maxHealth`. */
-  add: 0,
-  /** Add a percent bonus, in permille. Pooled additively with every other `mul` on the same stat. */
-  mul: 1,
-  /** Compounding multiplier, in permille. Applied after all `mul`, in canonical order. */
-  scale: 2,
-} as const;
-
-export type OpKind = (typeof OP)[keyof typeof OP];
-
-export interface ModifierOp {
+/** One stat change from one modifier. Exactly one of `add` / `mul` is meaningful per delta. */
+export interface StatDelta {
   readonly stat: StatId;
-  readonly kind: OpKind;
-  /** Flat amount for `add`; permille delta for `mul` (+100 = +10%); permille factor for `scale`. */
-  readonly value: number;
+  /** Flat addition, applied in the additive tier. Permille for multiplier stats. */
+  readonly add?: number;
+  /** Multiplicative factor in permille, applied in the multiplicative tier. 1500 = x1.5. */
+  readonly mul?: number;
 }
 
 /**
- * Numeric modifier ids. Append-only, for the same reason `STAT` is: these travel over the wire
- * (`MAX_WIRE_MODIFIERS`) and sit in replay headers (`MAX_REPLAY_MODIFIERS`), so a reordering would
- * make every stored replay resolve to a different difficulty.
+ * Behaviour bits for the things a modifier changes that are *not* a stat.
+ *
+ * Kept as a bitfield on the resolved result rather than as sim branches per modifier: the sim reads
+ * one integer, and a new mode that reuses an existing bit costs nothing.
  */
-export const MODIFIER = {
-  hurry: 0,
-  hyper: 1,
-  endless: 2,
-  inverse: 3,
-  limitBreak: 4,
-  /** Applied once per Endless wave-table cycle; stacks with itself. */
-  curseCycle: 5,
-  /** Dev-menu difficulty edits collapse into this, so the taint bit has an owner. */
-  devEdit: 6,
+export const RUN_FLAG = {
+  /** Wave table restarts instead of ending the run — Endless. */
+  endless: 1 << 0,
+  /** Weapons and passives arrive pre-maxed — for testing and for the Chaos event. */
+  preMaxed: 1 << 1,
+  /** Level-up cards are drawn from the full pool, ignoring unlock state. */
+  ignoreUnlocks: 1 << 2,
+  /** No card draw at all; level-ups grant a flat stat bump. */
+  noCardDraw: 1 << 3,
+  /** Reaper cannot be outrun: spawns at half the usual timestamp. */
+  earlyReaper: 1 << 4,
+  /** Treasure chests never drop. */
+  noChests: 1 << 5,
+  /** Hide the minute timer — used by the seeded race mode's blind variant. */
+  hideTimer: 1 << 6,
 } as const;
 
-export type ModifierId = (typeof MODIFIER)[keyof typeof MODIFIER];
-
-export interface RunModifier {
-  readonly id: ModifierId;
-  /** Internal name. Player-facing strings live in the content layer, not here. */
-  readonly key: string;
-  readonly ops: readonly ModifierOp[];
-  /**
-   * Taint bits this modifier contributes to the run header, if any. Legitimate modes contribute
-   * nothing; only dev edits do. Kept on the modifier so a new mode cannot forget to declare itself.
-   */
-  readonly taint?: number;
-  /** May this modifier appear more than once in a stack? Curse cycles can; Hurry cannot. */
-  readonly stacksWithSelf?: boolean;
-}
-
-const add = (stat: StatId, value: number): ModifierOp => ({ stat, kind: OP.add, value });
-const mul = (stat: StatId, value: number): ModifierOp => ({ stat, kind: OP.mul, value });
-const scale = (stat: StatId, value: number): ModifierOp => ({ stat, kind: OP.scale, value });
+export type RunFlag = (typeof RUN_FLAG)[keyof typeof RUN_FLAG];
 
 /**
- * Hurry: run time advances at double rate. Everything downstream — the wave table, weapon cooldowns
- * measured in run time, the Reaper clock — follows from `timeScale` without knowing why.
+ * Where a modifier came from. Only used for presentation and for deciding what a run is eligible
+ * for — the resolve step treats every source identically.
+ */
+export const MODIFIER_SOURCE = {
+  /** Player-selected mode toggle on the stage select screen. */
+  mode: 0,
+  /** Ascension tier, stacked one record per tier. */
+  ascension: 1,
+  /** Stage-intrinsic rule (a stage that is always hyper, for instance). */
+  stage: 2,
+  /** Character-intrinsic rule. */
+  character: 3,
+  /** Server-driven daily or weekly mutator. */
+  liveOps: 4,
+  /** Applied by a dev-menu toggle. Always taints the run. */
+  dev: 5,
+  /** Chaos Sandbox event. */
+  chaos: 6,
+} as const;
+
+export type ModifierSource = (typeof MODIFIER_SOURCE)[keyof typeof MODIFIER_SOURCE];
+
+/**
+ * A run modifier record.
+ *
+ * `wireId` is append-only and permanent: it is written into replay headers and co-op join messages,
+ * so renumbering it would make old replays resolve to a different set of rules and fail
+ * revalidation. `id` is the code-facing key; `wireId` is the on-disk one.
+ */
+export interface RunModifier {
+  readonly id: string;
+  readonly wireId: number;
+  readonly name: string;
+  readonly description: string;
+  readonly source: ModifierSource;
+  readonly deltas: readonly StatDelta[];
+  /** Bits from `RUN_FLAG`. */
+  readonly flags?: number;
+  /** Gold/XP payout multiplier in permille, for modes that pay extra for the added difficulty. */
+  readonly payout?: number;
+  /** True when selecting this modifier makes the run ineligible for ladders. */
+  readonly taints?: boolean;
+}
+
+/** The resolved non-stat outcome of a stack. */
+export interface ResolvedRun {
+  /** OR of every modifier's `RUN_FLAG` bits. */
+  flags: number;
+  /** Product of every `payout`, in permille. */
+  payout: number;
+  /** True if any modifier in the stack taints. */
+  tainted: boolean;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The launch modifier catalog. Content, not logic — every entry is pure data.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Hurry. Run time advances at 2x, so every wave, every boss and the Reaper all arrive twice as
+ * fast. Note what this record does *not* contain: no reference to the wave table, no spawn logic,
+ * no timer code. It moves one number and the rest of the sim follows.
  */
 export const MOD_HURRY: RunModifier = {
-  id: MODIFIER.hurry,
-  key: "hurry",
-  ops: [scale(STAT.timeScale, 2 * STAT_SCALE)],
+  id: "hurry",
+  wireId: 1,
+  name: "Hurry",
+  description: "Time passes twice as fast.",
+  source: MODIFIER_SOURCE.mode,
+  deltas: [{ stat: STAT.timeScale, mul: 2000 }],
+  payout: 1000,
 };
 
 /**
- * Hyper: faster, tougher, more numerous enemies, with a gold bonus as compensation. Note it touches
- * a completely disjoint set of stats from Hurry — which is the whole point of the exercise. The two
- * compose with no code aware that both are active.
+ * Hyper. Enemies are faster, tougher and more numerous, and the run pays more for it. Again: pure
+ * data, and it composes with Hurry without either record knowing the other exists.
  */
 export const MOD_HYPER: RunModifier = {
-  id: MODIFIER.hyper,
-  key: "hyper",
-  ops: [
-    scale(STAT.enemySpeed, 1200),
-    scale(STAT.enemyHealth, 1200),
-    scale(STAT.spawnRate, 1200),
-    mul(STAT.goldGain, 500),
+  id: "hyper",
+  wireId: 2,
+  name: "Hyper",
+  description: "Enemies are faster and arrive in greater numbers. Gold is worth more.",
+  source: MODIFIER_SOURCE.mode,
+  deltas: [
+    { stat: STAT.enemySpeed, mul: 1500 },
+    { stat: STAT.enemyHealth, mul: 1300 },
+    { stat: STAT.spawnRate, mul: 1300 },
+    { stat: STAT.goldGain, mul: 1200 },
   ],
+  payout: 1200,
 };
 
-/** One Endless cycle's worth of Curse. Stacks with itself, once per wave-table restart. */
-export const MOD_CURSE_CYCLE: RunModifier = {
-  id: MODIFIER.curseCycle,
-  key: "curseCycle",
-  stacksWithSelf: true,
-  ops: [scale(STAT.curse, 1100)],
+/** Endless. The wave table loops with a Curse increment each cycle instead of the run ending. */
+export const MOD_ENDLESS: RunModifier = {
+  id: "endless",
+  wireId: 3,
+  name: "Endless",
+  description: "The night never ends. Each cycle raises Curse.",
+  source: MODIFIER_SOURCE.mode,
+  deltas: [],
+  flags: RUN_FLAG.endless,
+  payout: 1000,
 };
 
-/** Every shipped modifier, keyed by id, for wire and replay decoding. */
-export const MODIFIER_TABLE: Readonly<Record<number, RunModifier>> = {
-  [MODIFIER.hurry]: MOD_HURRY,
-  [MODIFIER.hyper]: MOD_HYPER,
-  [MODIFIER.curseCycle]: MOD_CURSE_CYCLE,
+/** Inverse. Health and damage swap sides of the difficulty curve, and payout follows. */
+export const MOD_INVERSE: RunModifier = {
+  id: "inverse",
+  wireId: 4,
+  name: "Inverse",
+  description: "Enemies hit far harder. Your weapons reach further.",
+  source: MODIFIER_SOURCE.mode,
+  deltas: [
+    { stat: STAT.enemyDamage, mul: 3000 },
+    { stat: STAT.enemyHealth, mul: 1500 },
+    { stat: STAT.area, mul: 1250 },
+    { stat: STAT.xpGain, mul: 1500 },
+  ],
+  payout: 1500,
 };
 
 /**
- * A run's modifier stack.
+ * One Ascension tier. Ascension is the long-tail endgame ladder, and it is *nothing but* a stack of
+ * these — tier 7 is seven records, not a seventh special case.
+ */
+export const MOD_ASCENSION_TIER: RunModifier = {
+  id: "ascension.tier",
+  wireId: 5,
+  name: "Ascension",
+  description: "Enemies grow stronger with each tier. Rewards scale to match.",
+  source: MODIFIER_SOURCE.ascension,
+  deltas: [
+    { stat: STAT.enemyHealth, mul: 1200 },
+    { stat: STAT.enemySpeed, mul: 1050 },
+    { stat: STAT.curse, mul: 1100 },
+  ],
+  payout: 1150,
+};
+
+/** Dev-menu godmode, expressed as a modifier so it lands in the replay header like anything else. */
+export const MOD_DEV_GODMODE: RunModifier = {
+  id: "dev.godmode",
+  wireId: 6,
+  name: "Godmode",
+  description: "Incoming damage is nullified.",
+  source: MODIFIER_SOURCE.dev,
+  deltas: [
+    { stat: STAT.armor, add: 1_000_000 },
+    { stat: STAT.enemyDamage, mul: 0 },
+  ],
+  taints: true,
+};
+
+export const MODIFIER_CATALOG: readonly RunModifier[] = [
+  MOD_HURRY,
+  MOD_HYPER,
+  MOD_ENDLESS,
+  MOD_INVERSE,
+  MOD_ASCENSION_TIER,
+  MOD_DEV_GODMODE,
+];
+
+/** Wire-id lookup, for decoding replay headers and co-op join messages. */
+export const MODIFIERS_BY_WIRE_ID: ReadonlyMap<number, RunModifier> = new Map(
+  MODIFIER_CATALOG.map((m) => [m.wireId, m]),
+);
+
+/** Guard: a duplicated wire id would make one modifier silently decode as another. */
+if (MODIFIERS_BY_WIRE_ID.size !== MODIFIER_CATALOG.length) {
+  throw new Error("MODIFIER_CATALOG contains duplicate wireId values");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Resolution
+// ---------------------------------------------------------------------------------------------
+
+/** Cap on stacked modifiers, matching `MAX_REPLAY_MODIFIERS` so a legal stack is always recordable. */
+export const MAX_STACK = 64;
+
+/** Max multiplicative factors per stat we can resolve without allocating during a resolve. */
+const MAX_FACTORS_PER_STAT = MAX_STACK;
+
+/**
+ * A stack of modifiers plus the machinery to fold it into a `Stats` table.
  *
- * Holds modifiers, resolves them into a `Stats` table, and nothing else. It allocates its scratch
- * buffers once in the constructor: `resolve` runs on level-up and on every arcana pickup, which is
- * not per-tick, but it *is* inside a run, and `new` inside a run is how we lose the frame budget in
- * a 40-minute session.
+ * All scratch space is allocated once in the constructor. `resolve` runs on run start, on every
+ * level-up and on every co-op resync, and `new` inside those is the allocation pressure that the
+ * 500-enemies-at-60fps contract on a 4GB device cannot afford.
  */
 export class ModifierStack {
-  private readonly mods: RunModifier[] = [];
+  private readonly list: RunModifier[] = [];
 
-  /** Pooled `add` totals per stat. */
-  private readonly addAcc = new Int32Array(STAT_COUNT);
-  /** Pooled `mul` permille deltas per stat. */
-  private readonly mulAcc = new Int32Array(STAT_COUNT);
-  /** `scale` factors, flattened as (stat, value) pairs and sorted before use. */
-  private scaleStat = new Int32Array(64);
-  private scaleValue = new Int32Array(64);
-  private scaleCount = 0;
+  /** Additive accumulator, one slot per stat. */
+  private readonly adds = new Int32Array(STAT_COUNT);
+  /** Multiplicative factors, `MAX_FACTORS_PER_STAT` per stat, flattened. */
+  private readonly factors = new Int32Array(STAT_COUNT * MAX_FACTORS_PER_STAT);
+  /** How many factors each stat currently has. */
+  private readonly factorCount = new Int32Array(STAT_COUNT);
+  /** Scratch for sorting one stat's factors. */
+  private readonly sortScratch = new Int32Array(MAX_FACTORS_PER_STAT);
+
+  readonly resolved: ResolvedRun = { flags: 0, payout: STAT_SCALE, tainted: false };
 
   get size(): number {
-    return this.mods.length;
+    return this.list.length;
   }
 
-  /** Read-only view for the dev menu and the replay header writer. */
-  list(): readonly RunModifier[] {
-    return this.mods;
+  /** The stack in insertion order. Read-only to callers; resolve does not depend on the order. */
+  entries(): readonly RunModifier[] {
+    return this.list;
   }
 
-  has(id: ModifierId): boolean {
-    for (let i = 0; i < this.mods.length; i++) if (this.mods[i].id === id) return true;
-    return false;
-  }
-
-  /** Returns false if the modifier is already present and does not stack with itself. */
-  push(mod: RunModifier): boolean {
-    if (!mod.stacksWithSelf && this.has(mod.id)) return false;
-    this.mods.push(mod);
+  /**
+   * Add a modifier. Duplicates are allowed on purpose — Ascension tier 7 is the same record seven
+   * times, and a mutator that stacks with itself should not need a separate record per level.
+   */
+  add(mod: RunModifier): boolean {
+    if (this.list.length >= MAX_STACK) return false;
+    this.list.push(mod);
     return true;
   }
 
-  /** Removes the last instance of a modifier. Returns false if it was not there. */
-  remove(id: ModifierId): boolean {
-    for (let i = this.mods.length - 1; i >= 0; i--) {
-      if (this.mods[i].id === id) {
-        this.mods.splice(i, 1);
-        return true;
-      }
+  /** Add the same modifier `n` times. Used by Ascension and by Curse cycles in Endless. */
+  addTimes(mod: RunModifier, n: number): number {
+    let added = 0;
+    for (let i = 0; i < n; i++) {
+      if (!this.add(mod)) break;
+      added++;
     }
-    return false;
+    return added;
+  }
+
+  /** Remove the first instance matching `id`. Returns whether anything was removed. */
+  remove(id: string): boolean {
+    const i = this.list.findIndex((m) => m.id === id);
+    if (i < 0) return false;
+    this.list.splice(i, 1);
+    return true;
+  }
+
+  has(id: string): boolean {
+    return this.list.some((m) => m.id === id);
+  }
+
+  count(id: string): number {
+    let n = 0;
+    for (const m of this.list) if (m.id === id) n++;
+    return n;
   }
 
   clear(): void {
-    this.mods.length = 0;
-  }
-
-  /** OR of every taint bit the stack contributes. The run header reads this, never the modifiers. */
-  taintBits(): number {
-    let bits = 0;
-    for (let i = 0; i < this.mods.length; i++) bits |= this.mods[i].taint ?? 0;
-    return bits;
+    this.list.length = 0;
   }
 
   /**
-   * Write the resolved stats into `out`, starting from the character baseline.
+   * Fold the whole stack into `stats`.
    *
-   * `characterBase` is the character's own stat table (already `STAT_BASE` plus its own record); pass
-   * `null` for a plain baseline. It is read, never written.
+   * Order of operations, and none of it is negotiable:
+   *  1. `stats.reset()` — resolve is idempotent, so a level-up can re-resolve from scratch instead
+   *     of trying to undo the previous pass. Undo-based stat systems are where "I removed a passive
+   *     and my damage went up" bugs come from.
+   *  2. additive tier, summed (commutative, so insertion order is irrelevant by construction).
+   *  3. multiplicative tier, factors sorted ascending then applied (see the file header for why).
+   *  4. `clampAll()` once, at the end.
    */
-  resolve(out: Stats, characterBase: Int32Array | readonly number[] | null): void {
-    const v = out.values;
-    const base = characterBase ?? STAT_BASE;
-    for (let i = 0; i < STAT_COUNT; i++) v[i] = base[i];
+  resolve(stats: Stats): ResolvedRun {
+    stats.reset();
+    this.adds.fill(0);
+    this.factorCount.fill(0);
 
-    this.addAcc.fill(0);
-    this.mulAcc.fill(0);
-    this.scaleCount = 0;
+    let flags = 0;
+    let payout = STAT_SCALE;
+    let tainted = false;
 
-    for (let m = 0; m < this.mods.length; m++) {
-      const ops = this.mods[m].ops;
-      for (let o = 0; o < ops.length; o++) {
-        const op = ops[o];
-        if (op.kind === OP.add) {
-          this.addAcc[op.stat] += op.value;
-        } else if (op.kind === OP.mul) {
-          this.mulAcc[op.stat] += op.value;
-        } else {
-          this.pushScale(op.stat, op.value);
+    for (const mod of this.list) {
+      flags |= mod.flags ?? 0;
+      if (mod.payout !== undefined) payout = Math.trunc((payout * mod.payout) / STAT_SCALE);
+      if (mod.taints) tainted = true;
+
+      for (const d of mod.deltas) {
+        if (d.add !== undefined) this.adds[d.stat] += d.add;
+        if (d.mul !== undefined) {
+          const n = this.factorCount[d.stat];
+          if (n < MAX_FACTORS_PER_STAT) {
+            this.factors[d.stat * MAX_FACTORS_PER_STAT + n] = d.mul;
+            this.factorCount[d.stat] = n + 1;
+          }
         }
       }
     }
 
-    // Tier 1: flat sums.
-    for (let i = 0; i < STAT_COUNT; i++) {
-      if (this.addAcc[i] !== 0) v[i] += this.addAcc[i];
-    }
+    const values = stats.values;
+    for (let stat = 0; stat < STAT_COUNT; stat++) {
+      let v = values[stat] + this.adds[stat];
 
-    // Tier 2: pooled percent, applied once per stat so truncation happens exactly once.
-    for (let i = 0; i < STAT_COUNT; i++) {
-      const delta = this.mulAcc[i];
-      if (delta !== 0) v[i] = Math.trunc((v[i] * (STAT_SCALE + delta)) / STAT_SCALE);
-    }
-
-    // Tier 3: compounding factors, in canonical order.
-    this.sortScales();
-    for (let i = 0; i < this.scaleCount; i++) {
-      const s = this.scaleStat[i];
-      v[s] = Math.trunc((v[s] * this.scaleValue[i]) / STAT_SCALE);
-    }
-
-    out.clampAll();
-  }
-
-  private pushScale(stat: number, value: number): void {
-    if (this.scaleCount === this.scaleStat.length) {
-      const stats = new Int32Array(this.scaleStat.length * 2);
-      const values = new Int32Array(this.scaleValue.length * 2);
-      stats.set(this.scaleStat);
-      values.set(this.scaleValue);
-      this.scaleStat = stats;
-      this.scaleValue = values;
-    }
-    this.scaleStat[this.scaleCount] = stat;
-    this.scaleValue[this.scaleCount] = value;
-    this.scaleCount++;
-  }
-
-  /**
-   * Insertion sort by (stat, value). Insertion sort rather than `Array.prototype.sort` because the
-   * data is in typed arrays and the count is small — a stack of 40 Ascension modifiers is maybe 60
-   * scale ops — and because it avoids allocating the object array a comparator sort would need.
-   *
-   * The canonical order is what makes tier 3 order-independent. Integer truncation means
-   * `trunc(trunc(x*a)*b)` is not always `trunc(trunc(x*b)*a)`, so "sorted" is doing real work here,
-   * not tidying.
-   */
-  private sortScales(): void {
-    for (let i = 1; i < this.scaleCount; i++) {
-      const s = this.scaleStat[i];
-      const val = this.scaleValue[i];
-      let j = i - 1;
-      while (j >= 0 && (this.scaleStat[j] > s || (this.scaleStat[j] === s && this.scaleValue[j] > val))) {
-        this.scaleStat[j + 1] = this.scaleStat[j];
-        this.scaleValue[j + 1] = this.scaleValue[j];
-        j--;
+      const n = this.factorCount[stat];
+      if (n > 0) {
+        const base = stat * MAX_FACTORS_PER_STAT;
+        for (let i = 0; i < n; i++) this.sortScratch[i] = this.factors[base + i];
+        insertionSortAscending(this.sortScratch, n);
+        for (let i = 0; i < n; i++) {
+          v = Math.trunc((v * this.sortScratch[i]) / STAT_SCALE);
+        }
       }
-      this.scaleStat[j + 1] = s;
-      this.scaleValue[j + 1] = val;
+
+      values[stat] = v;
     }
+
+    stats.clampAll();
+
+    this.resolved.flags = flags;
+    this.resolved.payout = payout;
+    this.resolved.tainted = tainted;
+    return this.resolved;
+  }
+
+  /** Wire ids in canonical (ascending) order, for the replay header and co-op join message. */
+  wireIds(out: Int32Array): number {
+    const n = Math.min(this.list.length, out.length);
+    for (let i = 0; i < n; i++) out[i] = this.list[i].wireId;
+    insertionSortAscending(out, n);
+    return n;
   }
 }
 
-/** Convenience for tests and the dev menu: build a one-off modifier without a content record. */
-export function makeModifier(
-  id: ModifierId,
-  key: string,
-  ops: readonly ModifierOp[],
-  taint?: number,
-): RunModifier {
-  return { id, key, ops, taint, stacksWithSelf: true };
+/**
+ * Insertion sort over the first `n` slots.
+ *
+ * Chosen over `Array.prototype.sort` because it works in place on a typed array with no allocation
+ * and no comparator closure, and because `n` here is the number of modifiers touching one stat —
+ * realistically under ten, where insertion sort beats anything asymptotically smarter.
+ */
+function insertionSortAscending(a: Int32Array, n: number): void {
+  for (let i = 1; i < n; i++) {
+    const x = a[i];
+    let j = i - 1;
+    while (j >= 0 && a[j] > x) {
+      a[j + 1] = a[j];
+      j--;
+    }
+    a[j + 1] = x;
+  }
 }
-
-export const modifierOps = { add, mul, scale };
