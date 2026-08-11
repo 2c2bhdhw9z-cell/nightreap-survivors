@@ -230,6 +230,13 @@ export class EnemyStore {
   /** Scratch for broad-phase results. Owned here so queries never allocate. */
   private readonly neighbours: Int32Array;
 
+  /**
+   * Where `queryNear` writes its results. Deliberately a different buffer from the internal
+   * separation scratch: callers outside this file read it after their query returns, and sharing
+   * one buffer would mean an enemy tick could quietly overwrite results someone else still holds.
+   */
+  readonly neighbourScratch: Int32Array;
+
   /** Enemies killed this run. Drives the results screen and achievement checks. */
   kills = 0;
   /** Enemies recycled for wandering too far. Dev-menu diagnostic. */
@@ -257,6 +264,19 @@ export class EnemyStore {
     this.facing = new Int32Array(capacity);
     this.grid = new SpatialHash(ENEMY_CELL_SIZE, capacity);
     this.neighbours = new Int32Array(64);
+    this.neighbourScratch = new Int32Array(64);
+  }
+
+  /**
+   * Enemies whose cells overlap a circle. Results land in `neighbourScratch`; the return value is
+   * how many of them are valid. Broad phase only — the caller still checks real distances.
+   *
+   * Capped at the scratch length, which is fine: nothing in the game needs to hit more than 64
+   * enemies from one point in one tick, and a hard cap is what keeps a Limit Break pile-up from
+   * turning one query into a frame drop.
+   */
+  queryNear(x: number, y: number, radius: number): number {
+    return this.grid.queryRadiusInto(x, y, radius, this.neighbourScratch);
   }
 
   get count(): number {

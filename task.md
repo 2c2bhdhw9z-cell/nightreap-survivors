@@ -624,3 +624,28 @@ jittery stream and read above refresh. Now shows frames/wall-second alongside it
 55.1, consistent with the 56 shown). Median-interval kept for headroom, labelled.
 
 PHASE 0 IS CLOSED. Remaining Phase 0 debt: none blocking.
+
+## Player subsystem landed — 2026-08-11 (session 7)
+
+`game/sim/player.ts` + `player.test.ts` complete, 8th suite in the `test:game` chain, all green.
+
+Movement, 8-way facing, health, i-frames, downs, revives, regen and enemy contact damage all live.
+Solo is the one-player case of the same loops — there is no co-op branch anywhere in the file, which
+is what the Phase 1 gate asks for.
+
+Three real bugs the self-test caught:
+
+1. **Armor was 1000x too weak.** Armor is stored as a flat count (3 means 3 armor), but the damage
+   path divided it by STAT_SCALE, so maximum armor read as 0.05 and a 10-damage hit landed for 9.95.
+   Fixed, and `stats.ts` now documents which stats are counts and which are permille multipliers so
+   the next stat added cannot repeat it.
+2. **Regen lost a hit point per second.** 5/60 added sixty times as a float is 4.99999, which floors
+   to 4. Now accumulated as permille-ticks and paid out at an exact 60,000 threshold — 5/s means 5/s.
+3. **`hashablePositions` allocated a subarray every call**, inside the tick, twice a second. Views
+   are now pre-cut once in `reset`.
+
+Also: `Math.hypot` in `setMove` replaced with `Math.sqrt` (not bit-guaranteed across engines, and it
+moves the player, which lands in the state hash), and `EnemyStore` gained a public `queryNear` +
+`neighbourScratch` so the player can ask the grid for nearby bodies without allocating.
+
+Perf: 4 players + 800 enemies, 3600 ticks — 24us per tick, 0.0KB heap growth.

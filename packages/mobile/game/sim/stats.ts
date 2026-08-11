@@ -163,6 +163,23 @@ export const STAT_BASE: readonly number[] = (() => {
 })();
 
 /**
+ * WHICH STATS ARE MULTIPLIERS AND WHICH ARE COUNTS
+ *
+ * Everything is an integer, but not everything is permille. Reading a count as a permille (or the
+ * reverse) is a silent 1000x error, so the split is written down here rather than inferred:
+ *
+ *   COUNTS — read raw, no division. `amount`, `armor`, `pierce`, `iFrames` (ticks), `revives`,
+ *   `rerolls`, `skips`, `banishes`. A base of 0 or a small integer is the tell.
+ *
+ *   PERMILLE — divide by `STAT_SCALE` to use. Everything else, including `maxHealth` (100_000 is
+ *   100hp), `regen` (5000 is 5hp/sec) and `critChance` (1000 is 100%). A base of `STAT_SCALE` or a
+ *   multiple of it is the tell.
+ *
+ * Caps and floors are written in the same units as the stat they guard: `armor` caps at 50 because
+ * armor is a count, `critChance` caps at `STAT_SCALE` because it is a permille.
+ */
+
+/**
  * Hard ceilings from `plan.md`. `-1` means uncapped.
  *
  * These exist so the endgame stays a game: unbounded `amount` turns the screen into a solid wall of
