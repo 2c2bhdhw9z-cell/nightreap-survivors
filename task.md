@@ -91,3 +91,17 @@ typecheck + lint pass after each change.
 - CONFIRMED BUG in plan: `.gitignore` line 73 excludes `scripts/`, so the planned
   `scripts/replay-test.ts` would be silently untracked. Replay harness moves to
   `packages/mobile/game/replay/` instead. Do not put version-controlled code in `scripts/`.
+
+## Native testing loop — CONFIRMED 2026-08-11
+- Metro serves a valid iOS manifest over the public HTTPS proxy (runtimeVersion exposdk:54.0.0).
+- iOS Hermes bundle builds clean: HTTP 200, 7.3 MB, no transform errors.
+- `ExpoGL` + `ExponentGLObjectManager` present in the iOS bundle, and expo-gl ships inside the
+  Expo Go binary for SDK 54 -> **Gate A can be measured in Expo Go. No custom dev build needed.**
+  This closes the plan's open "does expo-gl work under Expo Go" assumption for iOS.
+- Expo Go URL (manual entry): exp://nightre-oqwfyiy-preview-4300.runable.site
+- Android/REVVL: same URL in Expo Go, or just Chrome for a browser-WebGL number.
+- iPhone Safari preview datapoint from user (real hardware, browser WebGL):
+  8172 quads @ 21.0ms p50 / 47.6fps / 0 dropped ticks / 5 draws / 5 layers.
+  Encouraging: 63% above the 5,000 gate, in a browser, with zero dropped ticks.
+- STILL OPEN: the 5,000-quad warm number on the REVVL. That is the WebGL-vs-Skia decision.
+  User is at work; deferred.
