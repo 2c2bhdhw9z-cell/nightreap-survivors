@@ -52,6 +52,17 @@ interface Readout {
   scale: number;
   maxTexture: number;
   highp: boolean;
+  /** Sim ticks completed. tick/60 should track the warm clock; if it lags, the sim is stalling. */
+  tick: number;
+  /** Rendered frames the JS loop has issued. Alive JS, not necessarily alive GL. */
+  frames: number;
+  /** Ticks executed on the most recent frame. Steady state at 60fps render is 1. */
+  ticksThisFrame: number;
+  /** ms since the sim tick counter last changed. Anything over ~100 is a stall. */
+  simStaleMs: number;
+  /** Exceptions thrown inside the frame callback. Must stay 0. */
+  frameErrors: number;
+  lastError: string | null;
 }
 
 const EMPTY: Readout = {
@@ -71,7 +82,23 @@ const EMPTY: Readout = {
   scale: 1,
   maxTexture: 0,
   highp: false,
+  tick: 0,
+  frames: 0,
+  ticksThisFrame: 0,
+  simStaleMs: 0,
+  frameErrors: 0,
+  lastError: null,
 };
+
+/**
+ * `Date.now()` has 1ms integer resolution, which cannot measure a 16.67ms budget — every percentile
+ * came back as a flat "17.0ms", hiding all sub-millisecond jitter and making p50 and p99
+ * indistinguishable. Frame timing has to come from a high-resolution monotonic clock.
+ */
+const nowMs: () => number =
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? () => performance.now()
+    : () => Date.now();
 
 export default function Bench() {
   const [count, setCount] = useState<number>(5000);
@@ -120,23 +147,41 @@ export default function Bench() {
       let stats = { quads: 0, drawCalls: 0, textureSwaps: 0, layerSwitches: 0 };
       let lastFrameStart = -1;
       let lastReport = 0;
-      const startedAt = Date.now();
+      let frameErrors = 0;
+      let lastError: string | null = null;
+      let lastTickSeen = 0;
+      let lastTickChangeAt = nowMs();
+      // Wall clock for the warm timer only — it measures minutes, where 1ms resolution is fine.
+      const startedAtWall = Date.now();
 
       const frame = () => {
         rafRef.current = requestAnimationFrame(frame);
-        const now = Date.now();
+        const now = nowMs();
 
         if (lastFrameStart >= 0) timer.push(now - lastFrameStart);
         lastFrameStart = now;
 
-        if (storm.activeCount !== countRef.current) storm.setCount(countRef.current);
-        storm.drawHud = hudRef.current;
+        // A throw here used to be invisible: rAF is rescheduled on the first line, so the loop kept
+        // running while nothing rendered and the panel silently froze. Now it is counted and shown.
+        try {
+          if (storm.activeCount !== countRef.current) storm.setCount(countRef.current);
+          storm.drawHud = hudRef.current;
 
-        loop.advance(now);
-        renderer.beginFrame(loop.stats.alpha);
-        storm.draw(renderer, loop.stats.alpha);
-        stats = renderer.endFrame();
-        gl.endFrameEXP();
+          loop.advance(now);
+          renderer.beginFrame(loop.stats.alpha);
+          storm.draw(renderer, loop.stats.alpha);
+          storm.drawHeartbeat(renderer, loop.stats.frames, loop.stats.tick);
+          stats = renderer.endFrame();
+          gl.endFrameEXP();
+        } catch (e) {
+          frameErrors++;
+          lastError = e instanceof Error ? e.message : String(e);
+        }
+
+        if (loop.stats.tick !== lastTickSeen) {
+          lastTickSeen = loop.stats.tick;
+          lastTickChangeAt = now;
+        }
 
         if (now - lastReport >= 250) {
           lastReport = now;
@@ -154,12 +199,18 @@ export default function Bench() {
             overBudgetPct: (over / recorded) * 100,
             fps: p50 > 0 ? 1000 / p50 : 0,
             droppedTicks: loop.stats.droppedTicks,
-            warmSeconds: Math.floor((now - startedAt) / 1000),
+            warmSeconds: Math.floor((Date.now() - startedAtWall) / 1000),
             bufferW,
             bufferH,
             scale: renderer.camera.scale,
             maxTexture: renderer.maxTextureSize,
             highp: renderer.hasHighp,
+            tick: loop.stats.tick,
+            frames: loop.stats.frames,
+            ticksThisFrame: loop.stats.ticksThisFrame,
+            simStaleMs: now - lastTickChangeAt,
+            frameErrors,
+            lastError,
           });
         }
       };
@@ -178,10 +229,14 @@ export default function Bench() {
 
   const warm = readout.warmSeconds >= WARM_MINUTES * 60;
   const clean = readout.p99 > 0 && readout.p99 <= FRAME_BUDGET_MS + 1 && readout.overBudgetPct < 1;
+  // Two consecutive missed ticks. At 60Hz a healthy frame is never more than ~33ms behind a tick.
+  const simStalled = readout.simStaleMs > 100 && readout.frames > 120;
   const verdict =
     readout.p50 === 0
       ? "measuring…"
-      : !clean
+      : simStalled
+        ? "SIM STALLED — numbers are not valid"
+        : !clean
         ? `MISSING 60fps at ${readout.quads} quads`
         : warm
           ? `HOLDING 60fps at ${readout.quads} quads (warm)`
@@ -223,6 +278,17 @@ export default function Bench() {
         </Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {simStalled ? (
+          <Text style={styles.error}>
+            SIM STALLED — no tick for {readout.simStaleMs.toFixed(0)}ms. Sprites are frozen because
+            the fixed loop stopped, not because the GPU did.
+          </Text>
+        ) : null}
+        {readout.frameErrors > 0 ? (
+          <Text style={styles.error}>
+            {readout.frameErrors} frame errors · {readout.lastError}
+          </Text>
+        ) : null}
 
         <Text style={styles.row}>
           {fmt(readout.p50)} p50 · {fmt(readout.p95)} p95 · {fmt(readout.p99)} p99 ·{" "}
@@ -235,9 +301,20 @@ export default function Bench() {
         <Text style={styles.row}>
           {readout.quads} quads · {readout.drawCalls} draws · {readout.layerSwitches} layers
         </Text>
+        {/*
+          sim vs real is the freeze detector that survives a screenshot: the sim clock is derived
+          from the tick counter, the real clock from the wall. They must stay within a second of each
+          other. If sim lags real, the loop stalled; if they match while sprites sit still, GL
+          stopped presenting and the bug is below us in expo-gl.
+        */}
+        <Text style={styles.row}>
+          sim {(readout.tick / 60).toFixed(1)}s / real {readout.warmSeconds}s · {readout.tick} ticks
+          · {readout.ticksThisFrame}/frame · stale {readout.simStaleMs.toFixed(0)}ms
+        </Text>
         <Text style={styles.dim}>
           warm {Math.floor(readout.warmSeconds / 60)}m{String(readout.warmSeconds % 60).padStart(2, "0")}s
-          {warm ? " ✓" : ` / ${WARM_MINUTES}m`} · tick {TICK_MS.toFixed(2)}ms
+          {warm ? " ✓" : ` / ${WARM_MINUTES}m`} · tick {TICK_MS.toFixed(2)}ms · {readout.frames}{" "}
+          frames
         </Text>
         <Text style={styles.dim}>
           {Platform.OS} · buffer {readout.bufferW}×{readout.bufferH} @{readout.scale}x · maxTex{" "}

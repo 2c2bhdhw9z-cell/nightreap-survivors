@@ -204,6 +204,40 @@ export class QuadStorm {
   }
 
   /**
+   * Two moving blocks at the bottom of the screen, drawn *inside* GL.
+   *
+   * WHY THIS EXISTS: the readout panel is a React Native view composited on top of the GL surface,
+   * so a climbing frame counter proves only that JavaScript is alive — not that anything reached
+   * the display. When the sprites appeared to freeze mid-run, the panel kept updating, which left
+   * three indistinguishable suspects: a stalled sim, a thrown exception, or a GL surface that
+   * stopped presenting. These two markers separate them at a glance:
+   *
+   *  - gold block advances once per *rendered frame*. Frozen while the panel still counts frames
+   *    means GL stopped presenting.
+   *  - cyan block advances once per *sim tick*. Frozen while gold moves means the fixed loop
+   *    stopped ticking.
+   *  - both moving while sprites sit still would mean the bug is in the storm itself.
+   */
+  drawHeartbeat(r: Renderer, frames: number, tick: number): void {
+    const b = r.layer("hud");
+    const white = r.currentAtlas.need("debug/white");
+    const vw = r.camera.worldViewW;
+    const vh = r.camera.worldViewH;
+
+    const slots = 24;
+    const slotW = vw / slots;
+    const track = Renderer.color("#2a2740", 220);
+    const gold = Renderer.color("#e0be5a");
+    const cyan = Renderer.color("#5ad4e0");
+
+    b.drawRect(white, 0, vh - 22, vw, 4, track);
+    b.drawRect(white, (frames % slots) * slotW, vh - 22, slotW, 4, gold);
+
+    b.drawRect(white, 0, vh - 16, vw, 4, track);
+    b.drawRect(white, (tick % slots) * slotW, vh - 16, slotW, 4, cyan);
+  }
+
+  /**
    * ~200 screen-space quads standing in for the real HUD: a frame, an XP bar, weapon slots, and a
    * scatter of damage numbers. Gate A is specified "with overlay" because a HUD is not free — it is
    * a camera-uniform change plus a fresh flush at minimum.

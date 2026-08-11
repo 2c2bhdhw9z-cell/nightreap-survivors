@@ -105,3 +105,43 @@ typecheck + lint pass after each change.
   Encouraging: 63% above the 5,000 gate, in a browser, with zero dropped ticks.
 - STILL OPEN: the 5,000-quad warm number on the REVVL. That is the WebGL-vs-Skia decision.
   User is at work; deferred.
+
+## Bench instrument fixes — 2026-08-11 (two bugs from the native iPhone screenshot)
+
+### Bug 1 — FIXED: frame timing used `Date.now()`
+`Date.now()` has 1ms integer resolution, which cannot measure a 16.67ms budget. That is why the
+first native readout showed `17.0ms p50 / 17.0 p95 / 17.0 p99 / 17.0 worst` — four identical
+numbers are not four measurements, they are one quantised number printed four times. All sub-ms
+jitter was invisible and p50 vs p99 was meaningless.
+Fix: `nowMs()` helper prefers `performance.now()` (Hermes has it on RN 0.81 / SDK 54) and falls
+back to `Date.now()`. Used for both `timer.push()` and `loop.advance()`. `Date.now()` is kept only
+for the warm clock, where it measures minutes and 1ms resolution is fine.
+Verified in SwiftShader: percentiles now spread (147.5 / 477.8 / 542.8 / 717.7ms) instead of flat.
+**Every Gate A number recorded before this fix is void, including the 58.8fps iPhone result.**
+
+### Bug 2 — sprites froze ~30-40s in, panel kept updating. NOT root-caused, now diagnosable.
+Ruled out: the sim itself. `game/bench/storm-soak.ts` (new, headless, no GL, no React) ran
+200,000 ticks = ~55 min of sim time at 5,000 quads: no freeze, no NaN, nothing escaped the field,
+0 entities stuck. `QuadStorm.tick()` is clean.
+That leaves three suspects, which the old panel could not tell apart, because the readout is a
+React Native view composited *on top of* the GL surface — a climbing counter proved only that
+JavaScript was alive, not that anything reached the display.
+Instrumentation added so the next run identifies it without guessing:
+- `sim Xs / real Ys` row. Sim clock is derived from the tick counter, real from the wall. They must
+  stay within ~1s. This survives a screenshot, which a moving sprite does not.
+- `ticks/frame` and `stale Nms` (ms since the tick counter last changed) + a `SIM STALLED` banner.
+- Two heartbeat bars drawn *inside GL* at the bottom of the screen (`QuadStorm.drawHeartbeat`):
+  gold advances per rendered frame, cyan per sim tick.
+Reading the result:
+- gold frozen + panel still counting frames -> GL stopped presenting (bug is below us in expo-gl).
+- cyan frozen + gold moving -> the fixed loop stopped ticking.
+- both moving + sprites still -> bug is in the storm after all.
+- Also: a throw inside the frame callback used to be invisible, because rAF is rescheduled on the
+  first line — the loop kept running while nothing rendered. Now caught, counted, and displayed.
+Note: Bug 1's clock also fed `loop.advance()`, so a clock-resolution stall is possible and may
+already be fixed by the same change.
+
+### NEXT RUN IS THE GATE A VERDICT
+iPhone: exp://nightre-oqwfyiy-preview-4300.runable.site pasted into the **Safari address bar**
+(offers "Open in Expo Go"). REVVL: same URL in Expo Go, or plain Chrome for a browser number.
+5000 preset, HUD on, ~15 min warm, then screenshot. REVVL is the device that decides WebGL vs Skia.
