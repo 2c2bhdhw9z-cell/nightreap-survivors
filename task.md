@@ -539,3 +539,26 @@ first place — the test file now asserts that explicitly as its own check.
 
 ### Next
 `game/sim/entities.ts` — pooled entity arrays, then spawner + wave table + steering with separation.
+
+## Phase 1 started — 2026-08-11 (session 5)
+
+`44a6802` — first two Phase 1 files landed, `bun run test:game` now 6 suites.
+
+- `game/sim/stats.ts` — permille `Int32Array`, 30 append-only `STAT` ids, plan caps/floors.
+  `STAT_NAMES` is *derived* from `STAT` rather than hand-written; the earlier misalignment
+  (a stale `spawnRate2_unused` slot) can no longer recur.
+- `game/sim/modifiers.ts` — `RunModifier` records + `ModifierStack.resolve()`.
+  Two tiers: additive sum, then multiplicative permille. Multiplicative factors are **sorted
+  ascending before folding** because integer truncation is not commutative — the test proves the
+  naive left-to-right fold really does diverge, so the sort is load-bearing, not decorative.
+  Without it, card-pick order would change final stats and every co-op state hash / replay
+  revalidation becomes a coin flip.
+- Modes are data. Hurry = one delta (`timeScale x2`). Hyper = four deltas. They stack with no sim
+  branch. Ascension tier 7 is literally the same record seven times (`enemyHealth 3.58x`).
+- Dev godmode is a modifier too, so it lands in the replay header like anything else and taints the
+  run. Taint is *derived from the stack each resolve*, never latched — remove the toggle, taint goes.
+  Note: `armor +1_000_000` clamps to the cap of 50, so godmode's invulnerability comes from
+  `enemyDamage x0`, not from armor. Intentional; the cap is not special-cased for dev.
+- Resolve allocates nothing: 20,000 resolves grew the heap 0.0KB.
+
+**Next:** entity arrays + spawner + wave table + walk-at-player steering with separation.
