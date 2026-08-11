@@ -36,13 +36,14 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
 import { Link } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { FlightRecorder, summariseFlight, type FlightLog } from "@/game/bench/flight-recorder";
+import { APP_STATE, LifecycleProbe, type AppStateCode } from "@/game/bench/lifecycle";
 import { compileSpriteProgram } from "@/game/render/shader";
 import { Palette } from "@/constants/theme";
 
@@ -63,6 +64,10 @@ const BYTES_PER_VERT = 16;
 
 const flightKey = (mode: Mode, amp: number) => `nightreap.leak.${mode}.x${amp}.v1`;
 
+/** RN reports more states than we care about; anything not active/inactive counts as background. */
+const stateCode = (s: string): AppStateCode =>
+  s === "active" ? APP_STATE.active : s === "inactive" ? APP_STATE.inactive : APP_STATE.background;
+
 const nowMs: () => number =
   typeof performance !== "undefined" && typeof performance.now === "function"
     ? () => performance.now()
@@ -81,6 +86,22 @@ export default function Leak() {
 
   const rafRef = useRef<number | null>(null);
   const recorderRef = useRef<FlightRecorder | null>(null);
+  const probeRef = useRef<LifecycleProbe | null>(null);
+
+  // Subscribed once for the life of the screen, not per trial: a listener re-registered on every
+  // arm would be its own leak, and the probe it feeds is swapped out instead.
+  useEffect(() => {
+    const onChange = AppState.addEventListener("change", (next) => {
+      probeRef.current?.setState(stateCode(next), Date.now());
+    });
+    const onWarn = AppState.addEventListener("memoryWarning", () => {
+      probeRef.current?.noteMemoryWarning(Date.now());
+    });
+    return () => {
+      onChange.remove();
+      onWarn.remove();
+    };
+  }, []);
 
   // Read the selected trial's last flight before arming, so the verdict for that exact
   // mode+amplifier combination is on screen while choosing the next one.
@@ -201,6 +222,8 @@ export default function Leak() {
           flightKey(currentMode, currentAmp),
         );
         recorderRef.current = recorder;
+        const probe = new LifecycleProbe(startedAtWall);
+        probeRef.current = probe;
 
         let frameCount = 0;
         let lastFrameStart = -1;
@@ -263,6 +286,7 @@ export default function Leak() {
               simStaleMs: 0,
               frameErrors: 0,
               lastError: null,
+              life: probe.snapshot(Date.now()),
             });
             worst = 0;
             void recorder.persist();

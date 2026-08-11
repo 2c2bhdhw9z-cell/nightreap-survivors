@@ -440,3 +440,51 @@ Added to `bun run test:game`. PASS first run. **201 ok checks across the four su
 - Every opt-in (telemetry, crash reports, personalised ads, custom name) defaults to **off**,
   asserted by test.
 - `eraseEverything()` exists for the store listings' data-deletion requirement.
+
+## layers ×16 result + why every trial so far was ambiguous — 2026-08-11 (session 4)
+
+`layers ×16` on the iPhone 17 Pro Max: **DIED at 2306s (38m26s)**, 160,000 quads/frame,
+80 `uniform2f` writes/frame, p50 8.9ms (≈112fps), upload 0KB/frame, sim on time
+(138,360 ticks vs 138,360 expected).
+
+**Uniform marshalling is cleared as the fast killer.** 2306s is *longer* than the three trials
+that were called survivors (present 32m42s, draw 35m03s, upload 35m09s) — and those three were
+not survivors, they were **stopped by hand while still alive**. So the real shape of the data is:
+
+- every trial that was left alone eventually died
+- every trial that was watched was still running when the human ended it
+
+That is not a GL signature. That is the difference between a phone in someone's hand and a phone
+on a table with the screen locked. iOS discards suspended apps on its own schedule, and a jetsam
+kill and a routine reclaim look **byte-identical** in the flight log: `cleanExit === false`.
+
+Which means **the 844s Gate A death may never have been a leak at all**, and four trials'
+worth of conclusions rest on an instrument that cannot tell the two apart.
+
+### Fix: the flight log now records why it died
+`game/bench/lifecycle.ts` — `LifecycleProbe` + `explainDeath`, fed by RN `AppState` in both
+`app/dev/bench.tsx` and `app/dev/leak.tsx`, sampled into every `FlightSample` as `life`.
+
+Two observables settle it, both readable from JS:
+1. **App state at the last sample.** `background` ⇒ trial thrown out, no verdict.
+2. **iOS low-memory warnings** (`AppState` `memoryWarning`). iOS warns before it starts killing.
+
+Verdict lines the log now prints itself:
+- `TRIAL INCONCLUSIVE — died while not foregrounded` → rerun it, screen awake
+- `died FOREGROUND with zero memory warnings — this is not a jetsam OOM` → look at the GPU
+  watchdog or a native fault, **not** at memory
+- `died FOREGROUND after memory warnings — jetsam OOM confirmed` → the leak is real, and the
+  first-warning timestamp bounds when it started
+
+`life` is optional on `FlightSample`, so the four existing trial logs still decode — they just
+report `lifecycle not recorded (older trial)`, which is the honest answer for all of them.
+
+`game/bench/lifecycle.test.ts` — 21 checks, PASS, wired into `bun run test:game` (now 5 suites).
+Counters checked against hand-computed timelines: in-progress background stretches counted but
+never double-counted on resume, repeated state emissions ignored, suspended deaths stay
+inconclusive even when warnings did arrive.
+
+### What this changes about the next phone trial
+Only one trial matters now, and it is cheap: **any mode, screen kept awake and foregrounded.**
+If it dies with warnings, the leak hunt resumes with a real timestamp. If it dies with none, the
+whole present/draw/upload/layers matrix has been measuring iOS app suspension for four sessions.

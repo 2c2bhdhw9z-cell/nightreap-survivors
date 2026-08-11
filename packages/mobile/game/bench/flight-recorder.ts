@@ -16,6 +16,9 @@
  * real save path (atomic write plus backup slot) is a separate thing and does not use this.
  */
 
+import type { LifecycleSnapshot } from "./lifecycle";
+import { explainDeath } from "./lifecycle";
+
 export interface FlightSample {
   /** Seconds since the run started. */
   t: number;
@@ -35,6 +38,11 @@ export interface FlightSample {
   simStaleMs: number;
   frameErrors: number;
   lastError: string | null;
+  /**
+   * App state and memory-warning counters at this sample. Optional because trials recorded before
+   * the probe existed have to keep decoding.
+   */
+  life?: LifecycleSnapshot;
 }
 
 export interface FlightLog {
@@ -139,6 +147,9 @@ export function summariseFlight(log: FlightLog): string[] {
       : `PREVIOUS RUN DIED at ${last.t}s — no clean exit (OS kill or hard crash)`,
   );
   lines.push(`device ${log.device} · ${last.quads} quads · ${s.length} samples`);
+  if (!log.cleanExit) {
+    for (const line of explainDeath(last.life ?? null)) lines.push(line);
+  }
 
   if (first.heapMb >= 0 && last.heapMb >= 0) {
     const dt = Math.max(1, last.t - first.t);

@@ -17,7 +17,7 @@
     "lint": "bun run internal:check-conventions && oxlint . --deny-warnings --no-error-on-unmatched-pattern",
     "lint:fix": "oxlint . --fix --deny-warnings --no-error-on-unmatched-pattern",
     "typecheck": "turbo typecheck",
-    "test:game": "bun packages/mobile/game/net/net.test.ts && bun packages/mobile/game/replay/replay.test.ts && bun packages/mobile/game/dev/dev.test.ts && bun packages/mobile/game/save/save.test.ts",
+    "test:game": "bun packages/mobile/game/bench/lifecycle.test.ts && bun packages/mobile/game/net/net.test.ts && bun packages/mobile/game/replay/replay.test.ts && bun packages/mobile/game/dev/dev.test.ts && bun packages/mobile/game/save/save.test.ts",
     "db:generate": "turbo db:generate",
     "db:migrate": "turbo db:migrate",
     "db:push": "turbo db:push",

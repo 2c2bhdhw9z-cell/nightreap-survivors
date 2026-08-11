@@ -18,7 +18,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
 import { Link } from "expo-router";
@@ -32,6 +32,7 @@ import {
   summariseFlight,
   type FlightLog,
 } from "@/game/bench/flight-recorder";
+import { APP_STATE, LifecycleProbe, type AppStateCode } from "@/game/bench/lifecycle";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Palette } from "@/constants/theme";
 
@@ -135,6 +136,7 @@ export default function Bench() {
   const [error, setError] = useState<string | null>(null);
   const [previous, setPrevious] = useState<FlightLog | null>(null);
   const recorderRef = useRef<FlightRecorder | null>(null);
+  const probeRef = useRef<LifecycleProbe | null>(null);
 
   // Recover the last run's tail before this one starts overwriting it. An OS kill leaves no error
   // and no chance to screenshot, so the previous flight is the only evidence we ever get.
@@ -152,6 +154,23 @@ export default function Bench() {
   const countRef = useRef(count);
   const hudRef = useRef(hud);
   const rafRef = useRef<number | null>(null);
+
+  // One subscription for the screen's lifetime. Feeds whichever probe the current run created, so
+  // the flight log can say whether a death happened in the foreground and whether iOS warned first.
+  useEffect(() => {
+    const onChange = AppState.addEventListener("change", (next) => {
+      const code: AppStateCode =
+        next === "active" ? APP_STATE.active : next === "inactive" ? APP_STATE.inactive : APP_STATE.background;
+      probeRef.current?.setState(code, Date.now());
+    });
+    const onWarn = AppState.addEventListener("memoryWarning", () => {
+      probeRef.current?.noteMemoryWarning(Date.now());
+    });
+    return () => {
+      onChange.remove();
+      onWarn.remove();
+    };
+  }, []);
   const stormRef = useRef<QuadStorm | null>(null);
   const timerRef = useRef<FrameTimer | null>(null);
 
@@ -208,6 +227,8 @@ export default function Bench() {
         startedAtWall,
       );
       recorderRef.current = recorder;
+      const probe = new LifecycleProbe(startedAtWall);
+      probeRef.current = probe;
       let lastFlight = 0;
 
       const frame = () => {
@@ -289,6 +310,7 @@ export default function Bench() {
             simStaleMs: now - lastTickChangeAt,
             frameErrors,
             lastError,
+            life: probe.snapshot(Date.now()),
           });
           void recorder.persist();
         }
