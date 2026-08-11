@@ -295,3 +295,62 @@ If it survives ~35 min → bisect `bench.tsx` in place instead (toggles for SIM 
 HEARTBEAT / PANEL / RECORDER). Bench-only elements still untested: the real
 `createDebugAtlas` texture, 5,176 per-sprite JS `draw()`/`drawRotated()` calls, the
 synthetic HUD, and the 4×/sec React panel re-render.
+
+## Netcode + replay layer — 2026-08-11 (session 3, cont.)
+
+Built while Gate A is blocked on device access. Both layers are headless-testable, so
+progress here needed nothing from the phone.
+
+### `game/net/` — complete, self-tested, pushed (`d53bb28`)
+`protocol.ts` · `codec.ts` · `input.ts` · `messages.ts` · `state-hash.ts` ·
+`correction.ts` · `clock.ts` · `plausibility.ts` · `net.test.ts`
+
+Run: `bun packages/mobile/game/net/net.test.ts` → PASS.
+
+Measured, not assumed:
+- stick is circular, not square — cardinal 127.0, diagonal 127.3
+- full tilt maps to ≤ 1.0 in Q16.16 (65532)
+- correction sweep starves nothing over 60s — worst age 125 ticks, 64.0 entities/tick
+- sweep still prefers nearby entities — furthest chosen 78 units
+- RTT median ignores an outlier; drift closes over 240 ticks without snapping
+- plausibility tolerates a hard legitimate run — peak 150 spawns/s, 1.2M xp/s
+
+**Real bug the self-test caught:** `CorrectionSweep` round-robin over a window larger
+than the per-tick budget let the same nearby entities win every pass. With 2,000 enemies
+**75% were never corrected in 60 seconds** (worst age 3600 ticks = a full minute of
+uncorrected drift on a guest). Fixed with `STARVATION_TICKS = 120` + `STARVED_KEY = -1`
+priority override, so anything unswept for 2s outranks proximity. Worst age 3600 → 125.
+
+### `game/replay/` — complete, self-tested
+`format.ts` · `recorder.ts` · `player.ts` · `replay.test.ts`
+
+Run: `bun packages/mobile/game/replay/replay.test.ts` → PASS (all sections).
+
+- log format: 48-byte header, magic `NRRP`, `TAINT` bitfield (14 bits), RLE input stream
+- **RLE compression 40.0× vs raw — 360 bytes per minute of solo play.** A 30-min run is
+  ~11KB, so shipping a full tick log with a bug report is free.
+- replay reproduces the recorded state hash exactly (`9af3c464`)
+- harness overhead 18,000,000 ticks/s with a do-nothing sim → the harness is never the
+  bottleneck in revalidation; the sim is
+- **a 30-minute run revalidates in 1.63s** at 66,176 ticks/s against a 256-entity stub.
+  This is the number that makes §5b's *mandatory* ladder revalidation affordable.
+- tamper rejection: bad magic, version mismatch, truncation, inflated tick count,
+  altered input, forged final hash, empty file — all rejected, none throw
+- **clearing the taint flag does not defeat revalidation** — acceptance is decided by
+  resimulation, exactly as §5b requires. Taint is a courtesy signal; the hash is the gate.
+- divergence detection names the first bad tick (60) within one sample window
+- stream cap holds: 200k changing ticks → 0.8MB, head-dropping, tick count still true
+
+**Real bug the replay test caught (severe, in `core/rng.ts`):** `nextInt` computed its
+rejection limit as `(2**32 - 2**32 % bound) >>> 0`. When `bound` divides 2^32 the limit
+is exactly 2^32 and `>>> 0` wrapped it to **0**, so `while (r >= limit)` rejected every
+draw and **spun forever**. Powers of two are the most common bounds in the game — coin
+flips, 4-way picks, 64-slot tables — so `nextInt(2)`, `nextInt(4)`, `nextInt(64)` were
+all infinite loops. It hung this test suite on its first execution. Had it reached a
+device it would have read as a hard freeze indistinguishable from the 844s bench death.
+Fixed by keeping the limit a plain float; permanent regression section `rng bounds` now
+covers termination, range, uniformity, the rejection path, and seed determinism.
+
+Note: `net.test.ts` passed earlier only because it happened to use non-power-of-two
+bounds. Two self-tests, two real bugs, both in code that had already typechecked and
+linted clean. Keep writing the harness before trusting the layer.

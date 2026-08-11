@@ -79,7 +79,11 @@ export class Rng {
   /** Uniform integer in [0, bound). Rejection-sampled, so no modulo bias. */
   nextInt(bound: number): number {
     if (bound <= 1) return 0;
-    const limit = (0x100000000 - (0x100000000 % bound)) >>> 0;
+    // Largest multiple of `bound` at or below 2^32. Kept as a plain float on purpose: when `bound`
+    // divides 2^32 evenly (2, 4, 8, ... 64, 256 — the most common bounds in the whole game) the limit
+    // IS 2^32, and `>>> 0` would wrap it to 0, making `r >= limit` always true and the rejection loop
+    // spin forever. That hung this file's own test at bound 4 and bound 64.
+    const limit = 0x100000000 - (0x100000000 % bound);
     let r = this.nextU32();
     while (r >= limit) r = this.nextU32();
     return r % bound;
