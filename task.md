@@ -398,3 +398,45 @@ keeps SYSTEM tools out of a stranger's binary; **the only real boundary is serve
 replay revalidation**, which `game/replay/` now measures at 1.63s per 30-minute run.
 
 New root script: `bun run test:game`.
+
+## Save layer — 2026-08-11
+
+`game/save/` — `schema.ts` · `codec.ts` · `store.ts` · `save.test.ts`
+Added to `bun run test:game`. PASS first run. **201 ok checks across the four suites.**
+
+- **Binary, fixed-layout, 1092 bytes.** Cheap enough to write at run end, on every settings
+  change, and on app background. Bitsets sized for full scope with room to spare: 512
+  characters, 512 weapons, 256 stages, 256 arcanas, 2048 achievements, 512 mastery slots,
+  8 ascension ladders — so launch content growing into full content needs no migration.
+- **Double-buffered slots, not atomic rename.** There is no portable atomic rename across
+  expo-file-system / AsyncStorage / localStorage, so two slots alternate, each with a
+  generation counter and a checksum, and load takes the highest generation that validates.
+  A torn write can therefore only destroy the *older* copy.
+- **Every write is verified by reading it back and decoding it.** Backends lie — AsyncStorage
+  can resolve a write that never landed, and the OS can kill us mid-flush. Tested with a
+  backend that claims success and stores nothing: caught by the readback.
+- Recovery ladder proven: **current → previous → fresh**, and `LoadResult.recovered` tells
+  the caller so the player can be informed once instead of silently starting over.
+
+### Hardening actually measured
+- **Every single-bit flip in all 1088 non-checksum byte positions is caught.** That is the
+  check that proves the checksum covers the whole payload and not just the first block.
+- Torn write at byte 100 → previous save intact (gold 600, gen 2), **one run lost, not the
+  profile**; the next save repairs the broken slot.
+- In-place corruption of the newest slot → falls back. Both slots corrupt → fresh profile
+  *and* `recovered` flagged.
+- A throwing backend is caught, counted, and leaves the good save untouched.
+- A newer `SAVE_VERSION` is refused rather than misread — a downgrade must never eat progress.
+- `generation` stays readable from a slot that failed its checksum, so slot selection still
+  works when a slot is broken.
+
+### Deliberate non-goals
+- The checksum is a hash, not a signature. **Modding your own local save is allowed** (§5b);
+  this catches corruption, not cheating. Writing code that looks like security and is not
+  would be worse than nothing.
+- `everTainted` on the profile is informational only and never gates anything — taint is on
+  the run. Chaos Sandbox participation is explicitly *not* recorded: an official event is not
+  a black mark.
+- Every opt-in (telemetry, crash reports, personalised ads, custom name) defaults to **off**,
+  asserted by test.
+- `eraseEverything()` exists for the store listings' data-deletion requirement.
