@@ -587,3 +587,40 @@ manifest confirmed 200, so Expo Go on the REVVL is measurable and is the number 
 Gate A. Chrome is a lower bound, not the verdict.
 
 Next: user reports gpu line + HALF SIZE delta + native Expo Go run on the REVVL.
+
+## GATE A: PASSED on the REVVL — 2026-08-11 (session 6)
+
+Native Expo Go, Android, REVVL V+ 5G, buffer 720x1640 @3x, Mali-G57 MC2 (real GPU, NOT
+SwiftShader — the software-fallback suspicion is dead):
+
+    5176 quads · 5 draws · 5 layers · overdraw 29.0x screen
+    17.9ms p50 · 21.9ms p95 · 32.0ms p99 · 33.7ms worst
+    56 fps · 71.7% over 16.7ms · 131 dropped ticks
+    sim 947.6s / real 951s · 56854 ticks · 52404 frames
+    warm 15m51s ✓ · 0 mem warnings · MEMORY CLEARED
+
+VERDICT: WebGL via expo-gl STAYS. No Skia pivot. `game/render/` is settled.
+
+Reasoning: 17.9ms p50 against a 16.67ms budget is 7% over, on a scene carrying 29x overdraw
+that no real run will ever produce. Cutting overdraw to a realistic 3-5x has more than 7% in
+it. The sim also held: 947.6s of sim against 951s of wall clock is 0.4% behind over 16 minutes,
+with 131 dropped ticks out of 56,854 (0.23%).
+
+MEMORY QUESTION CLOSED TOO: 15m51s foregrounded, zero memory warnings, no death. The iPhone
+844s death was iOS discarding a suspended app, not a leak. Four trials were misread.
+
+BROWSER IS NOT THE PLATFORM — do not gate on it again:
+    Chrome  8.6 fps  (116ms p50)
+    Expo Go 56.0 fps (17.9ms p50)
+6.5x. Chrome's compositor is the difference. Web stays a convenience harness only.
+
+HALF SIZE bisection (browser, samples too early to weight heavily): overdraw 50.8x -> 12.7x
+(clean 4x) moved p50 642ms -> 470ms, only 1.37x. So the browser wall was per-quad/compositor,
+not fill rate. Re-run natively before spending anything on overdraw work.
+
+FPS METRIC CORRECTED: user observed ~67fps on a 60Hz panel and was right to distrust it. The
+old readout was 1000/p50 — a median of frame *intervals*, which can dip under 16.67ms on a
+jittery stream and read above refresh. Now shows frames/wall-second alongside it (52404/951 =
+55.1, consistent with the 56 shown). Median-interval kept for headroom, labelled.
+
+PHASE 0 IS CLOSED. Remaining Phase 0 debt: none blocking.

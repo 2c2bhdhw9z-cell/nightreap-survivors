@@ -59,7 +59,19 @@ interface Readout {
   p99: number;
   worst: number;
   overBudgetPct: number;
+  /**
+   * Reciprocal of the median frame interval. This can read ABOVE the display's refresh rate and
+   * still be honest: it is a median of intervals, not a count of frames. On a jittery stream a
+   * frame that arrives late is followed by one that arrives early, and the median of those
+   * intervals can land under 16.67ms even though the panel never showed more than 60 in a second.
+   * Useful for spotting headroom, useless as an answer to "how smooth is it".
+   */
   fps: number;
+  /**
+   * Frames actually issued per wall-clock second over the whole run. This is the number that
+   * cannot exceed the refresh rate, and the one to trust when the two disagree.
+   */
+  realFps: number;
   droppedTicks: number;
   warmSeconds: number;
   bufferW: number;
@@ -100,6 +112,7 @@ const EMPTY: Readout = {
   worst: 0,
   overBudgetPct: 0,
   fps: 0,
+  realFps: 0,
   droppedTicks: 0,
   warmSeconds: 0,
   bufferW: 0,
@@ -312,6 +325,10 @@ export default function Bench() {
             worst: timer.percentile(1),
             overBudgetPct: (over / recorded) * 100,
             fps: p50 > 0 ? 1000 / p50 : 0,
+            realFps: (() => {
+              const elapsed = (Date.now() - startedAtWall) / 1000;
+              return elapsed > 0 ? loop.stats.frames / elapsed : 0;
+            })(),
             droppedTicks: loop.stats.droppedTicks,
             warmSeconds: Math.floor((Date.now() - startedAtWall) / 1000),
             bufferW,
@@ -443,7 +460,8 @@ export default function Bench() {
           {fmt(readout.worst)} worst
         </Text>
         <Text style={styles.row}>
-          {readout.fps.toFixed(1)} fps · {readout.overBudgetPct.toFixed(1)}% over 16.7ms ·{" "}
+          {readout.realFps.toFixed(1)} fps sustained · {readout.fps.toFixed(1)} fps median-interval ·{" "}
+          {readout.overBudgetPct.toFixed(1)}% over 16.7ms ·{" "}
           {readout.droppedTicks} dropped ticks
         </Text>
         <Text style={styles.row}>
