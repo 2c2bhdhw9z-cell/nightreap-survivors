@@ -1101,6 +1101,87 @@ Audio later: `music` for stage loops, `sound-effects` for hits/pickups/level-ups
 
 ---
 
+## Cheap now, expensive later — five things worth deciding before Phase 2
+
+These are decisions that cost hours today and days-plus-risk once real players have real save files.
+Nothing here changes the plan's scope; they change *when* certain constraints get honored.
+
+### 1. Mid-run resume when the phone kills the app — SETTLED, build in Phase 2
+
+Mobile reality: the OS kills a suspended app whenever it wants memory. We already proved this — the
+iPhone discarded a backgrounded bench run at 844 seconds. If a player takes a call at minute 26 of a
+30-minute run and loses it, that is the single most infuriating thing this game can do to someone.
+
+So the run is **snapshottable**: the entire simulation writes to a flat byte buffer and restores from it
+exactly, resuming the same run at the same tick with the same RNG position.
+
+This is nearly free *only because of how the engine was already built* — every system stores its state in
+flat typed arrays with fixed capacities, so a snapshot is a sequence of buffer copies with no object
+graph to walk. Written after the fact it would be a rewrite; written now it is a serializer over data
+that already sits in the right shape.
+
+- Snapshot on background, on pause, and on a rolling ~30-second autosave.
+- Written through the same atomic double-buffered save path, so a snapshot can never half-exist.
+- **A resumed run is still a normal run** — same seed, same tick count, same replay stream, so it stays
+  ladder-legal and revalidates. Resuming is not a cheat because nothing about the simulation changed.
+- Refuses to load across engine versions; on mismatch the player is told the run can't continue rather
+  than handed a corrupted one.
+- **It pays for itself three more times:** it is exactly what co-op host migration needs when the host
+  drops, exactly what dev-menu save states need, and exactly what a crash report needs to reproduce a
+  bug on our own machines.
+
+### 2. Every player-facing string goes through an ID table — SETTLED, from Phase 3
+
+Right now card text lives inline in the content rows, which was correct for six weapons. At 40+ weapons
+× 8 levels each, plus 40 characters, 22 arcanas, 150+ achievements and ~30 screens, that becomes several
+thousand strings welded into logic — and pulling them apart later is exactly the kind of week-long,
+zero-visible-progress job that kills momentum.
+
+- Content rows carry a **string ID**; one table maps ID → text. English is just the first column.
+- Same rule already in force for content IDs applies: **string IDs are append-only**, never reused.
+- The `// FIDELITY:` marker rule extends here — a missing string fails CI content-lint rather than
+  shipping as blank space in a card.
+- Pseudo-localization (already a dev panel) then does real work: it inflates every string ~40% and
+  catches every layout that only fits English, before any translator is ever paid.
+- **No translation is committed to.** This is only about being *able* to, cheaply, if the game earns it.
+  A German or Spanish release later becomes a spreadsheet, not a refactor.
+
+### 3. The simulation emits sound and effect events, it never plays them — SETTLED, from Phase 1
+
+Audio arrives in Phase 8, but the hook goes in now, and it's a small one: when something happens in the
+simulation, it appends an event id to a per-tick buffer. It never calls an audio or particle function.
+
+- Keeps `game/` free of platform code, which is already a hard rule.
+- Keeps the simulation deterministic — audio must never be able to affect a run's outcome.
+- Makes replays *sound* right on playback, because the events are reproduced, not guessed.
+- Gives the accessibility work something concrete to switch off (reduced-VFX, no-flash) without touching
+  simulation code.
+- Phase 8 audio becomes wiring a table of ids to sounds instead of hunting through combat code.
+
+### 4. Save data gets an account id and a revision counter now — SETTLED, Phase 0 shape, cloud in Phase 8
+
+Cloud save itself is Phase 8 and needs accounts. But the two fields it requires have to exist in the save
+layout from the first save a player ever writes, or the first cloud sync has to guess which of two
+devices is newer — and that guess is how people lose 200 hours.
+
+- An opaque account id (empty until the player links one) plus a monotonically increasing revision.
+- Conflict rule fixed in advance: **higher revision wins, and the loser is kept as a recoverable backup
+  slot**, never deleted. If we're wrong about which device was newer, the player still has both.
+- Device-loss recovery is the actual feature. It's also the top support ticket in every mobile game that
+  didn't plan for it.
+
+### 5. The small ones, decided so they don't get argued about later
+
+| Decision | Why now |
+|---|---|
+| **Battery saver mode** — a 30fps cap and reduced VFX, user-selectable, plus an automatic prompt if the device thermally throttles. | The sim already runs at a fixed 60Hz independent of rendering, so this is a render-rate change and nothing more. Free today. |
+| **Install size budget: under 100MB.** Atlas budget set before art is drawn, not after. | Install size measurably affects install conversion, and it's a nightmare to claw back once 20 art sheets exist at the wrong resolution. |
+| **First-run experience: no tutorial screens.** The first run *is* the tutorial — one weapon, gentle first minute, card screen at 30 seconds. | Genre convention, and it means we never build a tutorial system. Decided now so nobody designs one. |
+| **Daily Run reminder notification, opt-in, asked on the second day and never again.** | Permission prompt timing is the whole ballgame — asked at first launch, most people decline forever. |
+| **Daily seed comes from the server, never the device clock.** | Otherwise changing the phone's date farms Daily attempts. Already listed as a `system`-tier dev capability; this states the server side of it. |
+
+---
+
 ## Phases
 
 ### Phase 0 — Foundation + renderer go/no-go
@@ -1160,12 +1241,16 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
 - WebSocket relay, room codes, public matchmaking by party size, friends-first fill.
 - Host authority, authoritative event bus, **rolling correction sweep**, ~2-tick input delay with local
   movement prediction.
+- **Run snapshot / restore** — the whole simulation to a flat buffer and back, same tick, same RNG
+  position. Powers mid-run resume after the OS kills the app, host migration, and dev save states.
 - State-hash reconciliation + compact resync. Host migration, drop-out grace, rejoin.
 - RN co-op lobby with the full 1–4 flow; 4× HUD; palette swaps; shared XP + batch level-up; downs and
   revives; per-player-count scaling.
 - **Remote-config gate** so co-op ships locked.
 - **Dev menu v2:** full netcode toolkit — latency/loss injector, force desync, correction-traffic view,
   hash comparison, host-migration simulation.
+- **Gate (added):** a run snapshotted mid-fight restores to a byte-identical state and still revalidates
+  as a legal replay; force-quitting mid-run and reopening resumes the run.
 - **Gate:** 4 devices across iOS + Android + web, 10-minute run at 150ms latency and 2% loss — no player
   ever sees a divergent game state, and induced drift visibly self-heals within ~0.3s. Re-run every phase.
 
