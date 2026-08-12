@@ -1241,8 +1241,20 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
 - WebSocket relay, room codes, public matchmaking by party size, friends-first fill.
 - Host authority, authoritative event bus, **rolling correction sweep**, ~2-tick input delay with local
   movement prediction.
-- **Run snapshot / restore** — the whole simulation to a flat buffer and back, same tick, same RNG
-  position. Powers mid-run resume after the OS kills the app, host migration, and dev save states.
+- ~~**Run snapshot / restore**~~ — **DONE.** The whole simulation to a flat buffer and back, same tick,
+  same RNG position, discovered by walking the run rather than a hand-written field list so a new field
+  cannot be silently forgotten; shape fingerprinted into the header so a snapshot from another build is
+  refused outright. The input log travels with the world, so a resumed run stays ladder-legal. Zero-run
+  compression takes ~500KB down to ~85KB. Powers mid-run resume, host migration, and dev save states.
+- ~~**Rolling autosave**~~ — **DONE.** Every 30s of play, on a card screen, and immediately on
+  background; two alternating slots with a generation counter; every write read back and compared byte
+  for byte; a resume is verified before it is ever offered; colliding rolling autosaves are dropped, not
+  queued. Remaining piece is the "continue your run?" screen itself, which waits on mock approval.
+- **Found and fixed here:** the replay recorder took its player count from a fixed four-slot character
+  array, so every solo run's log claimed four players and no solo run could ever have revalidated.
+- **Known hole, Phase 4:** a run that ends on a *time limit* cannot be revalidated from its log alone,
+  because the limit is not in the header. Timed modes need to carry their limit as mode data like every
+  other rule. Endings that exist today — defeat, White Hand — are fine.
 - State-hash reconciliation + compact resync. Host migration, drop-out grace, rejoin.
 - RN co-op lobby with the full 1–4 flow; 4× HUD; palette swaps; shared XP + batch level-up; downs and
   revives; per-player-count scaling.
