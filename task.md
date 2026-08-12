@@ -739,3 +739,60 @@ Six maxed weapons against 800 enemies: 34us per tick (a 60fps frame is
 16,667us), zero allocation over a full simulated minute, 54,321 hits landed.
 Crits reproduce exactly from a seed. Damage numbers are whole integers so two
 phones always agree.
+
+## Session 7 — the reward loop
+
+### The plan now lives in the repo
+`plan.md` was sitting outside the project folder, so it was never on GitHub. Copied in, and the
+README front page now links to plan / task / design so the three documents are the first thing you
+see on the repo page.
+
+### Gems, the magnet, and the drop table (`game/sim/pickups.ts`)
+Kill something, it drops a gem; walk near it, it flies to you. Three decisions worth remembering:
+
+1. **A full floor never steals experience.** The gem pool has a hard ceiling of 1024. When it is full
+   a new drop MERGES into the nearest existing gem instead of being refused, and the host gem reads
+   as a higher tier so a rich floor looks rich. Proved by dropping 5,000 gems into a 128-slot pool:
+   all 15,000 experience was still on the ground, and all 15,000 came back out on collection. This is
+   the difference between late-run levelling feeling generous and feeling broken.
+2. **The magnet is a range, not a speed.** A gem is inert until a player comes inside the radius, then
+   it locks on and keeps chasing even if the player runs away. That lock-on is where the tail of gems
+   streaming behind you comes from. Base radius is deliberately small (26px) so magnet upgrades have
+   a reason to exist and so you still have to walk back through the horde for what you earned.
+3. **Collection is an event, not a side effect.** This file never touches experience, gold or health;
+   it writes what was collected into flat buffers and the run loop applies them. Keeps the co-op host
+   authoritative over collection order and keeps replays reproducible.
+
+Gems never expire. Consumables (food) expire after a minute so a 90-minute Endless floor does not
+slowly fill with un-taken chickens.
+
+### The level curve (`game/sim/progression.ts`)
+5 experience to reach level 2, then +10 per level, flattening at level 20 (195 forever after).
+No level cap.
+
+Two things the scale forced:
+- **The flat tail is a division, not a loop.** One gem can be worth hundreds of levels, and a Limit
+  Break gem can be worth millions. Handed a gem worth a billion it granted 5,128,205 levels in 0ms.
+  A loop would have frozen the phone.
+- **Level-ups queue, they do not interrupt.** Showing 230 card screens back to back is not a game.
+  The queue has a ceiling of 4096 owed screens (levels and stats still all count past that), and the
+  batch size grows with the backlog — 1 card at a time early, up to 16 at once with a deep backlog.
+
+62 checks in `game/sim/loot.test.ts`, all passing. A minute of a full 1024-gem floor with four
+players and a huge magnet: 0.0KB allocated over 3600 ticks, 97us per tick, 2,093 collections.
+
+### Two real bugs found
+- **Pickups could re-lock onto a player who had just gone down.** The release-on-down path ran and was
+  then immediately undone by the re-lock in the same tick. Now both paths agree on the same `upright`
+  flag. Symptom would have been gems visibly ignoring a downed player's status in co-op.
+- **Replay revalidation was timing itself with a whole-millisecond clock.** Work that finishes in
+  microseconds measured as 0ms, which read as "infinitely slow" and made the affordability number
+  meaningless. This is the same trap that flattened the on-device frame-time percentiles in session 3.
+  Fixed at the source; it now reports 5.4M ticks/s bare and a 30-minute run revalidating in 1.73s.
+
+### Where Phase 1 stands
+Done: player movement, camera, floor, enemies + waves, six weapon archetypes, projectiles, gems +
+magnet + drop table, the level curve and the level-up queue.
+Next: the card draw itself (reroll / skip / banish, and the batched screen), the six passives, the
+death and results screen, dev menu v1 panels, then wiring it all into one playable screen with a
+thumbstick.
