@@ -298,6 +298,31 @@ curve, and boss HP scale per player count so a duo isn't drowning and a quad isn
 - **Cross-platform** iOS ↔ Android ↔ web, safe now that correctness doesn't depend on engine agreement.
 - Local couch co-op skipped: four people on one phone isn't a thing.
 
+#### Carrying is allowed, and here is exactly how far it goes — SETTLED
+
+A veteran joining a newcomer's run makes that run easy. That is intended. It does not make the
+newcomer's account strong, because the two kinds of power are kept separate:
+
+| | Shared in co-op? | Notes |
+|---|---|---|
+| In-run levels, weapons, passives | **Yes** — shared XP pool, batch level-up | Temporary, gone at run end. This is where carrying happens. |
+| Gold earned | **Yes**, full value per player | Counts toward each player's own solo shop. Never reduced for being helped. |
+| Permanent shop upgrades | **No** | Each account buys its own. A carry accelerates the grind, it does not skip it. |
+| Unlocked characters / stages / arcanas | **No** | Earned per account, though co-op participation satisfies "was present when X died" conditions. |
+| Achievements | Participation counts | If you were in the run that killed the Reaper, you killed the Reaper. Gating this would push people to play alone. |
+
+Three guardrails, all already required elsewhere in this plan:
+
+1. **Ladders are segregated and revalidated.** Solo boards are solo-only; co-op boards are ranked
+   separately per party size (1 / 2 / 3 / 4 are four different boards). Every ladder submission is
+   re-simulated server-side. A carry cannot contaminate a board the carried player wasn't in.
+2. **Enemy COUNT scales with player count; enemy HEALTH does not.** Four players face roughly four
+   times the crowd, so the screen stays lethal and each player still has to survive their own corner.
+   Health scaling is explicitly rejected — it makes everything spongy and drains the fun out of the
+   weapons. Boss HP is the one exception and scales, because a boss is a single target.
+3. **No anti-carry penalties, ever.** No reduced gold, no reduced XP, no "assisted run" stigma. The
+   design accepts that being helped by a friend is the single best onboarding funnel this genre has.
+
 ### 4. Co-op is built at launch but shipped locked
 
 Per your call: the full system ships in the v1 binary, **disabled behind a remote-config flag**.
