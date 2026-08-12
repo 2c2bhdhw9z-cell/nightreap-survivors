@@ -540,6 +540,26 @@ export function inspectSnapshot(bytes: Uint8Array): SnapshotInfo {
 }
 
 /**
+ * Check a snapshot's integrity without needing a run to put it into.
+ *
+ * Header, length, then checksum. Separate from `restoreRun` because the two callers that need it most
+ * do not have a run yet: the write path, confirming that what came back off storage is what went down,
+ * and the resume screen, which must never offer to bring back a run it cannot actually bring back.
+ * Offering a resume that fails at the moment the player accepts it is worse than not offering one.
+ */
+export function verifySnapshot(bytes: Uint8Array): SnapshotError {
+  const info = inspectSnapshot(bytes);
+  if (info.error !== SNAPSHOT_ERROR.NONE) return info.error;
+  const storedEnd = SNAPSHOT_HEADER_BYTES + info.storedBytes;
+  if (bytes.byteLength < storedEnd) return SNAPSHOT_ERROR.TRUNCATED;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  if (fnvBytes(bytes, SNAPSHOT_HEADER_BYTES, storedEnd) !== view.getUint32(SNAP.checksum, true)) {
+    return SNAPSHOT_ERROR.BAD_CHECKSUM;
+  }
+  return SNAPSHOT_ERROR.NONE;
+}
+
+/**
  * Put a captured run back.
  *
  * Every rejection path here is deliberate and silent-failure-free: a snapshot we cannot fully trust is

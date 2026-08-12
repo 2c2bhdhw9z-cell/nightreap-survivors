@@ -1081,3 +1081,34 @@ catches a missed field, because a missed field usually agrees for one tick and o
 Also proven: a save with a level-up screen open comes back with the same four cards and their words;
 every one of 1,203 sampled single-bit corruptions is caught and refused; and an interrupted run's
 replay reproduces exactly and is accepted for the ladder.
+
+## Autosave: the part the player actually notices
+
+Saving a run is only useful if the game does it at the right moments, on its own, without being asked.
+That scheduler now exists.
+
+**When it saves.** Every thirty seconds of play, and immediately the moment the app goes to the
+background — which is the important one, because that is the last instant the game is guaranteed
+before the phone decides to reclaim it.
+
+**Where it goes.** Two alternating spots, each write read straight back and compared byte for byte
+before it is believed. Storage lies: a phone can report a save as done when nothing reached disk, and
+it can mangle a byte in the middle. Both were tested by deliberately building a storage layer that
+lies, fails, and throws, and in every case the game correctly concludes it has no saved run rather
+than believing it has one.
+
+**What it refuses to promise.** The game only offers to bring a run back if it has checked the saved
+run adds up. Offering to restore a run and then failing when the player taps it would be worse than
+never offering — so an offer is now proof, not a guess. If the newest save is damaged, the previous one
+is offered instead: the worst case is losing up to thirty seconds, not the run.
+
+**What it will not do.** It never saves during the split second the game is computing a frame, it never
+piles up saves — if one is still being written when the next is due, the next is dropped and noted,
+because a queue of half-megabyte buffers on a cheap phone is a worse problem than a missed autosave —
+and it never saves a run that has already finished, since that would mean offering to resume a run that
+has already been scored.
+
+**Still to come:** the actual "you have a run in progress — continue?" screen. That is UI, and UI waits
+for approved mock images per the standing rule, so the engine side is done and parked there.
+
+Verified: typecheck clean, lint clean, 16 automated test files pass, build succeeds.
