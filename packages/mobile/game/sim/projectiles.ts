@@ -500,11 +500,19 @@ export class ProjectileStore {
         if (--this.retickTimer[s] <= 0) {
           this.retickTimer[s] = this.retick[s];
           this.clearHits(s);
-        } else {
-          // Between ticks an aura does no work at all. This is the single biggest saving in the
-          // file: garlic would otherwise run a broad-phase query every tick for nothing.
+        } else if (kind === MOVE.aura) {
+          // An aura is the one shape that can safely sit out the ticks between its own damage
+          // ticks: it never moves relative to its owner, so anything that walks into it is caught
+          // within half a second and nothing is ever missed outright. Skipping the broad-phase
+          // query here is the single biggest saving in the file.
           continue;
         }
+        // Everything else that re-ticks — orbiters, sweeps — MOVES, and a moving shape must be
+        // asked every single tick what it is touching. Skipping the query between re-ticks meant
+        // a bible could sweep clean through a crowd and deal literally nothing, because the crowd
+        // only got looked at on the exact ticks its timer happened to land on. The re-tick
+        // interval's real job is only to decide how soon the same enemy may be hit again, which
+        // the hit memory below handles on its own.
       }
 
       if ((this.flags[s] & PROJ_FLAG.hostile) !== 0) continue;
