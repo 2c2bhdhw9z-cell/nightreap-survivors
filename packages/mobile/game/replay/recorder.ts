@@ -73,6 +73,14 @@ export class ReplayRecorder {
     buildId: number;
     contentVersion: number;
     characterIds: readonly number[];
+    /**
+     * How many players are actually in the run.
+     *
+     * Explicit, because inferring it from `characterIds.length` was a bug: a caller that keeps a
+     * fixed four-slot character array — which the run config does — silently recorded every solo run
+     * as a four-player run, and a four-player header cannot be revalidated by a one-player world.
+     */
+    playerCount?: number;
     modifiers?: Int32Array;
     modifierCount?: number;
     startedAtUnixSec?: number;
@@ -85,7 +93,8 @@ export class ReplayRecorder {
     h.seed = options.seed;
     h.tainted = options.tainted ?? 0;
     h.stageId = options.stageId;
-    h.characterCount = Math.min(options.characterIds.length, MAX_REPLAY_PLAYERS) || 1;
+    const declared = options.playerCount ?? options.characterIds.length;
+    h.characterCount = Math.min(Math.max(1, declared | 0), MAX_REPLAY_PLAYERS);
     for (let i = 0; i < h.characterCount; i++) h.characterIds[i] = options.characterIds[i] ?? 0;
     h.modifierCount = Math.min(options.modifierCount ?? 0, MAX_REPLAY_MODIFIERS);
     if (options.modifiers) {
@@ -210,6 +219,55 @@ export class ReplayRecorder {
     this.openRecord = -1;
     this.openCount = 0;
     return this.streamLength + n <= this.stream.length;
+  }
+
+  /**
+   * Bytes of input log recorded so far.
+   *
+   * This is the used length, not the buffer's capacity — a mid-run snapshot stores only what has
+   * actually been played, or an eight-megabyte buffer would be written to disk every thirty seconds.
+   */
+  get streamBytes(): number {
+    return this.streamLength;
+  }
+
+  /** A view of the recorded input log. Borrowed, not copied — do not hold it across a tick. */
+  streamView(): Uint8Array {
+    return this.stream.subarray(0, this.streamLength);
+  }
+
+  /**
+   * Stop extending the current run-length record, so the next recorded frame starts a fresh one.
+   *
+   * Called when a snapshot is taken. Closing a record costs at most four bytes and cannot be wrong,
+   * whereas carrying an open record across a snapshot would mean the restored recorder had to trust
+   * that the next frame it sees is identical to the one from before the interruption. Closing on
+   * capture as well as on restore is what makes a captured run and a restored run agree byte for byte,
+   * which is the invariant the snapshot test relies on.
+   */
+  closeRecord(): void {
+    this.openRecord = -1;
+    this.openCount = 0;
+    this.lastFrame.fill(0);
+  }
+
+  /**
+   * Put a snapshotted input log back, so a resumed run continues one log rather than starting a second.
+   *
+   * The RLE record that was open when the snapshot was taken is deliberately closed rather than
+   * reopened — see `closeRecord`. Everything a validator checks — tick count, frame sequence, final
+   * hash — is unaffected.
+   */
+  restoreStream(bytes: Uint8Array): void {
+    if (bytes.byteLength > this.stream.length) {
+      this.stream = new Uint8Array(Math.min(bytes.byteLength, MAX_STREAM_BYTES));
+    }
+    const n = Math.min(bytes.byteLength, this.stream.length);
+    this.stream.set(bytes.subarray(0, n));
+    this.streamLength = n;
+    this.closeRecord();
+    this.playerCount = this.header.characterCount;
+    this.recordBytes = rleRecordBytes(this.playerCount);
   }
 
   /** Close the run and stamp the final state hash, which is what a validator compares against. */

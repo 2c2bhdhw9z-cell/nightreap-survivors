@@ -1017,3 +1017,67 @@ One tuning note for the fun pass, not a bug: over 40 seconds the character colle
 gems that drop and leaves the rest lying around. Gems never expire, so they get swept up later when
 you walk back over them, which is how the genre works — but the early levelling pace feels slow and
 the pickup range is the first dial to try.
+
+## Phase 1 closed, Phase 2 opened — save and resume a run in progress
+
+Plain English: what got built, and what it means when you play.
+
+**The problem it solves.** A phone rings. Android decides it needs the memory your game was using.
+You force-quit on the subway because your stop came. Before this week, every one of those events
+threw away the run you were in the middle of — and "the game deleted my best run" is the kind of
+thing a player tells other people about. Now the game can write the entire living run down and pick
+it back up on exactly the tick it left off: same enemies in the same places with the same health,
+same gems on the floor, same clock, same everything.
+
+**And — this is the part that took the care — the resumed run still counts.** The list of everything
+your thumb did gets saved alongside the world, so when the run finishes, the game can prove the run
+happened by playing it back from the start and arriving at the same ending. A run you were
+interrupted in the middle of is still eligible for the leaderboard. Without that, "resume your run"
+would quietly have meant "resume your run, but it no longer counts", which would be worse than not
+offering it.
+
+**It pays for itself three more times.** In co-op, when the person hosting drops out, this is how the
+running world gets handed to somebody else instead of everybody losing the run. In testing, it is how
+we save a spot and retry a fight fifty times. And a crash report can carry the exact world that
+crashed, instead of a guess.
+
+**Size and cost.** A saved run is about half a megabyte of raw numbers, which is too much to be
+writing every thirty seconds on a cheap phone, so it gets squeezed down first — around 85KB in
+practice, roughly six times smaller, using a shrinking trick simple enough that unpacking it costs
+nothing measurable.
+
+**How it avoids rotting.** Rather than a hand-written list of everything worth saving — which is
+guaranteed to go stale the first time somebody adds something and forgets to add it to the list — the
+game inspects itself and saves everything it finds. It also writes down a fingerprint of the shape it
+found. If a future version of the game has a different shape, an old saved run is refused outright
+rather than half-loaded into a world that would then play wrong. Refusal is always total, and the
+fallback is always the safe one: start fresh.
+
+### Two real bugs this work found
+
+1. **Every solo run was being logged as a four-player run.** The proof-of-play log was writing down
+   the player count from a fixed four-slot list instead of from how many people were actually
+   playing. Consequence if it had shipped: no single-player run could ever have been verified, so no
+   solo leaderboard could ever have worked. Found because the new test insisted that an interrupted
+   run still verify, which is the first thing that ever actually read that number back. Fixed.
+2. **A saved run and a resumed run disagreed by a few bytes of bookkeeping** in the proof-of-play
+   log. Harmless in itself, but it broke the strongest guarantee available here — that saving a
+   resumed run produces byte-for-byte the same file — and that guarantee is what makes the whole
+   thing testable. Fixed by closing the log's current entry at save time as well as at load time.
+
+### Known hole, not urgent
+
+A run that ends because it hit a time limit cannot currently be verified from its log alone, because
+the time limit is not written into the log. Every ending that matters right now — dying, being taken
+by the White Hand — is fine. The clean fix is for timed modes to carry their limit as mode data like
+every other rule does, which is Phase 4 content work. Noted so it does not get discovered at launch.
+
+### Verified
+
+Typecheck clean, lint clean, all 15 automated test files pass, full build succeeds. The central check
+is not "it loaded" — it is that a saved run and the run it was saved from then play 600 more ticks in
+perfect lockstep, agreeing on every single tick, plus 300 more for a four-player run. That is what
+catches a missed field, because a missed field usually agrees for one tick and only diverges later.
+Also proven: a save with a level-up screen open comes back with the same four cards and their words;
+every one of 1,203 sampled single-bit corruptions is caught and refused; and an interrupted run's
+replay reproduces exactly and is accepted for the ladder.

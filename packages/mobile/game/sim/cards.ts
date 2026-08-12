@@ -330,6 +330,20 @@ export class CardDraw {
     this.offerCount = OFFERS_PER_SCREEN;
   }
 
+  /**
+   * Rewrite the name and description of every live offer from its kind and type.
+   *
+   * Card text is content, not state: it is looked up from the same row that supplies the effect, which
+   * is what stops the words on a card from drifting away from what the card does. So a restored snapshot
+   * stores the *choice* — which weapon, which level — and asks for the words back here, rather than
+   * serialising English into a save file.
+   */
+  relabel(weapons: WeaponStore, passives: PassiveStore, player: number): void {
+    for (let slot = 0; slot < this.offerCount; slot++) {
+      this.writeOffer(slot, this.offerKind[slot], this.offerType[slot], weapons, passives, player);
+    }
+  }
+
   private writeOffer(
     slot: number,
     kind: number,

@@ -49,7 +49,7 @@ import { MAX_PLAYERS, PlayerStore } from "../sim/player";
 import { Progression } from "../sim/progression";
 import { ProjectileStore, type OwnerPositions } from "../sim/projectiles";
 import { RUN_END, RunSummary, summariseRun, type RunEnd, type RunTotals } from "../sim/results";
-import { STAT, STAT_SCALE, Stats } from "../sim/stats";
+import { STAT, STAT_COUNT, STAT_SCALE, Stats } from "../sim/stats";
 import { TICKS_PER_SECOND, WaveDirector } from "../sim/waves";
 import { WEAPON_BY_ID, WeaponStore } from "../sim/weapons";
 import { RNG_STREAMS, Rng, RngSet, hashName } from "../core/rng";
@@ -187,7 +187,15 @@ export class Run {
   private readonly prevHealth = new Float32Array(MAX_PLAYERS);
   private readonly prevUpright = new Uint8Array(MAX_PLAYERS);
   private prevLevel = 1;
+  /**
+   * The run's modifiers as wire ids, filled at `begin` whether or not the run is being recorded.
+   *
+   * Two things need these numbers rather than the records themselves: the replay header, and a snapshot
+   * restore, which has to rebuild the modifier stack from a byte buffer that cannot hold object
+   * references. Filling it unconditionally costs a handful of integer writes once per run.
+   */
   private readonly modifierWire = new Int32Array(64);
+  private modifierCount = 0;
   private readonly bombScratch = new Int32Array(1024);
 
   private spawnRng: Rng;
@@ -281,22 +289,72 @@ export class Run {
       for (let p = 0; p < playerCount; p++) this.weapons.grant(p, starting);
     }
 
+    let count = 0;
+    for (let i = 0; i < c.modifiers.length && count < this.modifierWire.length; i++) {
+      this.modifierWire[count++] = c.modifiers[i].wireId;
+    }
+    this.modifierCount = count;
+
     if (this.recording) {
-      let count = 0;
-      for (let i = 0; i < c.modifiers.length && count < this.modifierWire.length; i++) {
-        this.modifierWire[count++] = c.modifiers[i].wireId;
-      }
       this.recorder.begin({
         seed: this.seed,
         stageId: this.stageId,
         buildId: c.buildId,
         contentVersion: c.contentVersion,
         characterIds: c.characterIds,
+        playerCount,
         modifiers: this.modifierWire,
         modifierCount: count,
         tainted: this.tainted,
       });
     }
+  }
+
+  /**
+   * Rebuild the few things that are object references rather than numbers, after a snapshot restore.
+   *
+   * A snapshot is a buffer of numbers. Almost the entire simulation already *is* numbers, which is why
+   * snapshotting works at all — but three things are not, and they are rebuilt here from numbers that
+   * were snapshotted:
+   *
+   *   1. The modifier stack holds references to content records. Rebuilt from the wire ids.
+   *   2. The loadout — the passives folded into the stats — is rebuilt from what each player owns,
+   *      exactly the way picking a passive card rebuilds it. Never patched, always rebuilt.
+   *   3. Card text is looked up from content rows, so an open card screen gets its words back.
+   *
+   * Resolved stats are deliberately NOT recomputed here. `stats.values` was restored byte-for-byte, and
+   * recomputing would replace a known-correct number with a freshly derived one — turning any future
+   * disagreement between the two into a silent behaviour change instead of a test failure. The test
+   * asserts they agree; production trusts the bytes.
+   *
+   * Called by `restoreRun`. The registry is passed in rather than imported so that `run.ts` keeps no
+   * dependency on the save layer, and the dependency arrow keeps pointing one way.
+   */
+  rehydrate(byWireId: ReadonlyMap<number, RunModifier>): void {
+    this.stack.clear();
+    this.stack.clearLoadout();
+    for (let i = 0; i < this.modifierCount; i++) {
+      const mod = byWireId.get(this.modifierWire[i]);
+      if (mod !== undefined) this.stack.add(mod);
+    }
+    for (let p = 0; p < this.players.count; p++) this.passives.applyTo(this.stack, p);
+    if (this.cards.open) this.cards.relabel(this.weapons, this.passives, 0);
+  }
+
+  /**
+   * Fold the modifier stack into a fresh set of stats and report whether it agrees with the live ones.
+   *
+   * This exists for one reason: to let a test prove that a restored run's stats could have been derived
+   * from its restored modifiers and passives. If it ever returns false, a snapshot has restored a world
+   * whose numbers do not follow from its contents, and no amount of matching state hashes would make
+   * that safe.
+   */
+  loadoutAgreesWithStats(scratch: Stats): boolean {
+    this.stack.resolve(scratch);
+    for (let i = 0; i < STAT_COUNT; i++) {
+      if (scratch.values[i] !== this.stats.values[i]) return false;
+    }
+    return true;
   }
 
   /** Reseed every stream to this run's seed without rebuilding the stream objects. */
