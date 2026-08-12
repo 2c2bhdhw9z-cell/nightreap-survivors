@@ -1,4 +1,22 @@
-# sandbox-app-template
+# Nightreap Survivors
+
+A mobile-first survivors-style action roguelike. Original art, original names, 1–4 player online co-op.
+
+## The three documents
+
+| File | What it is |
+| --- | --- |
+| [plan.md](./plan.md) | The build plan. Nine phases, start to store launch. This is the plan of record. |
+| [task.md](./task.md) | The working log. What was built, what broke, what was measured on real phones. |
+| [design.md](./design.md) | The look. Colour palette, fonts, spacing, motion rules, screen list. |
+
+Where things live: the game engine is `packages/mobile/game/` (all the maths and rules, no screen
+code). The screens are `packages/mobile/app/`. Nothing in the engine is allowed to know screens
+exist, which is what lets the same game run on Android, iPhone and a browser.
+
+---
+
+## Template reference
 
 Monorepo: Bun workspaces + Turborepo.
 
