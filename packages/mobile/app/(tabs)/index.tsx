@@ -13,7 +13,7 @@ import { Link } from "expo-router";
 import { Palette, Grid } from "@/constants/theme";
 
 const STEPS = [
-  "Tap GATE A BENCH below.",
+  "Tap PLAY to move around and fight things.",
   "Hit the 5000 preset.",
   "Leave it running ~15 min so the phone gets warm.",
   "Screenshot the panel once WARM reads ready.",
@@ -24,11 +24,16 @@ export default function Index() {
     <SafeAreaView edges={["top", "left", "right"]} style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.kicker}>NIGHTREAP SURVIVORS</Text>
-        <Text style={styles.title}>Phase 0 — Engine</Text>
+        <Text style={styles.title}>Phase 1 — The Run</Text>
       </View>
 
-      <Link href="/dev/bench" style={styles.cta}>
-        <Text style={styles.ctaText}>GATE A BENCH</Text>
+      {/* The game itself. Everything else on this screen is an instrument. */}
+      <Link href="/dev/play" style={styles.cta}>
+        <Text style={styles.ctaText}>PLAY</Text>
+      </Link>
+
+      <Link href="/dev/bench" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>GATE A BENCH</Text>
       </Link>
 
       {/*

@@ -983,3 +983,37 @@ zero revives forever in co-op. The new down/revive detection counts them.
 - `bun run typecheck` clean, `bun run lint` clean.
 - `bun run test:game`: **14 files, 718 checks, 14× PASS.**
 - Next: the first playable screen — `app/dev/play.tsx`, GL view + camera + ground + thumbstick.
+
+## Session 9 — the game became playable
+
+The first screen where you can actually move a character around and fight things. Everything built
+so far — the crowd, the weapons, the gems, the levelling, the card screen, the results — has only
+ever run inside automated tests. This is the first time all of it runs at once with a thumb on it.
+
+What is on that screen:
+ - A scrolling floor, a character you drive with an on-screen thumbstick in the bottom-left corner,
+   and a crowd that walks toward you and hurts you when it reaches you.
+ - Your starting weapon fires on its own, exactly as it will in the finished game.
+ - Enemies drop gems, gems get sucked in when you walk near them, and filling the bar opens the
+   level-up card screen. Picking a card resumes the run; a big backlog of levels asks for several
+   picks in a row without ever interrupting you mid-fight.
+ - When you die, a line appears telling you how long you lasted, what level you reached and how many
+   things you killed, and offers to run it again.
+ - Buttons along the bottom pick which seed to play (the same seed always produces the same run) and
+   turn the two test modes on: Hurry (everything happens sooner) and Hyper (more of everything).
+   Those get chosen before a restart, never mid-run.
+ - A small line of numbers up top: clock, level, health, how many enemies and gems are alive, frame
+   rate, and the live thumbstick reading. That last one exists so "is my thumb even reaching the
+   game" is a question with a visible answer instead of a guess.
+
+None of this is the real look. It is coloured blobs on a grid — a skull for you, blobs for the
+crowd, small cyan diamonds for gems. Real art is Phase 4.
+
+Verified: the whole project still typechecks and lints clean, all 14 automated test files pass, and
+the screen was driven for 35 seconds in a browser with no errors — character moved, enemies spawned
+and died, gems were collected, the thumbstick read 0.79,-0.26 while being pushed up and right.
+
+One tuning note for the fun pass, not a bug: over 40 seconds the character collects roughly half the
+gems that drop and leaves the rest lying around. Gems never expire, so they get swept up later when
+you walk back over them, which is how the genre works — but the early levelling pace feels slow and
+the pickup range is the first dial to try.
