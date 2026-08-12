@@ -81,6 +81,8 @@ export const MODIFIER_SOURCE = {
   dev: 5,
   /** Chaos Sandbox event. */
   chaos: 6,
+  /** One level of a passive item the player picked up in-run. */
+  passive: 7,
 } as const;
 
 export type ModifierSource = (typeof MODIFIER_SOURCE)[keyof typeof MODIFIER_SOURCE];
@@ -241,8 +243,22 @@ if (MODIFIERS_BY_WIRE_ID.size !== MODIFIER_CATALOG.length) {
 /** Cap on stacked modifiers, matching `MAX_REPLAY_MODIFIERS` so a legal stack is always recordable. */
 export const MAX_STACK = 64;
 
+/**
+ * Cap on *loadout* records — the passive items a player is carrying, expressed as modifiers.
+ *
+ * WHY LOADOUT IS A SECOND LIST AND NOT JUST MORE STACK
+ * Passives fold into stats through exactly the same two-tier, order-independent resolution as run
+ * modifiers, which is what stops "I took Might before Boots and got different numbers" bugs. But
+ * only *run* modifiers belong in the replay header and the co-op join packet — a passive is already
+ * reconstructed by replaying the card picks. So the records live in a separate list that `resolve`
+ * walks and `wireIds` ignores.
+ *
+ * 6 passive slots x 5 levels = 30 records worst case; 48 leaves room for a wider loadout later.
+ */
+export const MAX_LOADOUT = 48;
+
 /** Max multiplicative factors per stat we can resolve without allocating during a resolve. */
-const MAX_FACTORS_PER_STAT = MAX_STACK;
+const MAX_FACTORS_PER_STAT = MAX_STACK + MAX_LOADOUT;
 
 /**
  * A stack of modifiers plus the machinery to fold it into a `Stats` table.
@@ -253,6 +269,8 @@ const MAX_FACTORS_PER_STAT = MAX_STACK;
  */
 export class ModifierStack {
   private readonly list: RunModifier[] = [];
+  /** Loadout records (passive items). Resolved alongside `list`, never written to the wire. */
+  private readonly loadout: RunModifier[] = [];
 
   /** Additive accumulator, one slot per stat. */
   private readonly adds = new Int32Array(STAT_COUNT);
@@ -316,6 +334,32 @@ export class ModifierStack {
     this.list.length = 0;
   }
 
+  /** How many loadout records are folded in. */
+  get loadoutSize(): number {
+    return this.loadout.length;
+  }
+
+  /**
+   * Add one loadout record. Returns false when the loadout is full, which the caller treats as an
+   * ordinary outcome rather than an error — same contract as `WeaponStore.grant` on a full loadout.
+   */
+  addLoadout(mod: RunModifier): boolean {
+    if (this.loadout.length >= MAX_LOADOUT) return false;
+    this.loadout.push(mod);
+    return true;
+  }
+
+  /**
+   * Drop every loadout record.
+   *
+   * The loadout is rebuilt from the owned passives on every change rather than patched, for the same
+   * reason `resolve` re-resolves from base instead of undoing: undo paths are where stat corruption
+   * lives.
+   */
+  clearLoadout(): void {
+    this.loadout.length = 0;
+  }
+
   /**
    * Fold the whole stack into `stats`.
    *
@@ -336,18 +380,23 @@ export class ModifierStack {
     let payout = STAT_SCALE;
     let tainted = false;
 
-    for (const mod of this.list) {
-      flags |= mod.flags ?? 0;
-      if (mod.payout !== undefined) payout = Math.trunc((payout * mod.payout) / STAT_SCALE);
-      if (mod.taints) tainted = true;
+    // Run modifiers first, then the loadout. The order of these two passes cannot matter: the
+    // additive tier is a sum and the multiplicative tier is sorted before it is applied.
+    for (let pass = 0; pass < 2; pass++) {
+      const source = pass === 0 ? this.list : this.loadout;
+      for (const mod of source) {
+        flags |= mod.flags ?? 0;
+        if (mod.payout !== undefined) payout = Math.trunc((payout * mod.payout) / STAT_SCALE);
+        if (mod.taints) tainted = true;
 
-      for (const d of mod.deltas) {
-        if (d.add !== undefined) this.adds[d.stat] += d.add;
-        if (d.mul !== undefined) {
-          const n = this.factorCount[d.stat];
-          if (n < MAX_FACTORS_PER_STAT) {
-            this.factors[d.stat * MAX_FACTORS_PER_STAT + n] = d.mul;
-            this.factorCount[d.stat] = n + 1;
+        for (const d of mod.deltas) {
+          if (d.add !== undefined) this.adds[d.stat] += d.add;
+          if (d.mul !== undefined) {
+            const n = this.factorCount[d.stat];
+            if (n < MAX_FACTORS_PER_STAT) {
+              this.factors[d.stat * MAX_FACTORS_PER_STAT + n] = d.mul;
+              this.factorCount[d.stat] = n + 1;
+            }
           }
         }
       }

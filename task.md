@@ -796,3 +796,53 @@ magnet + drop table, the level curve and the level-up queue.
 Next: the card draw itself (reroll / skip / banish, and the batched screen), the six passives, the
 death and results screen, dev menu v1 panels, then wiring it all into one playable screen with a
 thumbstick.
+
+## Session 8 — the choice
+
+Two systems: the six passive items, and the level-up card screen itself.
+
+### The passives (`game/sim/passives.ts`)
+Six items, five levels each: Grim Sigil (damage), Bone Charm (armour), Wanderer's Boots (move speed),
+Hollow Lantern (pickup range), Ash Hourglass (cooldown), Gravemoss Root (health + regeneration). Six
+covers every shape a passive can be, so passive number twenty is a new row of numbers and nothing else.
+
+The one design decision worth writing down: **each level of a passive is its own little record, and
+owning it at level 3 means records 1, 2 and 3 are all folded in.** Nothing ever tries to subtract a
+passive. That is what makes the order you pick things in unable to change your final numbers — proven
+in the test: two runs taking the same three levels in different orders come out byte-identical. Games
+get this wrong all the time, and it shows up as "I took Might last and it was worth less".
+
+Passives fold into stats through the exact same machinery as game modes like Hurry, rather than a
+second parallel stat path. One way for a number to change means one place for it to be wrong.
+
+### The card screen (`game/sim/cards.ts`)
+What it offers, in order of preference: level up something you carry, hand you something new if you
+have a slot, and — only when there is genuinely nothing left to improve — coins or food. Four cards
+per screen. Reroll, skip and banish are charges you carry for the whole run, not per screen (per
+screen would make a deep backlog an infinite reroll machine). A banish lasts the rest of the run;
+banishing something that expires at the end of the screen would be worthless.
+
+Three things this file protects against:
+1. **A screen with nothing on it.** A maxed-out player at level 300 with a fistful of banishes can run
+   the pool dry. If that dealt zero cards, the game would sit there forever waiting for a choice that
+   can never come. Filler is the guarantee that a pick always exists. Tested directly.
+2. **Cards that lie.** The words on a card are pulled from the same row of data as the effect, so they
+   cannot drift apart. The test walks 400 level-ups and checks every single card's text against what
+   it actually applied.
+3. **Offers that are not reproducible.** Cards come out of the seeded draw stream and nothing else.
+   Two runs on the same seed making the same picks see the same cards all the way through — that is
+   what lets a replay be re-run and verified, which is the whole anti-cheat story for leaderboards.
+
+Batched screens: a backlog of 30 owed levels opens one screen that owes 8 picks, redealing between
+each. Levels come off the queue exactly, however deep it is.
+
+56 checks in `game/sim/cards.test.ts`, all passing. 20,000 deals: 0.0KB allocated, about 3
+nanoseconds each. No bugs found this pass — the two systems it leans on were already tested.
+
+`bun run test:game` is now 12 files, all green. Typecheck and lint clean.
+
+### Where Phase 1 stands
+Done: movement, camera, floor, enemies + waves, six weapons, projectiles, gems + magnet + drops, the
+level curve and queue, six passives, the card screen.
+Left: the death and results screen, dev menu v1 panels, then wiring the whole thing into one playable
+screen with an on-screen thumbstick — and then the Phase 1 gate.
