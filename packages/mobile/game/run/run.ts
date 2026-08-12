@@ -1,0 +1,659 @@
+/**
+ * The run — the thing that owns every simulation system and ticks them in one fixed order.
+ *
+ * WHY THIS FILE EXISTS
+ * Every other file in `game/sim/` is a self-contained system that knows nothing about the others:
+ * enemies do not know what a weapon is, pickups do not know what a level is. That is what makes them
+ * testable and what keeps the co-op path and the solo path identical. Something still has to decide
+ * *what happens in what order*, and that decision is the whole game. It lives here, once.
+ *
+ * THE ORDER IS THE CONTRACT
+ * Change the order and you change the game — and worse, you desync co-op and invalidate every replay
+ * ever recorded, because a guest ticking the same inputs in a different order produces a different
+ * world. So the order is written out explicitly in `tick`, one numbered step at a time, and the
+ * reason for each position is in a comment next to it.
+ *
+ * ONE REBUILD OF THE ENEMY GRID PER TICK
+ * The spatial hash is rebuilt exactly once, after the crowd has moved and after the tick's spawns
+ * have landed, and before anything asks it a question. That means enemy separation reads a grid that
+ * is one tick old (perfectly fine — it is steering, not collision) while every damage test reads a
+ * grid built from this tick's real positions (not fine to get wrong — a stale grid drops hits).
+ *
+ * NO ALLOCATION IN A TICK
+ * Every buffer, every scratch object and every reusable record is built in the constructor. A `new`
+ * inside `tick` — including a string, including an array literal, including a closure — is a bug on
+ * a 4GB phone, because the garbage it makes is what stalls a frame fifteen minutes into a run.
+ *
+ * PAUSED MEANS PAUSED
+ * While a level-up screen is open the simulation does not advance at all. The card screen is a modal
+ * decision, and letting the crowd keep walking while a player reads four upgrades is how you get
+ * killed by a menu.
+ */
+
+import { hashByte, hashFloat, hashFloat32Range, hashUint8Range, hashWord } from "../net/state-hash";
+import { quantiseStick } from "../net/input";
+import { ReplayRecorder } from "../replay/recorder";
+import { CardDraw } from "../sim/cards";
+import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore } from "../sim/enemies";
+import { ModifierStack, RUN_FLAG, type RunModifier } from "../sim/modifiers";
+import {
+  BOSS_DROP_RULE,
+  DEFAULT_DROP_RULE,
+  PICKUP,
+  PickupStore,
+  rollDrops,
+} from "../sim/pickups";
+import { PassiveStore } from "../sim/passives";
+import { MAX_PLAYERS, PlayerStore } from "../sim/player";
+import { Progression } from "../sim/progression";
+import { ProjectileStore, type OwnerPositions } from "../sim/projectiles";
+import { RUN_END, RunSummary, summariseRun, type RunEnd, type RunTotals } from "../sim/results";
+import { STAT, STAT_SCALE, Stats } from "../sim/stats";
+import { TICKS_PER_SECOND, WaveDirector } from "../sim/waves";
+import { WEAPON_BY_ID, WeaponStore } from "../sim/weapons";
+import { RNG_STREAMS, Rng, RngSet, hashName } from "../core/rng";
+
+/** Where the players stand at the start of a co-op run, so four of them do not begin overlapping. */
+export const SPAWN_RING_RADIUS = 12;
+
+/**
+ * How long the White Hand takes to close after the Reaper is due.
+ *
+ * Twelve seconds, because the bell tolls twelve times. The run is already over at this point — this
+ * window exists so the ending is a moment rather than a cut to a results screen.
+ */
+export const WHITE_HAND_TICKS = 12 * TICKS_PER_SECOND;
+
+/** Radius a bomb pickup clears. Generous on purpose: a bomb that does not feel decisive is litter. */
+export const BOMB_RADIUS = 160;
+
+/** Damage a bomb applies. Far above any enemy's health, so "clears the screen" is literally true. */
+export const BOMB_DAMAGE = 1_000_000;
+
+/** What a chest is worth for now. Chests become a proper multi-upgrade reward in Phase 2. */
+export const CHEST_GOLD = 100;
+
+/** Enemy the Reaper uses until it gets its own record in Phase 4. */
+const REAPER_ENEMY_ID = "gravewarden";
+
+/** Configuration for one run. Everything here is fixed at run start and never changes mid-run. */
+export interface RunConfig {
+  seed: number;
+  playerCount: number;
+  stageId: number;
+  /** Character per player. Cosmetic in Phase 1; characters carry modifiers from Phase 4. */
+  characterIds: readonly number[];
+  /** Mode, ascension, stage and live-ops records. The simulation never sees a mode enum. */
+  modifiers: readonly RunModifier[];
+  /** Weapon every player starts holding. A run with no weapon is not a run. */
+  startingWeaponId: string;
+  /** Record the input log. Off for throwaway sandbox runs, on for anything that could be submitted. */
+  record: boolean;
+  /** End the run as a survival when the clock reaches this many ticks. 0 means "until you die". */
+  timeLimitTicks: number;
+  /** Take the first offer on every card screen automatically. For headless tests and bot players. */
+  autoPick: boolean;
+  buildId: number;
+  contentVersion: number;
+  /** Taint bits carried in from the dev menu before the run even starts. */
+  tainted: number;
+}
+
+export const DEFAULT_RUN_CONFIG: RunConfig = {
+  seed: 1,
+  playerCount: 1,
+  stageId: 0,
+  characterIds: [0, 0, 0, 0],
+  modifiers: [],
+  startingWeaponId: "reapersLash",
+  record: true,
+  timeLimitTicks: 0,
+  autoPick: false,
+  buildId: 1,
+  contentVersion: 1,
+  tainted: 0,
+};
+
+export class Run {
+  // --- Systems, all owned here and all reused between runs ---------------------------------
+  readonly stats = new Stats();
+  readonly stack = new ModifierStack();
+  readonly players = new PlayerStore();
+  readonly enemies = new EnemyStore();
+  readonly projectiles = new ProjectileStore();
+  readonly pickups = new PickupStore();
+  readonly weapons = new WeaponStore(MAX_PLAYERS);
+  readonly passives = new PassiveStore(MAX_PLAYERS);
+  readonly prog = new Progression();
+  readonly cards = new CardDraw();
+  readonly waves = new WaveDirector();
+  readonly summary = new RunSummary();
+  readonly recorder = new ReplayRecorder();
+
+  /** Seeded streams. Reseeded per run rather than rebuilt, so starting a run allocates nothing. */
+  readonly rng: RngSet;
+
+  // --- Run state ---------------------------------------------------------------------------
+  /** Ticks actually simulated. Not the same as the run clock, which time scale can run faster. */
+  ticks = 0;
+  end: RunEnd = RUN_END.running;
+  seed = 0;
+  stageId = 0;
+  tainted = 0;
+  recording = false;
+  autoPick = false;
+  timeLimitTicks = 0;
+
+  /** Run totals the results screen needs and no single system owns. */
+  kills = 0;
+  damageDealt = 0;
+  revives = 0;
+
+  /** Ticks left in the White Hand sequence, or -1 when it has not begun. */
+  whiteHandTicks = -1;
+
+  /** Resolved run flags — endless, early reaper, no card draw. Read every tick, never per entity. */
+  private flags = 0;
+
+  // --- Input, quantised at the boundary so every machine simulates the identical number -----
+  readonly axes = new Int8Array(MAX_PLAYERS * 2);
+  readonly buttons = new Uint8Array(MAX_PLAYERS);
+
+  // --- Preallocated scratch ----------------------------------------------------------------
+  private readonly targetX = new Float32Array(MAX_PLAYERS);
+  private readonly targetY = new Float32Array(MAX_PLAYERS);
+  private readonly owners: { count: number; x: Float32Array; y: Float32Array };
+  private readonly totals: RunTotals = {
+    kills: 0,
+    damageDealt: 0,
+    downs: 0,
+    revives: 0,
+    screensShown: 0,
+    picksMade: 0,
+    stageId: 0,
+    seed: 0,
+    tainted: 0,
+  };
+  private readonly modifierWire = new Int32Array(64);
+  private readonly bombScratch = new Int32Array(1024);
+
+  private spawnRng: Rng;
+  private dropRng: Rng;
+  private cardRng: Rng;
+  private critRng: Rng;
+
+  constructor(seed = 1) {
+    this.rng = new RngSet(seed);
+    this.spawnRng = this.rng.get("spawn");
+    this.dropRng = this.rng.get("drop");
+    this.cardRng = this.rng.get("cardDraw");
+    this.critRng = this.rng.get("crit");
+    this.owners = { count: 1, x: this.players.x, y: this.players.y };
+  }
+
+  /** True while a level-up screen is open. The simulation is frozen until it is answered. */
+  get paused(): boolean {
+    return this.cards.open;
+  }
+
+  /** Run clock in ticks, which time scale can advance faster than real ticks. */
+  get runTicks(): number {
+    return this.waves.runTicks;
+  }
+
+  get runSeconds(): number {
+    return this.waves.runSeconds;
+  }
+
+  get over(): boolean {
+    return this.end !== RUN_END.running;
+  }
+
+  /**
+   * Start a run.
+   *
+   * This is the only place allowed to be expensive. Everything after it runs sixty times a second.
+   */
+  begin(config: Partial<RunConfig> = {}): void {
+    const c: RunConfig = { ...DEFAULT_RUN_CONFIG, ...config };
+
+    this.seed = c.seed >>> 0;
+    this.stageId = c.stageId;
+    this.tainted = c.tainted;
+    this.recording = c.record;
+    this.autoPick = c.autoPick;
+    this.timeLimitTicks = c.timeLimitTicks;
+    this.ticks = 0;
+    this.end = RUN_END.running;
+    this.kills = 0;
+    this.damageDealt = 0;
+    this.revives = 0;
+    this.whiteHandTicks = -1;
+
+    this.reseedStreams(this.seed);
+
+    // Stats first: how much health a player starts with is a resolved stat, so the modifier stack has
+    // to be folded before anybody is placed on the map.
+    this.stack.clear();
+    this.stack.clearLoadout();
+    for (let i = 0; i < c.modifiers.length; i++) this.stack.add(c.modifiers[i]);
+    const resolved = this.stack.resolve(this.stats);
+    this.flags = resolved.flags;
+    if (resolved.tainted) this.tainted |= 1;
+
+    const playerCount = Math.min(Math.max(1, c.playerCount | 0), MAX_PLAYERS);
+    this.players.reset(playerCount, this.stats, playerCount > 1 ? SPAWN_RING_RADIUS : 0);
+    this.owners.count = playerCount;
+    this.enemies.clear();
+    this.projectiles.clear();
+    this.pickups.clear();
+    this.weapons.reset(playerCount);
+    this.passives.reset(playerCount);
+    this.prog.reset();
+    this.cards.resetRun(this.stats);
+    this.waves.begin();
+    this.summary.reset();
+
+    this.axes.fill(0);
+    this.buttons.fill(0);
+
+    const starting = WEAPON_BY_ID.get(c.startingWeaponId);
+    if (starting !== undefined) {
+      for (let p = 0; p < playerCount; p++) this.weapons.grant(p, starting);
+    }
+
+    if (this.recording) {
+      let count = 0;
+      for (let i = 0; i < c.modifiers.length && count < this.modifierWire.length; i++) {
+        this.modifierWire[count++] = c.modifiers[i].wireId;
+      }
+      this.recorder.begin({
+        seed: this.seed,
+        stageId: this.stageId,
+        buildId: c.buildId,
+        contentVersion: c.contentVersion,
+        characterIds: c.characterIds,
+        modifiers: this.modifierWire,
+        modifierCount: count,
+        tainted: this.tainted,
+      });
+    }
+  }
+
+  /** Reseed every stream to this run's seed without rebuilding the stream objects. */
+  private reseedStreams(seed: number): void {
+    for (let i = 0; i < RNG_STREAMS.length; i++) {
+      const name = RNG_STREAMS[i];
+      this.rng.get(name).reseed((seed ^ hashName(name)) >>> 0);
+    }
+  }
+
+  // --- Input -------------------------------------------------------------------------------
+
+  /**
+   * Feed one player's stick. Raw analog in -1..1; quantised here and nowhere else.
+   *
+   * Quantising at the boundary is what lets a local run, a co-op guest and a server-side revalidation
+   * all consume the identical number. If the local sim read the float and the wire carried the byte,
+   * the two would part company on the first frame.
+   */
+  setStick(player: number, x: number, y: number): void {
+    if (player < 0 || player >= MAX_PLAYERS) return;
+    quantiseStick(x, y, this.axes, player * 2);
+  }
+
+  setButtons(player: number, bits: number): void {
+    if (player < 0 || player >= MAX_PLAYERS) return;
+    this.buttons[player] = bits & 0xff;
+  }
+
+  // --- The tick ----------------------------------------------------------------------------
+
+  /**
+   * One simulation tick. Fixed 60Hz. Does nothing when the run is over or a card screen is open.
+   *
+   * Returns true when the world actually advanced, so a caller can tell "paused" from "finished".
+   */
+  tick(): boolean {
+    if (this.end !== RUN_END.running) return false;
+
+    if (this.cards.open) {
+      // A card screen owed by autoPick resolves itself here so a headless run never deadlocks.
+      if (this.autoPick) this.pickCard(0);
+      return false;
+    }
+
+    const stats = this.stats;
+    const players = this.players;
+
+    // 1. Progression opens the tick, before anything can bank experience into it.
+    this.prog.beginTick();
+
+    // 2. The input log records what the simulation is about to consume — after quantisation, never
+    //    before, or the log would replay to a slightly different run.
+    if (this.recording) this.recorder.recordTick(this.axes, this.buttons);
+
+    // 3. Apply input. Deadzone lives in the deterministic path, not in the UI.
+    for (let p = 0; p < players.count; p++) {
+      const ax = this.axes[p * 2];
+      const ay = this.axes[p * 2 + 1];
+      const dx = ax > 12 || ax < -12 ? ax / 127 : 0;
+      const dy = ay > 12 || ay < -12 ? ay / 127 : 0;
+      players.setMove(p, dx, dy);
+    }
+
+    // 4. The clock and the spawner. Time scale lives inside here, which is the whole of Hurry.
+    const upright = players.writeTargets(this.targetX, this.targetY);
+    this.waves.update(
+      this.enemies,
+      stats,
+      this.spawnRng,
+      this.targetX[0],
+      this.targetY[0],
+      (this.flags & RUN_FLAG.endless) !== 0,
+    );
+
+    // 5. The Reaper, and the ending it brings with it.
+    this.tickReaper();
+
+    // 6. The crowd moves. Separation reads last tick's grid on purpose — it is steering, and a
+    //    one-tick-old neighbour list is invisible, while a second rebuild per tick is not free.
+    this.enemies.update(this.targetX, this.targetY, upright, stats);
+
+    // 7. Rebuild the grid once, now: after the crowd moved and after this tick's spawns landed, so
+    //    every damage test below reads real positions.
+    this.enemies.rebuildGrid();
+
+    // 8. Weapons fire, projectiles move and collide. Stats are read at fire time, not pickup time.
+    this.weapons.update(
+      this.owners as OwnerPositions,
+      players.aimX,
+      players.aimY,
+      players.upright,
+      this.enemies,
+      this.projectiles,
+      stats,
+      this.critRng,
+    );
+    this.projectiles.update(this.owners as OwnerPositions, this.enemies, stats, this.critRng);
+
+    // 9. Drain this tick's damage and death events into totals and loot.
+    this.drainCombatEvents();
+
+    // 10. Pickups: scatter, magnet, collection.
+    this.pickups.update(players, stats, this.critRng);
+    this.applyCollections();
+
+    // 11. A level-up screen opens between ticks, never in the middle of one.
+    if (this.prog.owesCards) {
+      this.cards.beginScreen(
+        0,
+        this.prog,
+        this.weapons,
+        this.passives,
+        stats,
+        this.cardRng,
+        this.flags,
+      );
+    }
+
+    // 12. Players last: movement resolution, regen, contact damage, downs and revives. Contact
+    //     damage comes after the crowd has moved, so a player is hurt by where enemies *are*.
+    const downsBefore = players.downs;
+    players.update(stats, this.enemies);
+    void downsBefore;
+
+    // 13. Heals owed by cards are applied outside the card screen, so a meal taken during a batch
+    //     of eight picks still lands exactly once.
+    if (this.cards.healPending > 0) {
+      for (let p = 0; p < players.count; p++) players.heal(p, this.cards.healPending, stats);
+      this.cards.clearHeal();
+    }
+
+    this.ticks++;
+
+    // 14. Did the run end?
+    this.checkEnd();
+    return true;
+  }
+
+  /** Spawn the Reaper when it is due, then count down to the White Hand. */
+  private tickReaper(): void {
+    if (this.whiteHandTicks >= 0) {
+      this.whiteHandTicks--;
+      if (this.whiteHandTicks <= 0) this.finish(RUN_END.whiteHand);
+      return;
+    }
+    if (!this.waves.reaperDue(this.stats, (this.flags & RUN_FLAG.earlyReaper) !== 0)) return;
+
+    this.waves.reaperSpawned = true;
+    const type = ENEMY_TYPE_BY_ID.get(REAPER_ENEMY_ID);
+    if (type !== undefined) {
+      this.enemies.spawn(type, this.players.x[0], this.players.y[0] - 120, this.stats);
+    }
+    this.whiteHandTicks = WHITE_HAND_TICKS;
+  }
+
+  /** Fold this tick's hits and deaths into run totals, and turn deaths into loot. */
+  private drainCombatEvents(): void {
+    const proj = this.projectiles;
+
+    for (let i = 0; i < proj.hitCount; i++) this.damageDealt += proj.hitAmount[i];
+
+    const kills = proj.killCount;
+    for (let i = 0; i < kills; i++) {
+      const type = proj.killType[i];
+      const boss = (ENEMY_TYPES[type].flags & ENEMY_FLAG.boss) !== 0;
+      rollDrops(
+        this.pickups,
+        boss ? BOSS_DROP_RULE : DEFAULT_DROP_RULE,
+        proj.killX[i],
+        proj.killY[i],
+        this.stats,
+        this.dropRng,
+      );
+    }
+    this.kills += kills;
+  }
+
+  /** Apply everything collected this tick. Collection is an event; this is where it takes effect. */
+  private applyCollections(): void {
+    const pickups = this.pickups;
+    const stats = this.stats;
+
+    if (pickups.xpBanked > 0) this.prog.addXp(pickups.xpBanked, stats);
+    if (pickups.goldBanked > 0) this.prog.addGold(pickups.goldBanked, stats);
+    if (pickups.chestsTaken > 0) {
+      this.prog.addGold(CHEST_GOLD * pickups.chestsTaken, stats);
+    }
+    if (pickups.vacuumsTaken > 0) pickups.startVacuum();
+
+    if (pickups.collectCount === 0) return;
+
+    // Health and bombs are per-player events: which player picked it up decides who it affects.
+    for (let i = 0; i < pickups.collectCount; i++) {
+      const kind = pickups.collectKind[i];
+      const who = pickups.collectPlayer[i];
+      if (kind === PICKUP.health) {
+        this.players.heal(who, pickups.collectValue[i], stats);
+      } else if (kind === PICKUP.bomb) {
+        this.detonate(pickups.collectX[i], pickups.collectY[i]);
+      }
+    }
+  }
+
+  /** Clear the crowd around a point, and pay out for everything it killed. */
+  private detonate(x: number, y: number): void {
+    const found = this.enemies.queryNear(x, y, BOMB_RADIUS);
+    const scratch = this.enemies.neighbourScratch;
+    const limit = Math.min(found, this.bombScratch.length);
+    for (let i = 0; i < limit; i++) this.bombScratch[i] = scratch[i];
+    for (let i = 0; i < limit; i++) {
+      const slot = this.bombScratch[i];
+      const ex = this.enemies.x[slot];
+      const ey = this.enemies.y[slot];
+      if (this.enemies.damageAt(slot, BOMB_DAMAGE)) {
+        this.kills++;
+        rollDrops(this.pickups, DEFAULT_DROP_RULE, ex, ey, this.stats, this.dropRng);
+      }
+    }
+  }
+
+  /** Decide whether the run is over, and why. */
+  private checkEnd(): void {
+    if (this.end !== RUN_END.running) return;
+    if (this.players.runOver) {
+      this.finish(RUN_END.defeat);
+      return;
+    }
+    if (this.timeLimitTicks > 0 && this.waves.runTicks >= this.timeLimitTicks) {
+      this.finish(RUN_END.survived);
+    }
+  }
+
+  // --- Card screen -------------------------------------------------------------------------
+
+  pickCard(index: number): boolean {
+    return this.cards.pick(
+      index,
+      0,
+      this.weapons,
+      this.passives,
+      this.prog,
+      this.stats,
+      this.stack,
+      this.cardRng,
+    );
+  }
+
+  rerollCards(): boolean {
+    return this.cards.reroll(0, this.weapons, this.passives, this.cardRng);
+  }
+
+  skipCard(): boolean {
+    return this.cards.skip(0, this.weapons, this.passives, this.cardRng);
+  }
+
+  banishCard(index: number): boolean {
+    return this.cards.banish(index, 0, this.weapons, this.passives, this.cardRng);
+  }
+
+  // --- Ending ------------------------------------------------------------------------------
+
+  /** Player asked to leave. Still banks gold and time played, because it was still played. */
+  quit(): RunSummary {
+    return this.finish(RUN_END.quit);
+  }
+
+  /**
+   * Close the run out: write the summary, close the input log.
+   *
+   * Calling it twice is harmless and returns the same summary, because a UI that fires both "you
+   * died" and "you quit" in the same frame must not produce two different records of one run.
+   */
+  finish(end: RunEnd): RunSummary {
+    if (this.end !== RUN_END.running) return this.summary;
+    this.end = end;
+
+    const t = this.totals;
+    t.kills = this.kills;
+    t.damageDealt = Math.trunc(this.damageDealt);
+    t.downs = this.players.downs;
+    t.revives = this.revives;
+    t.screensShown = this.cards.screensShown;
+    t.picksMade = this.cards.picksMade;
+    t.stageId = this.stageId;
+    t.seed = this.seed;
+    t.tainted = this.tainted;
+
+    summariseRun(
+      this.summary,
+      end,
+      this.waves.runTicks,
+      0,
+      this.players,
+      this.weapons,
+      this.prog,
+      t,
+    );
+
+    if (this.recording) this.recorder.end(this.hashState(0x811c9dc5));
+    return this.summary;
+  }
+
+  // --- Determinism -------------------------------------------------------------------------
+
+  /**
+   * Mix the whole world into one number.
+   *
+   * Only simulation state, in a fixed order, read from pool order rather than from any iteration of
+   * object keys. Anything device-specific in here would make every healthy session look desynced.
+   */
+  hashState(hash: number): number {
+    let h = hashWord(hash, this.ticks);
+    h = hashWord(h, this.waves.runTicks);
+    h = hashWord(h, this.end);
+
+    const players = this.players;
+    h = hashByte(h, players.count);
+    h = hashFloat32Range(h, players.x, 0, players.count);
+    h = hashFloat32Range(h, players.y, 0, players.count);
+    h = hashFloat32Range(h, players.health, 0, players.count);
+    h = hashUint8Range(h, players.upright, 0, players.count);
+
+    const enemies = this.enemies;
+    const eSlots = enemies.pool.slots;
+    const eCount = enemies.pool.count;
+    h = hashWord(h, eCount);
+    for (let i = 0; i < eCount; i++) {
+      const s = eSlots[i] as number;
+      h = hashFloat(h, enemies.x[s] as number);
+      h = hashFloat(h, enemies.y[s] as number);
+      h = hashFloat(h, enemies.health[s] as number);
+    }
+
+    const proj = this.projectiles;
+    const pSlots = proj.pool.slots;
+    const pCount = proj.pool.count;
+    h = hashWord(h, pCount);
+    for (let i = 0; i < pCount; i++) {
+      const s = pSlots[i] as number;
+      h = hashFloat(h, proj.x[s] as number);
+      h = hashFloat(h, proj.y[s] as number);
+      h = hashWord(h, proj.ttl[s] as number);
+    }
+
+    const pick = this.pickups;
+    const kSlots = pick.pool.slots;
+    const kCount = pick.pool.count;
+    h = hashWord(h, kCount);
+    for (let i = 0; i < kCount; i++) {
+      const s = kSlots[i] as number;
+      h = hashFloat(h, pick.x[s] as number);
+      h = hashFloat(h, pick.y[s] as number);
+      h = hashFloat(h, pick.value[s] as number);
+    }
+
+    h = hashWord(h, this.prog.level);
+    h = hashWord(h, this.prog.xp);
+    h = hashWord(h, this.prog.gold);
+    h = hashWord(h, this.prog.pending);
+    h = hashWord(h, this.kills);
+
+    for (let p = 0; p < players.count; p++) {
+      for (let i = 0; i < 6; i++) {
+        h = hashWord(h, this.weapons.typeIndex[p * 6 + i] as number);
+        h = hashWord(h, this.weapons.level[p * 6 + i] as number);
+        h = hashWord(h, this.weapons.timer[p * 6 + i] as number);
+      }
+    }
+
+    return h;
+  }
+
+  /** Human-readable one-liner for the dev menu and for test failures. */
+  describe(): string {
+    const seconds = Math.trunc(this.waves.runSeconds);
+    return `t=${seconds}s lvl=${this.prog.level} enemies=${this.enemies.count} proj=${this.projectiles.count} gems=${this.pickups.pool.count} kills=${this.kills} hp=${Math.round(this.players.health[0])}/${Math.round(this.stats.get(STAT.maxHealth) / STAT_SCALE)}`;
+  }
+}

@@ -314,6 +314,11 @@ export class PlayerStore {
   damage(index: number, amount: number, stats: Stats): boolean {
     if (this.state[index] !== PLAYER_STATE.alive) return false;
     if (this.invuln[index] > 0) return false;
+    // A hit that carries no damage is not a hit. The floor of 1 below exists so that armor can never
+    // make a real attack harmless, but applying it to a zero also made `enemyDamage x0` — which is
+    // exactly how godmode is expressed — leak one point per contact. Godmode was not god: a five
+    // minute test run died at four minutes to a stat that was supposed to nullify damage entirely.
+    if (amount <= 0) return false;
 
     // Armor is a flat stat, stored in whole health units — not a permille multiplier. Dividing it
     // by STAT_SCALE here is exactly the bug that made maximum armor read as 0.05 and let a 10-damage

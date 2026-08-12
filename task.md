@@ -863,3 +863,62 @@ the screen, so every place that shows it ranks it identically. Shares are trunca
 weapons read 33.3% each and total 99.9% — honest, rather than rounding one up to make it look tidy.
 
 31 checks in `game/sim/results.test.ts`, all passing. `bun run test:game` is now 13 files, all green.
+
+## Session 8 — the game is now one thing instead of nine
+
+Up to now the game existed as nine separate machines: one that moves the player, one that walks the
+crowd, one that fires weapons, one that drops gems, one that counts levels, one that deals the
+upgrade cards, one that writes the end-of-run report. Each one worked on its own. None of them had
+ever been switched on at the same time.
+
+They are now. There is a single piece that owns all of them and runs them in one fixed order, sixty
+times a second. That order *is* the game — change it and you change how the game plays, and you also
+break online co-op and every saved replay, because two phones running the same steps in a different
+order end up in two different worlds. So the order is written out plainly, one numbered step at a
+time, with the reason each step sits where it does.
+
+### What now actually works, start to finish
+
+A five-minute run plays itself out with nothing missing: enemies arrive on schedule, weapons fire,
+enemies die, they leave gems, the gems are collected, the levels come, the upgrade screen opens, the
+upgrade is taken, and the run ends with a full report. In the automated test run it scored 2,028
+kills, reached level 18, showed 17 upgrade screens and finished holding 5 weapons.
+
+Also settled:
+
+- **The upgrade screen really pauses everything.** While four cards are on screen the world is frozen
+  solid — the crowd does not creep toward you while you read. Proven by freezing, hammering the game
+  a further two seconds, and confirming the world is bit-for-bit unchanged.
+- **Same seed, same game.** Two runs given the same seed and the same stick movements matched
+  perfectly at every checkpoint. A different seed produced a different world. This is the thing every
+  leaderboard and every anti-cheat check rests on.
+- **Restarting on the same seed works too**, which is what the dev menu's "run that again" button
+  needs.
+- **Hurry and Hyper still stack, with no special-case code.** Hurry ran the clock at exactly double.
+  Hyper on top of it pushed spawns from 149 to 194 and sped the crowd up 1.5x. Neither one is allowed
+  to touch the loop; they are still just numbers.
+- **Speed and memory are fine.** With 800 enemies on the field a full tick took 0.37 milliseconds
+  against a 16.6 millisecond budget, and 600 ticks in a row grew memory by zero. That is roughly 45x
+  headroom on the laptop-class machine; the phone number comes from the on-device pass.
+- **All four endings work**: dying, surviving to a time limit, quitting, and being taken by the White
+  Hand at thirty minutes (which correctly counts as *finishing* the run, not failing it). Ending a
+  run twice cannot produce two different records of it.
+
+### One real bug found, and it was a big one
+
+**Godmode was not god.** Godmode works by setting incoming damage to zero. But the damage rule said
+"a hit always takes off at least one health, no matter how much armor you have" — a sensible rule
+that stops armor from making you accidentally immortal. Applied to a hit of *zero*, it turned it into
+a hit of one. So godmode leaked a point of health per touch, and the very first five-minute test run
+died at four minutes with godmode switched on.
+
+Fixed: a hit carrying no damage is no longer a hit at all. The minimum-of-one rule now only applies
+to attacks that actually had damage behind them. Every dev-menu toggle that nullifies damage depends
+on this, and it would have been maddening to debug later while assuming godmode was a given.
+
+### Where Phase 1 stands
+
+Everything on the engine side is done. What is left before the Phase 1 gate is the part you can
+touch: one playable screen with a thumbstick, drawing the world that already exists. After that the
+gate is three mechanical checks on your phone plus the "is it fun" check, which needs real art —
+so it waits for Phase 4 as you asked.
