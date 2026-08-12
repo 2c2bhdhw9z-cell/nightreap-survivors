@@ -156,33 +156,40 @@ truth.
 | | Role |
 |---|---|
 | **iPhone 17 Pro Max** (A19 Pro, 120Hz ProMotion) | Primary **feel** target. Sim 60Hz fixed, render interpolates to **120fps**. Deliberately *not* the perf gate — it holds 500 enemies without trying, which hides problems until someone on a cheap phone plays. |
-| **Your T-Mobile REVVL** | The **official perf gate device.** A real budget Android with real thermals beats any emulated profile. Every phase gate is measured here. |
+| **Your T-Mobile REVVL V+ 5G** | The **official perf gate device.** A real budget Android with real thermals beats any emulated profile. Every phase gate is measured here. |
 | Emulated device profiles | Regression catching in the sandbox between your hands-on passes. Not a substitute for the REVVL. |
 | Runable web preview | Fast iteration, playable in the Runable app. Not a perf verdict. |
 
-### The REVVL profile
+### The REVVL V+ 5G profile
 
-"REVVL 5G+" maps to one of two phones, so the game **detects at runtime** rather than assuming:
+This is settled, not assumed. The exact phone is a **T-Mobile REVVL V+ 5G**, and every spec below was
+read back off the device itself during the Gate A measurement — the renderer reports the GPU string at
+runtime, and it came back `Mali-G57 MC2` with a 720×1640 buffer at 3x density. No runtime branching on
+"which REVVL is it" is needed, and there is no second variant to design around.
 
-| | REVVL V+ 5G | REVVL 5G |
-|---|---|---|
-| SoC | MediaTek Dimensity 700 | Snapdragon 765G |
-| GPU | Mali-G57 **MC2** (2 cores — weak) | Adreno 620 |
-| RAM | 4 GB | 6 GB |
-| Screen | 1640×720, 60Hz | 2340×1080, 60Hz |
+| | REVVL V+ 5G |
+|---|---|
+| SoC | MediaTek Dimensity 700 |
+| GPU | Mali-G57 **MC2** (2 cores — weak) |
+| RAM | 4 GB |
+| Screen | 1640×720, 60Hz |
+
+Measured Gate A baseline on this phone, native, warm at 15m51s: 5,176 sprites in 5 draw calls,
+**17.9ms median / 21.9ms 95th / 32.0ms 99th**, 56fps sustained, overdraw 29x the screen, zero memory
+warnings. That is the number every later gate compares against.
 
 Two consequences that change engineering priorities:
 
-- **720p is a gift.** If it's the V+, that's ~40% of a 1080p panel's pixels. Fill rate — usually the
-  first thing to die with 800 overlapping sprites — has real headroom despite the weak GPU. If it's the
-  765G at 1080p, fill rate matters more but the GPU is correspondingly better. Either way it balances.
+- **720p is a gift.** That is ~40% of a 1080p panel's pixels. Fill rate — usually the first thing to
+  die with 800 overlapping sprites — has real headroom despite the weak GPU, and the measured 29x
+  overdraw at 56fps confirms it: this phone was never fill-rate bound in the benchmark.
 - **4 GB RAM is the real enemy, not the GPU.** With 4 GB and Android's background pressure, a garbage
   collection pause is a dropped frame, and a 90-minute Endless run is 90 minutes of allocation
   opportunity. This promotes the Phase 0 **zero-allocation entity pools and preallocated typed-array
   buffers** from "good practice" to *the* thing that makes the perf contract achievable. The dev menu's
   allocation tracker and GC watch are gate instruments, not curiosities.
-- 60Hz on both means Android renders at 60 and iOS at 120 from the same 60Hz sim — exactly the split
-  the interpolating renderer is designed for, and now testable on real hardware from day one.
+- **60Hz here, 120Hz on the iPhone.** Android renders at 60 and iOS at 120 from the same 60Hz sim —
+  exactly the split the interpolating renderer is designed for, and testable on both real phones.
 
 ### Performance contract
 
@@ -463,7 +470,7 @@ build preference. Makes 1–4 player co-op testable solo and repeatably in CI �
 reproducible benchmark. Also the only way to run the 4-player perf gate on demand.
 
 **Device profile emulator:** clamp the runtime to a target device's CPU-time-per-tick budget, memory
-ceiling, resolution, refresh rate, and thermal-throttle curve. Presets for both REVVL variants, the
+ceiling, resolution, refresh rate, and thermal-throttle curve. Presets for the REVVL V+ 5G, the
 iPhone, and a deliberately-worse floor device. Catches regressions between hands-on passes; does not
 replace real-hardware measurement.
 
@@ -679,7 +686,7 @@ You said both, so:
 ### Emulated device profiles (the selector you asked for)
 
 A dev-menu panel that clamps the runtime to a target device's budget: CPU-time budget per tick, memory
-ceiling, resolution, refresh rate, and a thermal-throttle curve. Presets include **both REVVL variants**,
+ceiling, resolution, refresh rate, and a thermal-throttle curve. Presets include **the REVVL V+ 5G**,
 plus a deliberately worse floor device so we know where the cliff is.
 
 Honest about what it is: it constrains *our* budget and catches regressions fast, but it cannot emulate
