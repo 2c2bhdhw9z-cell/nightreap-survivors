@@ -922,3 +922,64 @@ Everything on the engine side is done. What is left before the Phase 1 gate is t
 touch: one playable screen with a thumbstick, drawing the world that already exists. After that the
 gate is three mechanical checks on your phone plus the "is it fun" check, which needs real art —
 so it waits for Phase 4 as you asked.
+
+## Session 8 — rewards, seeds, and the announcement channel
+
+### What went into the plan (no code, just decisions locked before they get expensive)
+
+**Leaderboards now pay out.** A board that only tells you your rank is a receipt, not a reward. Every
+ladder now grants a cosmetic-only currency (Reaper Marks) plus titles, emblems and banners, paid by
+percentile bracket so it works the same at 300 players or 300,000. The hard rule: **a leaderboard never
+grants power** — no gold, no eggs, no stats, ever, because the moment placement makes you stronger,
+being good at the game becomes a requirement for being strong at it. Marks are server-granted after
+replay revalidation and computed at board close, so there is nothing for a cheater to forge. Ships
+Phase 6; the shop that spends Marks opens Phase 8.
+
+**Speedrun toolkit, as a settings toggle.** The engine was already a speedrunning engine by accident —
+it counts simulation ticks instead of wall-clock seconds, so the timer reads identically on a $100
+phone and a flagship and literally cannot drift. Toggle turns on a tick-accurate timer, auto-splits,
+a personal-best ghost, seed entry, same-seed instant restart, and verify codes anyone can replay. All
+of it only *reads* the simulation, so it stays ladder-legal. Anything that *writes* (slow-mo,
+frame advance, save states, input playback) stays in the dev menu and taints the run, which was
+already true. Phase 6.
+
+**Seed width: staying at 32 bits.** 4.29 billion seeds is 11.7 million years of Daily Runs. Widening
+to 18 quintillion would cost about half a day now and 2–3 days plus real risk after launch, since the
+seed sits at a fixed spot in every save file and replay. Not worth it; seed collisions are harmless
+because two players on one seed diverge the instant they walk different directions.
+
+**Five cheap-now / expensive-later decisions settled:** run snapshots for mid-run resume when the OS
+kills the app (Phase 2, and it also gives host migration and dev save states for free); every
+player-facing string moves behind an ID table before the content flood (Phase 3); the simulation emits
+sound/effect events rather than playing them (done, below); save data gets an account id and revision
+counter now so cloud save in Phase 8 never has to guess which device is newer; plus battery-saver mode,
+a sub-100MB install budget, no tutorial screens, notification-prompt timing, and server-side daily
+seeds.
+
+### What got built: `game/sim/cues.ts` + wiring in `run.ts`
+
+The game now announces what it did — a hit landed, an enemy died, a level went up, a bell tolled —
+into a small fixed list, once per tick. It never plays a sound itself and never reads the list back.
+
+Why it matters in plain terms: when audio arrives in Phase 8 it becomes "connect these 19 event names
+to these sounds" instead of hunting through combat code, replays will *sound* right because the events
+are reproduced rather than guessed, and a sound that stutters or fails to load can never change what
+happens in the game. Accessibility toggles (no flashing, fewer particles, no damage numbers) become a
+filter over this list instead of conditionals scattered through the engine.
+
+Overflow is deliberate: the list holds 192 events and drops the rest. Nobody can hear 300 simultaneous
+death sounds, and the alternative — growing the list mid-tick — is the exact thing that stalled the
+bench run fifteen minutes in.
+
+**One real bug found by its own test.** While a level-up card screen was open the event list was left
+standing, so a reader would see the same hits and deaths again on every frozen frame — a screen held
+for one second reported the last tick's news sixty times. The test caught it as "10 level-up events
+but the player is level 6". The list is now cleared before the paused check, not after it.
+
+**Also fixed, quietly:** revives were never being counted, so the results screen would have reported
+zero revives forever in co-op. The new down/revive detection counts them.
+
+### State
+- `bun run typecheck` clean, `bun run lint` clean.
+- `bun run test:game`: **14 files, 718 checks, 14× PASS.**
+- Next: the first playable screen — `app/dev/play.tsx`, GL view + camera + ground + thumbstick.

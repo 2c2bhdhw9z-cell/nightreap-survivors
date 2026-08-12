@@ -34,6 +34,7 @@ import { hashByte, hashFloat, hashFloat32Range, hashUint8Range, hashWord } from 
 import { quantiseStick } from "../net/input";
 import { ReplayRecorder } from "../replay/recorder";
 import { CardDraw } from "../sim/cards";
+import { CUE, CueBus } from "../sim/cues";
 import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore } from "../sim/enemies";
 import { ModifierStack, RUN_FLAG, type RunModifier } from "../sim/modifiers";
 import {
@@ -130,6 +131,14 @@ export class Run {
   readonly summary = new RunSummary();
   readonly recorder = new ReplayRecorder();
 
+  /**
+   * What happened this tick, for audio, particles and damage numbers to read.
+   *
+   * Write-only from the simulation's point of view. Nothing in here may ever be read back by a
+   * system, and it is deliberately absent from `hashState` — see `cues.ts`.
+   */
+  readonly cues = new CueBus();
+
   /** Seeded streams. Reseeded per run rather than rebuilt, so starting a run allocates nothing. */
   readonly rng: RngSet;
 
@@ -174,6 +183,10 @@ export class Run {
     seed: 0,
     tainted: 0,
   };
+  /** Last tick's health and standing, so "took damage" and "went down" can be announced as events. */
+  private readonly prevHealth = new Float32Array(MAX_PLAYERS);
+  private readonly prevUpright = new Uint8Array(MAX_PLAYERS);
+  private prevLevel = 1;
   private readonly modifierWire = new Int32Array(64);
   private readonly bombScratch = new Int32Array(1024);
 
@@ -253,6 +266,12 @@ export class Run {
     this.cards.resetRun(this.stats);
     this.waves.begin();
     this.summary.reset();
+    this.cues.resetRun();
+    this.prevLevel = this.prog.level;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      this.prevHealth[p] = this.players.health[p];
+      this.prevUpright[p] = this.players.upright[p];
+    }
 
     this.axes.fill(0);
     this.buttons.fill(0);
@@ -317,6 +336,11 @@ export class Run {
   tick(): boolean {
     if (this.end !== RUN_END.running) return false;
 
+    // The cue list is cleared before the paused check, not after it. A frame spent on a card screen
+    // has no news of its own, and if the list were left standing the reader would see last tick's
+    // hits and deaths again on every paused frame — twelve times over for a screen held one second.
+    this.cues.beginTick();
+
     if (this.cards.open) {
       // A card screen owed by autoPick resolves itself here so a headless run never deadlocks.
       if (this.autoPick) this.pickCard(0);
@@ -326,7 +350,7 @@ export class Run {
     const stats = this.stats;
     const players = this.players;
 
-    // 1. Progression opens the tick, before anything can bank experience into it.
+    // 1. Progression opens the tick.
     this.prog.beginTick();
 
     // 2. The input log records what the simulation is about to consume — after quantisation, never
@@ -385,6 +409,13 @@ export class Run {
     this.applyCollections();
 
     // 11. A level-up screen opens between ticks, never in the middle of one.
+    if (this.prog.level > this.prevLevel) {
+      for (let l = this.prevLevel + 1; l <= this.prog.level; l++) {
+        this.cues.emit(CUE.levelUp, players.x[0], players.y[0], l);
+      }
+      this.prevLevel = this.prog.level;
+    }
+
     if (this.prog.owesCards) {
       this.cards.beginScreen(
         0,
@@ -395,13 +426,15 @@ export class Run {
         this.cardRng,
         this.flags,
       );
+      if (this.cards.open) {
+        this.cues.emit(CUE.cardScreenOpened, players.x[0], players.y[0], this.cards.picksRemaining);
+      }
     }
 
     // 12. Players last: movement resolution, regen, contact damage, downs and revives. Contact
     //     damage comes after the crowd has moved, so a player is hurt by where enemies *are*.
-    const downsBefore = players.downs;
     players.update(stats, this.enemies);
-    void downsBefore;
+    this.announcePlayerChanges();
 
     // 13. Heals owed by cards are applied outside the card screen, so a meal taken during a batch
     //     of eight picks still lands exactly once.
@@ -421,12 +454,18 @@ export class Run {
   private tickReaper(): void {
     if (this.whiteHandTicks >= 0) {
       this.whiteHandTicks--;
+      // Twelve tolls, one per second, counted up so the audio layer knows which toll it is playing.
+      if (this.whiteHandTicks > 0 && this.whiteHandTicks % TICKS_PER_SECOND === 0) {
+        const toll = 12 - Math.trunc(this.whiteHandTicks / TICKS_PER_SECOND);
+        this.cues.emit(CUE.bellTolled, this.players.x[0], this.players.y[0], toll);
+      }
       if (this.whiteHandTicks <= 0) this.finish(RUN_END.whiteHand);
       return;
     }
     if (!this.waves.reaperDue(this.stats, (this.flags & RUN_FLAG.earlyReaper) !== 0)) return;
 
     this.waves.reaperSpawned = true;
+    this.cues.emit(CUE.reaperArrived, this.players.x[0], this.players.y[0]);
     const type = ENEMY_TYPE_BY_ID.get(REAPER_ENEMY_ID);
     if (type !== undefined) {
       this.enemies.spawn(type, this.players.x[0], this.players.y[0] - 120, this.stats);
@@ -438,12 +477,21 @@ export class Run {
   private drainCombatEvents(): void {
     const proj = this.projectiles;
 
-    for (let i = 0; i < proj.hitCount; i++) this.damageDealt += proj.hitAmount[i];
+    for (let i = 0; i < proj.hitCount; i++) {
+      this.damageDealt += proj.hitAmount[i];
+      this.cues.emit(CUE.hit, proj.hitX[i], proj.hitY[i], proj.hitAmount[i], proj.hitCrit[i]);
+    }
 
     const kills = proj.killCount;
     for (let i = 0; i < kills; i++) {
       const type = proj.killType[i];
       const boss = (ENEMY_TYPES[type].flags & ENEMY_FLAG.boss) !== 0;
+      this.cues.emit(
+        boss ? CUE.bossDied : CUE.enemyDied,
+        proj.killX[i],
+        proj.killY[i],
+        type,
+      );
       rollDrops(
         this.pickups,
         boss ? BOSS_DROP_RULE : DEFAULT_DROP_RULE,
@@ -461,10 +509,19 @@ export class Run {
     const pickups = this.pickups;
     const stats = this.stats;
 
-    if (pickups.xpBanked > 0) this.prog.addXp(pickups.xpBanked, stats);
-    if (pickups.goldBanked > 0) this.prog.addGold(pickups.goldBanked, stats);
+    const px = this.players.x[0];
+    const py = this.players.y[0];
+    if (pickups.xpBanked > 0) {
+      this.prog.addXp(pickups.xpBanked, stats);
+      this.cues.emit(CUE.xpCollected, px, py, pickups.xpBanked);
+    }
+    if (pickups.goldBanked > 0) {
+      this.prog.addGold(pickups.goldBanked, stats);
+      this.cues.emit(CUE.goldCollected, px, py, pickups.goldBanked);
+    }
     if (pickups.chestsTaken > 0) {
       this.prog.addGold(CHEST_GOLD * pickups.chestsTaken, stats);
+      for (let i = 0; i < pickups.chestsTaken; i++) this.cues.emit(CUE.chestOpened, px, py);
     }
     if (pickups.vacuumsTaken > 0) pickups.startVacuum();
 
@@ -474,6 +531,7 @@ export class Run {
     for (let i = 0; i < pickups.collectCount; i++) {
       const kind = pickups.collectKind[i];
       const who = pickups.collectPlayer[i];
+      this.cues.emit(CUE.pickupTaken, pickups.collectX[i], pickups.collectY[i], kind, who);
       if (kind === PICKUP.health) {
         this.players.heal(who, pickups.collectValue[i], stats);
       } else if (kind === PICKUP.bomb) {
@@ -484,6 +542,7 @@ export class Run {
 
   /** Clear the crowd around a point, and pay out for everything it killed. */
   private detonate(x: number, y: number): void {
+    this.cues.emit(CUE.bombDetonated, x, y, BOMB_RADIUS);
     const found = this.enemies.queryNear(x, y, BOMB_RADIUS);
     const scratch = this.enemies.neighbourScratch;
     const limit = Math.min(found, this.bombScratch.length);
@@ -494,7 +553,36 @@ export class Run {
       const ey = this.enemies.y[slot];
       if (this.enemies.damageAt(slot, BOMB_DAMAGE)) {
         this.kills++;
+        this.cues.emit(CUE.enemyDied, ex, ey, this.enemies.typeIndex[slot]);
         rollDrops(this.pickups, DEFAULT_DROP_RULE, ex, ey, this.stats, this.dropRng);
+      }
+    }
+  }
+
+  /**
+   * Turn "health is different from last tick" into events.
+   *
+   * Done by comparison rather than by the player store calling us, so `player.ts` stays a system that
+   * knows nothing about audio and can still be tested entirely on its own.
+   */
+  private announcePlayerChanges(): void {
+    const players = this.players;
+    for (let p = 0; p < players.count; p++) {
+      const now = players.health[p];
+      const was = this.prevHealth[p];
+      if (now < was) this.cues.emit(CUE.playerHurt, players.x[p], players.y[p], was - now, p);
+      else if (now > was) this.cues.emit(CUE.playerHealed, players.x[p], players.y[p], now - was, p);
+      this.prevHealth[p] = now;
+
+      const up = players.upright[p];
+      if (up !== this.prevUpright[p]) {
+        if (up === 0) {
+          this.cues.emit(CUE.playerDowned, players.x[p], players.y[p], 0, p);
+        } else {
+          this.revives++;
+          this.cues.emit(CUE.playerRevived, players.x[p], players.y[p], 0, p);
+        }
+        this.prevUpright[p] = up;
       }
     }
   }
@@ -554,6 +642,7 @@ export class Run {
   finish(end: RunEnd): RunSummary {
     if (this.end !== RUN_END.running) return this.summary;
     this.end = end;
+    this.cues.emit(CUE.runEnded, this.players.x[0], this.players.y[0], end);
 
     const t = this.totals;
     t.kills = this.kills;

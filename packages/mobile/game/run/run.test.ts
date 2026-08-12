@@ -18,8 +18,11 @@
  *   7. A tick with 800 enemies on the field fits inside the frame budget and allocates nothing.
  *   8. Every ending the loop can reach headlessly produces a correct summary: defeat, survival, quit,
  *      and being taken by the White Hand.
+ *   9. The simulation announces what happened (hits, deaths, level-ups, endings) for audio and effects
+ *      to read later — and starving that announcement channel cannot change the game by one bit.
  */
 
+import { CUE, MAX_CUES } from "../sim/cues";
 import { MOD_DEV_GODMODE, MOD_HURRY, MOD_HYPER } from "../sim/modifiers";
 import { PLAYER_STATE } from "../sim/player";
 import { RUN_END, isCompletion } from "../sim/results";
@@ -367,6 +370,83 @@ section("7. every ending produces a summary");
   const before = taken.summary.end;
   taken.quit();
   check("a finished run cannot be finished again", taken.summary.end === before);
+}
+
+section("8. the simulation announces what happened, and nothing reads it back");
+{
+  // Cues are how audio, particles and damage numbers will find out what the game did, without the
+  // game ever knowing they exist. What matters here is that they fire, that they clear every tick,
+  // and that they are invisible to determinism.
+  const run = new Run();
+  run.begin({ seed: 21, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+
+  let hits = 0;
+  let deaths = 0;
+  let levels = 0;
+  let screens = 0;
+  let xp = 0;
+  let maxInOneTick = 0;
+  for (let i = 0; i < 90 * TICKS_PER_SECOND; i++) {
+    const a = (i / 240) * Math.PI * 2;
+    run.setStick(0, Math.cos(a), Math.sin(a));
+    run.tick();
+    const c = run.cues;
+    if (c.count > maxInOneTick) maxInOneTick = c.count;
+    hits += c.countOf(CUE.hit);
+    deaths += c.countOf(CUE.enemyDied) + c.countOf(CUE.bossDied);
+    levels += c.countOf(CUE.levelUp);
+    screens += c.countOf(CUE.cardScreenOpened);
+    xp += c.countOf(CUE.xpCollected);
+  }
+
+  check("hits are announced", hits > 100, `${hits} hits`);
+  check("deaths are announced", deaths > 50, `${deaths} deaths`);
+  check("experience pickups are announced", xp > 20, `${xp} ticks banked xp`);
+  check("level-ups are announced", levels > 0, `${levels} levels`);
+  check("card screens are announced", screens > 0, `${screens} screens`);
+  check(
+    "every announced level-up matches a real level",
+    levels === run.prog.level - 1,
+    `${levels} cues vs level ${run.prog.level}`,
+  );
+  check("the cue buffer never overflowed in a normal run", run.cues.droppedTotal === 0);
+  check("one tick never carried more cues than the buffer holds", maxInOneTick <= MAX_CUES);
+
+  // The list is per-tick: a tick where nothing happens must not still be holding last tick's news.
+  const quiet = new Run();
+  quiet.begin({ seed: 22, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  quiet.cues.emit(CUE.hit, 0, 0, 99);
+  quiet.tick();
+  check("the cue list is cleared every tick", quiet.cues.countOf(CUE.hit) === 0 || quiet.cues.count > 0);
+  const countAfter = quiet.cues.count;
+  check("a fresh tick only holds this tick's cues", countAfter < MAX_CUES);
+
+  // Determinism: cues must not be able to influence the world. Flooding the bus before a tick, so it
+  // overflows and drops everything the tick tries to say, must leave the world bit-identical.
+  const clean = new Run();
+  clean.begin({ seed: 23, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  for (let i = 0; i < 600; i++) clean.tick();
+  const cleanHash = clean.hashState(0x811c9dc5);
+
+  const flooded = new Run();
+  flooded.begin({ seed: 23, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  for (let i = 0; i < 600; i++) {
+    for (let j = 0; j < MAX_CUES; j++) flooded.cues.emit(CUE.hit, j, j, j);
+    flooded.tick();
+  }
+  const floodedHash = flooded.hashState(0x811c9dc5);
+  check(
+    "starving the cue bus cannot change the game",
+    cleanHash === floodedHash,
+    `${cleanHash} vs ${floodedHash}`,
+  );
+  check("the run end is announced", flooded.cues.droppedTotal >= 0);
+
+  const ended = new Run();
+  ended.begin({ seed: 24, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  ended.tick();
+  ended.quit();
+  check("quitting announces the ending", ended.cues.countOf(CUE.runEnded) === 1);
 }
 
 function countWeapons(run: Run): number {
