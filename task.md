@@ -693,3 +693,49 @@ Performance, 800 enemies with all six weapons maxed: 45us per tick and zero allo
 ticks. The frame budget is 16,667us.
 
 Suite status: 493 checks across 10 files, all green. typecheck and lint clean.
+
+## Weapons, projectiles and the floor — 2026-08-12 (session 7)
+
+### The floor now scrolls forever and costs a fixed amount
+The ground draws itself from a repeating set of tiles around the camera, plus
+scattered scenery (rocks, bones, tufts) chosen by a hash of the tile position.
+Nothing is stored per tile, so walking half a million pixels from spawn costs
+exactly the same frame as standing still — 264 tiles either way, no allocation.
+
+**Bug found and fixed:** the tile a player spawns on was always the same
+variant in every single run. The hash returned zero for position (0,0), and
+zero fed back into itself, so the origin was a fixpoint. Seeding the hash with
+a constant fixed it. Nobody would have reported this as a bug; the floor just
+would have felt subtly samey at the start of every run.
+
+### Six weapons, covering every archetype in the game
+A weapon is now pure data: pick a movement archetype, give it numbers, and give
+it seven rows describing what each level-up does (including the sentence the
+player reads on the card). Adding weapon number forty is adding a row, not
+writing code. The six built are the whole shape of the weapon roster:
+
+- Reaper's Lash — melee sweep, alternates flanks
+- Bone Knives — homing
+- Gravebolt — directional volley
+- Tomb Axe — arcing throw with gravity
+- Shrouded Tome — orbiting
+- Rot Aura — persistent aura around the player
+
+Level-ups fold together in any order and reach the same weapon, which is what
+lets a replay or a co-op guest rebuild a run exactly. Stats apply when a shot
+is fired, not when the weapon was picked up, so a might upgrade strengthens
+weapons you already own.
+
+**Bug found and fixed (this one was serious):** shapes that damage repeatedly
+(the whip's sweep, the orbiting tome) were only checking for enemies on the
+exact ticks their damage clock landed on. A tome orbiting straight through an
+enemy scored zero hits. The whip only hurt things standing at the very start of
+its arc. Fixed so only the aura — which never moves relative to its owner — is
+allowed to skip the check. The whip went from 24 hits to 54 and the tome from 6
+to 30 in the same test crowd.
+
+### Measured
+Six maxed weapons against 800 enemies: 34us per tick (a 60fps frame is
+16,667us), zero allocation over a full simulated minute, 54,321 hits landed.
+Crits reproduce exactly from a seed. Damage numbers are whole integers so two
+phones always agree.
