@@ -1036,6 +1036,51 @@ systems once Phase 1's modifier stack exists.
 | **Run recap / death analytics** | Post-run graphs: DPS by weapon, damage taken, gold rate, the moment it went wrong. Players love it; it's also our balancing instrument. |
 | **Build share codes** | Export a build as a short code, import as a Custom Run preset. |
 | **Hardcore** | One life, no revives, no continues. Optional flag on any mode. |
+| **Speedrun toolkit** | Tick-accurate timer, auto-splits, PB ghost, seed entry, instant same-seed restart, verifiable share codes. A settings toggle, read-only, ladder-legal. Nearly free — determinism + replays already exist. |
+
+#### Speedrun toolkit — a settings toggle, not a mode — SETTLED
+
+The engine is already a speedrunning engine by accident. The simulation is deterministic, the clock is a
+fixed 60Hz tick count rather than wall time, RNG comes from seeded streams, and every run is already
+recorded as a replay and revalidated server-side. That means a real, trustworthy speedrun toolkit costs
+almost nothing to add, and — unlike most games — our timer cannot drift, lag, or be fooled by a slow
+device, because it counts ticks.
+
+**Toggled on in Settings → Speedrun. Off by default, never in the way for a normal player.**
+
+What it turns on, all of it fair and ladder-legal:
+
+- **A precise in-run timer**, in ticks converted to `mm:ss.mmm`. Identical on a $100 phone and a
+  flagship, because it counts simulation ticks, not seconds.
+- **Splits**, auto-triggered on real events: each minute survived, each boss killed, each weapon
+  evolution, arrival of the Reaper, the White Hand. Auto-compared against your personal best.
+- **A PB ghost** — your best run's split times shown live as ahead/behind, since we already store the
+  replay.
+- **Seed entry.** Type or paste a seed and play that exact run. Community-shared seeds work by
+  construction.
+- **Instant restart on the same seed**, one button, no menu walk. Already exists as a dev tool; this
+  just exposes it safely.
+- **A share/verify code** for any finished run. Anyone can load it and watch it back frame-identically,
+  so a claimed time is provable by anyone, not just by us.
+- **Input display** (the on-screen thumbstick trace) for recording, plus optional load-time exclusion
+  from the timer.
+- **Categories** the boards already support: any%, per-stage, per-character, no-arcana, Hardcore, and
+  seeded race.
+
+**The line between a speedrun tool and a cheat, drawn explicitly.** Everything above only *reads* the
+simulation — nothing changes it, so a run with the toolkit on is a completely normal run and posts to
+every ladder. Anything that *writes* to the simulation stays where it already is: in the dev menu, at
+`self` tier, and touching it taints the run so it cannot post (§5b). That includes slow-motion,
+fast-forward, frame advance, save states, RNG rerolling, and input playback. Input **recording** is a
+read and is fine; input **playback** is a write and taints. This split is why we can be generous with
+the toolkit — the taint flag and mandatory server revalidation already sort the honest runs from the
+assisted ones, and nothing new has to be defended.
+
+**Cost and timing.** The timer, splits, and seed entry are a small UI layer over data the run loop
+already produces — a day's work. PB ghost and verify codes reuse the replay system verbatim. It lands in
+Phase 6 with the ladders and the replay browser, because that's when the boards it feeds exist. Nothing
+about it needs to be designed into the engine now; determinism, tick-counted time, and replays are
+already in place, which was the only hard part.
 
 ---
 
@@ -1182,6 +1227,8 @@ The Phase 1 modifier stack means this is mostly data records and UI.
   board close from revalidated runs, every grant written to the append-only event log. Leaderboards
   never grant power — see "Leaderboards have to pay out" above.
 - **Replay share + spectate**; **run recap / death analytics**.
+- **Speedrun toolkit** exposed in Settings: tick timer, auto-splits, PB ghost, seed entry, same-seed
+  restart, verify codes, categories. Read-only, ladder-legal — see "Speedrun toolkit" above.
 - **Co-op draft.**
 - 150+ achievements; collection screen; per-character and per-stage records; run history.
 - **Anti-cheat v2:** Reaper response, shadow segregation, telemetry dashboard, validated leaderboards.
