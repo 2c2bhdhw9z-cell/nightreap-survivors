@@ -118,6 +118,63 @@ co-op player colors.
 Infinite by construction because the content is a seed and a modifier stack. This is where anti-cheat
 earns its keep: a leaderboard nobody trusts is not an endgame.
 
+#### Leaderboards have to pay out, and here is exactly what they pay — SETTLED
+
+A board that only says "you are 4,812th" is not a reward, it's a receipt. So every ladder pays. The
+hard rule that makes it safe: **a leaderboard never grants power.** No gold, no Golden Eggs, no
+Ascension shortcuts, no stat bonuses, ever. The moment placement grants power, being good at the game
+becomes a requirement for being strong at the game, and everyone who just wants to play gets left
+behind. Rewards are prestige and cosmetics only.
+
+**The currency: Reaper Marks.** A second currency, separate from gold, that buys cosmetics only. It is
+granted by the server, never by the client, and it cannot convert into gold, eggs, or anything with a
+stat attached. Marks are the payout rail for every board so we tune one number instead of twenty.
+
+**Paid by percentile, not by rank.** Brackets are top 0.1% / 1% / 5% / 10% / 25% / 50%, plus a flat
+participation grant for any validated finish. Percentiles work identically with 300 players or 300,000,
+so nothing needs retuning as the game grows, and a mid-table player still gets paid for showing up.
+
+**What each board pays**
+
+| Board | Cadence | Pays |
+|---|---|---|
+| **Daily Run** | Daily | Participation Marks + bracket Marks. A 7-day and 30-day streak bonus, because the streak is the retention mechanic, not the score. |
+| **Weekly mutator** | Weekly | Larger Mark payout, plus a weekly-exclusive cosmetic for top 5%. |
+| **Seeded race** | Ad hoc | Marks + a "fastest clear on seed X" title that stays attached to that seed forever. |
+| **Ascension tiers** | Lifetime | A tier emblem per tier cleared, shown on your profile and your co-op nameplate. First-clear-in-the-world of a new tier gets a permanent named banner. |
+| **Endless depth** | Lifetime + seasonal snapshot | Depth badges at milestones (30 / 60 / 90 minutes and up). |
+| **Per-character Mastery** | Lifetime | That character's alternate palette, then their signature HUD frame. |
+| **Co-op boards (per party size)** | Seasonal | Marks for every party member at full value — same rule as co-op gold, a carry is never penalized. |
+
+**Non-cosmetic prestige that costs us nothing to give:** titles, profile banners, an emblem on your
+co-op nameplate, and **Run of the Week** — the top validated replay gets featured in the in-game replay
+browser with the player's name on it. That last one is the strongest reward in the list and it's free.
+
+**No FOMO tax on people who don't compete.** Roughly 95% of ladder cosmetics enter the normal gold shop
+one season later, at a higher gold price. Only a small set of placement items (top 0.1% and world-first
+tier clears) stay exclusive forever, and those are emblems, not looks — so nobody who plays casually
+ever feels visually locked out.
+
+**Seasons.** Four weeks. Daily boards reset daily, weekly boards weekly, Ascension / Endless / Mastery
+are lifetime with a seasonal snapshot, so a season winner exists without wiping anyone's record.
+
+**Anti-abuse, which is the whole reason this is safe to build:**
+
+- Marks are granted **server-side only, after replay revalidation**. There is no client message that
+  says "give me Marks," so there is nothing to forge (§5b).
+- Tainted or unvalidated runs earn nothing — not zero Marks with a warning, simply not a submission.
+- Payouts are computed **at board close, not at submit**, so a run that fails later revalidation never
+  paid out in the first place.
+- Every grant is a row in the append-only event log, so a bad season can be recomputed and clawed back
+  by the same purge-and-rebuild path the ladders already use.
+- Marks are account-bound. No trading, no gifting, no transfers — that kills farming rings outright.
+
+**When it's built.** The Marks wallet and the owned-cosmetics bitfield go into the save through the
+migration path that exists from day one; the payout tables live in remote config so brackets can be
+retuned without an app update. Boards and grants land with the ladders in Phase 6; the cosmetic store
+that spends Marks opens in Phase 8 alongside live ops. Marks accrue from the day boards ship, so early
+competitors aren't paid nothing for being early.
+
 **7. Collection completion.**
 40+ characters, 20+ stages, 22 arcanas, every weapon evolution logged, 150+ achievements. The
 completionist track, and the thing that makes players read patch notes.
@@ -1120,6 +1177,10 @@ The Phase 1 modifier stack means this is mostly data records and UI.
 - Hurry, Hyper, Inverse, per-stage modifiers, **Hardcore** flag, **Boss Rush**, **Adventure runs**,
   **Custom Run / Sandbox**, **Weekly mutator**, **build share codes**.
 - **Daily Run** + validated leaderboards; **seeded race**.
+- **Ladder payouts:** Reaper Marks wallet, percentile bracket tables in remote config, season
+  rollover, titles/emblems/banners, Run of the Week featuring. Server-granted only, computed at
+  board close from revalidated runs, every grant written to the append-only event log. Leaderboards
+  never grant power — see "Leaderboards have to pay out" above.
 - **Replay share + spectate**; **run recap / death analytics**.
 - **Co-op draft.**
 - 150+ achievements; collection screen; per-character and per-stage records; run history.
@@ -1145,6 +1206,8 @@ The Phase 1 modifier stack means this is mostly data records and UI.
   death knell. Generated in-sandbox; nothing sourced.
 - **Monetization live:** rewarded-ad integration (revive / bonus gold, player-initiated, disableable),
   cosmetic IAP with receipt validation and restore-purchases. Consent flow and ATT prompt wired.
+- **Cosmetic store opens**, spending both gold and Reaper Marks. Last season's ladder cosmetics roll
+  into the gold shop on schedule; placement emblems stay exclusive.
 - **Compliance package:** privacy policy hosted on the web package, age-rating questionnaires,
   EULA, block/report, name filtering, crash + telemetry consent, privacy manifest.
 - **Accessibility pass:** colorblind palettes, flash/shake/damage-number toggles, joystick sizing,
