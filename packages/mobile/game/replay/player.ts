@@ -71,6 +71,15 @@ export interface ReplayResult {
  * Allocates two small typed arrays and nothing else — no per-tick garbage, because the CI soak replays
  * for three hours and a per-tick allocation would turn a determinism test into a GC test.
  */
+/**
+ * Sub-millisecond clock. `Date.now()` only resolves to whole milliseconds, which is far too coarse
+ * to time work that finishes in microseconds.
+ */
+function nowMs(): number {
+  const host = globalThis as unknown as { performance?: { now?: () => number } };
+  return host.performance?.now?.() ?? Date.now();
+}
+
 export function replay(
   bytes: Uint8Array,
   sim: ReplaySim,
@@ -83,7 +92,7 @@ export function replay(
     stopAtTick?: number;
   },
 ): ReplayResult {
-  const startedAt = Date.now();
+  const startedAt = nowMs();
   const decoded = decodeReplay(bytes);
   const result: ReplayResult = {
     error: decoded.error,
@@ -150,7 +159,10 @@ export function replay(
 
   result.ticks = tick;
   result.replayedHash = sim.hashState(HASH_SEED);
-  result.elapsedMs = Date.now() - startedAt;
+  result.elapsedMs = nowMs() - startedAt;
+  // Guarded, but the guard should never fire now that the clock is sub-millisecond: a whole-
+  // millisecond clock reports 0ms for fast work, which reads as "infinitely slow" and made this
+  // measurement useless. Same trap that flattened the on-device frame-time percentiles.
   result.ticksPerSecond = result.elapsedMs > 0 ? Math.round((tick / result.elapsedMs) * 1000) : 0;
 
   // A partial replay is never "reproduced" — the recorded hash describes the end of the run, so
