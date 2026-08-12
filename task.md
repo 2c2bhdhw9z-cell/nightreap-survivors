@@ -846,3 +846,20 @@ Done: movement, camera, floor, enemies + waves, six weapons, projectiles, gems +
 level curve and queue, six passives, the card screen.
 Left: the death and results screen, dev menu v1 panels, then wiring the whole thing into one playable
 screen with an on-screen thumbstick — and then the Phase 1 gate.
+
+### The results screen data (`game/sim/results.ts`)
+Written the same session. A run summary is produced once, from the stores, and the screen, the save,
+achievements and any leaderboard submission all read that one record — so the screen can never say
+12:04 while the save records 11:58.
+
+Two calls worth flagging because they are judgement, not code:
+- **Being taken by the White Hand counts as completing a run, not as dying.** Someone who reached 30
+  minutes and got erased by an unkillable Reaper did not fail.
+- **Quitting still banks the gold and the time played.** They played it. Confiscating that is how you
+  teach people not to open the game.
+
+The damage breakdown ("which of my weapons was actually doing the work") is ranked here rather than in
+the screen, so every place that shows it ranks it identically. Shares are truncated, so three equal
+weapons read 33.3% each and total 99.9% — honest, rather than rounding one up to make it look tidy.
+
+31 checks in `game/sim/results.test.ts`, all passing. `bun run test:game` is now 13 files, all green.
