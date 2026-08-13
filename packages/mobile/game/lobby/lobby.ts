@@ -384,7 +384,9 @@ export class Lobby {
         seat.ready = false;
         this.system(SYSTEM_LINE.LEFT, i, wasCalled);
       } else if (state === LOBBY_SEAT.LIVE && before === LOBBY_SEAT.EMPTY) {
-        this.system(SYSTEM_LINE.JOINED, i, "");
+        // Not for our own seat. Being told you sat down is noise, and worse, it is the first line in an
+        // empty log, so a brand new party opens on the game talking about the player to the player.
+        if (i !== this.localSlot) this.system(SYSTEM_LINE.JOINED, i, "");
       } else if (state === LOBBY_SEAT.LIVE && before === LOBBY_SEAT.HELD) {
         this.system(SYSTEM_LINE.RETURNED, i, seat.name);
       } else if (state === LOBBY_SEAT.HELD && before === LOBBY_SEAT.LIVE) {

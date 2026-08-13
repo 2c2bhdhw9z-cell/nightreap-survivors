@@ -1924,3 +1924,62 @@ Everything else still passes: 25 test files, typecheck and lint.
 
 Next: the two actual lobby screens, which now have nothing left to decide.
 
+## The party room exists on screen now - 2026-08-13
+
+You can create a party, join one with a code, or take a quick match, and then sit in a room with other
+people and talk to them. Two browsers on this machine did exactly that, through the real server: names
+appeared on both sides, ready appeared on both sides, a typed line crossed, a shouted DANGER crossed, and
+the start button unblocked itself the moment everybody was ready.
+
+What is there:
+
+- Party size 2, 3 or 4, chosen before you go in, with the note that a bigger party means more enemies and
+  never tougher ones.
+- A room code shown big in gold. Typing one in forgives case, spaces, dashes and the letters people
+  confuse for each other.
+- Four seat rows: portrait tile, your identity colour, your dot count, your name, a HOST mark, and READY
+  or NOT READY on the right. A seat somebody is reconnecting into says RECONNECTING in red and is not the
+  same thing as an empty one.
+- A chat log where every speaker's dots and colour are next to their line, so you can tell who said what
+  without reading the name.
+- The six shouts along the bottom of the chat panel - HERE, DANGER, HELP, NICE, REGROUP, LOOT.
+- Either keyboard. Your phone's keyboard is the default and brings its autocorrect, swipe, dictation and
+  emoji with it. The game's own keyboard is a setting away, and if your language cannot be typed on it,
+  your phone's opens instead and says why.
+- START RUN for the host, READY for everyone else, LEAVE for both - and when START is refusing, a line
+  above it says which of the four reasons it is rather than the button just sitting there dead.
+
+Three things I got wrong and fixed after looking at it:
+
+- The host's row said NOT READY. The host never presses ready - pressing START *is* their readiness - so
+  the screen was inventing a rule the game does not have and making it look like the host was blocking
+  their own party.
+- Every new party opened with the game telling you that you had sat down. First line, empty room, about
+  yourself. It now only mentions other people.
+- The identity dots were too small to count at a glance, which defeats the entire point of having them.
+
+And one real bug, which is the reason for testing against the actual server rather than a stand-in: the
+server was still running the version from before the party messages existed, so it was quietly throwing
+every one of them away as something it did not recognise. Names, ready and chat all silently failed while
+the seats themselves worked, because the seats come from a different channel. Restarting it fixed it, and
+it is worth remembering: after the message format changes, the server has to be restarted or nothing
+about the party works and nothing says why.
+
+Also built while doing it, because the screens should hold no rules: the keyboard's own behaviour (shift
+once versus caps lock, delete one character rather than one byte, both length limits, no fake messages
+made of spaces) and base64, which is how the save file gets into phone storage - hand-written because
+Android's JavaScript engine does not have it, and checked against a known-correct version at every length
+from nothing to a kilobyte.
+
+Tested to the usual ratio, every piece: the keyboard 273 lines of code to 261 of tests, base64 76 to 145.
+Two more deliberate breaks confirmed caught. 27 test files now, plus the live server test, the
+two-players-over-a-real-connection test, typecheck, lint and build - all green.
+
+Still missing from this screen, deliberately, until the art phase: character portraits (seats show a skull
+and a seat number), generated player names (everyone is SURVIVOR for now), and the little bell icon for
+muting chat from the lobby itself rather than from settings.
+
+Left in this phase: the four-player heads-up display, the co-op tools in the dev menu, the switch that
+keeps co-op off until it is ready, where the server lives, and one catch-up pass on tests for the older
+networking files.
+

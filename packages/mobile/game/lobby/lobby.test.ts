@@ -173,10 +173,30 @@ section("the relay's word sets the seats, not the names");
   check("three live seats", host.liveCount === 3, `${host.liveCount}`);
   check("fourth seat empty", (host.seats[3] as { state: number }).state === LOBBY_SEAT.EMPTY);
   check(
-    "joining wrote a system line per seat",
-    host.chat.filter((l) => l.systemCode === SYSTEM_LINE.JOINED).length === 3,
+    "joining wrote a system line for everyone but ourselves",
+    host.chat.filter((l) => l.systemCode === SYSTEM_LINE.JOINED).length === 2,
+    `${host.chat.filter((l) => l.systemCode === SYSTEM_LINE.JOINED).length}`,
   );
   check("system lines are not player lines", host.chat.every((l) => l.kind === CHAT_KIND.SYSTEM));
+}
+
+section("you are never told about yourself");
+{
+  // Built by hand rather than through the rig, because the point is what the very first room view does
+  // to an empty log — and the rig has already applied one.
+  const alone = new Lobby({ send: () => {}, now: () => 0, random: () => 0.5, chatPolicy: openPolicy });
+  check("nothing has been said yet", alone.chat.length === 0);
+  alone.applyRoom(room("KX7M2B", 0, 2, [LIVE, EMPTY, EMPTY, EMPTY]), 0);
+  check("creating a party says nothing about you sitting down", alone.chat.length === 0, `${alone.chat.length}`);
+  alone.applyRoom(room("KX7M2B", 0, 2, [LIVE, LIVE, EMPTY, EMPTY]), 0);
+  check("somebody else arriving is worth saying", alone.chat.some((c) => c.systemCode === SYSTEM_LINE.JOINED && c.fromSlot === 1));
+  check("and that is the only line in the log", alone.chat.length === 1, `${alone.chat.length}`);
+
+  // The same from a guest's side: seat 1 hears about seat 0, never about itself.
+  const guest = new Lobby({ send: () => {}, now: () => 0, random: () => 0.5, chatPolicy: openPolicy });
+  guest.applyRoom(room("KX7M2B", 0, 2, [LIVE, LIVE, EMPTY, EMPTY]), 1);
+  check("a guest hears about the host", guest.chat.some((c) => c.systemCode === SYSTEM_LINE.JOINED && c.fromSlot === 0));
+  check("and not about itself", guest.chat.every((c) => !(c.systemCode === SYSTEM_LINE.JOINED && c.fromSlot === 1)));
 }
 
 section("a name and character set on the host reaches every guest");

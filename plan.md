@@ -1405,8 +1405,28 @@ devices is newer — and that guess is how people lose 200 hours.
 
 ### Phase 2 — Co-op, proven on the small slice
 
-**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask), and the lobby rules themselves — a roster only the host may change, chat that routes guest to host to everyone so a name cannot be faked, presets that travel as ids, a bursty token-bucket rate limit, every refusal distinguishable, and a start button that refuses while a held seat is still reconnecting. Not started: the co-op lobby screens, the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
+**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask), and the lobby rules themselves — a roster only the host may change, chat that routes guest to host to everyone so a name cannot be faked, presets that travel as ids, a bursty token-bucket rate limit, every refusal distinguishable, and a start button that refuses while a held seat is still reconnecting. Not started: the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
 
+- ~~**The co-op lobby screens**~~ — **DONE**, and verified with two real browsers in one party through the
+  real relay: names, ready, a typed line, a preset shout and the start unblocking all crossed correctly.
+  One route, not two — entry and lobby are two views of one connection, so backing out leaves the party
+  and no player can hold a seat in a party they cannot see. Built from `mocks/screen-coop-lobby-v3`,
+  including the five corrections. The screen holds no rules: who may start, the roster, chat, rate
+  limiting, reconnects, refusals and keyboard behaviour all live in tested modules, and the chat panel
+  reads PHONE vs IN-GAME from `resolve()` on its first line as required. Also built here: the stone kit
+  (cobble frame, slate slab, header plate, three button weights, pip dots) that every out-of-run screen
+  inherits, the in-game keyboard's behaviour as a tested module, and base64 so the save reaches phone
+  storage — hand-written, because Android's engine has none, and checked against a correct implementation
+  at every length to 1KB.
+  **Corrected after looking at the built screen:** the host's row no longer says NOT READY (the host never
+  presses ready — pressing START is the readiness, and the screen was inventing a rule); a party no longer
+  opens by announcing your own arrival to you; pip dots enlarged to a countable size.
+  **Operational note worth keeping:** the relay must be restarted after any protocol change. A relay
+  running pre-`PROTOCOL_VERSION 4` code silently discarded every lobby message as an unknown type while
+  seats kept working, because seats arrive on the control channel — names, ready and chat all failed with
+  nothing on screen to say why.
+  **Still deliberately absent until Phase 4:** character portraits, generated player names, and the
+  lobby's own mute-chat bell.
 - ~~**The lobby session**~~ — **DONE.** The seam between the transport and the lobby, as its own tested
   module rather than as glue inside a screen. Rules that would otherwise only be testable by tapping a
   phone: any control frame carrying a room refreshes the seats, a roomless frame changes nothing, a
