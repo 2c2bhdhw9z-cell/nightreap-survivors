@@ -1782,3 +1782,61 @@ connection test, typecheck, lint and build.
 
 Left in this phase: the lobby screen, the four-player heads-up display, the co-op tools in the dev
 menu, and the switch that keeps co-op turned off until it is ready.
+
+## Every setting now has one answer, and old saves survive it - 2026-08-13
+
+The settings screen we approved has switches the game had never actually stored: battery saver, chat
+on/off, whether strangers can talk to you, the daily reminder ask, the insect-free sprites option,
+auto-aim, the speedrun overlay, the keyboard choice, and all the heads-up display layout controls
+(docked or floating badges, which side they sit on, and four separate size sliders). All of that is
+now saved and comes back after a reinstall.
+
+Three of the comfort options - damage numbers, screen flash, screen shake - used to be on or off.
+They are sliders now, nought to a hundred. The people who need them do not all need the same amount,
+and making someone choose between all of it and none of it was the accessibility failure we said we
+would not ship.
+
+The important part: nobody's existing save is thrown away. A save written before today is read at its
+old size, upgraded field by field into the new shape, and written back out in the new format. What
+used to be "shake: on" becomes "shake: 100", "off" becomes "0". Progress, gold, unlocks and counters
+all cross over untouched. Tested by hand-building an old save byte by byte - not by using our own new
+code to write it, which would have proved nothing - then reading it and checking every field. A
+damaged or too-old file is still refused rather than half-loaded.
+
+On top of the storage there is now one place that answers "what actually happens", instead of every
+screen working it out for itself:
+
+- If you pick our in-game keyboard but your language is Japanese, Russian, Arabic, Korean, Greek,
+  Hebrew, Thai or Hindi, you get your phone's keyboard, because a keyboard that cannot type your
+  language is not a style choice. The screen is also told the choice was overridden, so it can grey
+  the option out instead of lying about it.
+- An unrecognised language gets the working keyboard, not the pretty one.
+- "Let strangers talk to me" cannot be on while chat itself is off. Two switches where one quietly
+  overrules the other is how someone ends up certain they turned chat off and it kept talking.
+- Battery saver only ever takes away: it halves the effect sliders, caps drawing at 30 frames a
+  second, and nudges effects down a step. It never adds an effect back that you turned off. The fight
+  itself still runs at its normal speed - only the drawing slows.
+- Every size slider is clamped, so the layout editor cannot produce a four-point-wide control or a
+  badge bigger than the phone.
+- Badge positions are worked out here too: docked left, centre or right to the point, or wherever you
+  dragged them - and either way clamped so the cluster is always fully on screen, on any phone. The
+  cluster keeps its full four-player width even after someone drops, so the row never re-centres
+  itself mid-fight and make you re-find it.
+- Solo hides the badges entirely.
+- "Reset layout" puts every position and size back and touches nothing else - your volumes, opt-ins
+  and comfort sliders survive it.
+- The daily reminder can only be asked on your second run, and only once, ever.
+
+This had to exist before the heads-up display, not after: the layout screen only works if the display
+reads every position and size from settings from its very first line. Retrofitting that onto
+hardcoded numbers is a rewrite.
+
+Tested to the usual ratio: 311 lines of code, 379 lines of tests, thirteen areas, about 170 checks.
+I broke two rules deliberately - the stranger-chat one and the badge padding - and confirmed the
+tests catch both and fail the build.
+
+Everything else still passes: 23 test files, the live server test, the two-phones-over-a-real-
+connection test, typecheck, lint and build.
+
+Left in this phase: the lobby screen, the four-player heads-up display, the co-op tools in the dev
+menu, the switch that keeps co-op turned off until it is ready, and deciding where the server lives.

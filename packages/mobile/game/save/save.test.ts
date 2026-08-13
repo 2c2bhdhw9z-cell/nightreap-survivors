@@ -23,10 +23,14 @@ import {
   describeSaveError,
   encodeSave,
   saveBytes,
+  saveBytesFor,
   saveChecksum,
 } from "./codec";
 import {
+  CHAT_KEYBOARD,
+  HUD_ALIGN,
   SAVE_LIMITS,
+  SAVE_OLDEST_READABLE,
   SAVE_VERSION,
   bitCount,
   bitGet,
@@ -84,12 +88,27 @@ function populated() {
     masterVolume: 33,
     colorblindMode: 2,
     vfxLevel: 1,
-    damageNumbers: false,
-    screenShake: false,
+    damageNumbers: 0,
+    screenShake: 40,
     hudScale: 140,
     joystickSize: 92,
     telemetryOptIn: true,
     customNameOptIn: true,
+    chatKeyboard: CHAT_KEYBOARD.IN_GAME,
+    batterySaver: true,
+    chatEnabled: false,
+    dailyReminderAsked: true,
+    insectFreeSprites: true,
+    autoAim: true,
+    speedrunToolkit: true,
+    hudBadgesDocked: false,
+    hudBadgeAlign: HUD_ALIGN.RIGHT,
+    hudBadgeX: 71,
+    hudBadgeY: 33,
+    hudTopStripScale: 120,
+    hudSlotStripScale: 85,
+    hudBadgeScale: 150,
+    hudStickScale: 60,
   };
   return save;
 }
@@ -150,12 +169,65 @@ section("round trip");
       s.vfxLevel === 1 &&
       s.hudScale === 140 &&
       s.joystickSize === 92 &&
-      s.damageNumbers === false &&
-      s.screenFlash === true &&
-      s.screenShake === false &&
+      s.damageNumbers === 0 &&
+      s.screenFlash === 100 &&
+      s.screenShake === 40 &&
       s.telemetryOptIn === true &&
       s.crashReportOptIn === false &&
       s.customNameOptIn === true,
+  );
+  check(
+    "the switches decided after v1 survive too",
+    s.chatKeyboard === CHAT_KEYBOARD.IN_GAME &&
+      s.batterySaver === true &&
+      s.chatEnabled === false &&
+      s.chatFromNonFriends === true &&
+      s.dailyReminderOptIn === false &&
+      s.dailyReminderAsked === true &&
+      s.insectFreeSprites === true &&
+      s.autoAim === true &&
+      s.speedrunToolkit === true,
+  );
+  check(
+    "and so does the whole HUD layout",
+    s.hudBadgesDocked === false &&
+      s.hudBadgeAlign === HUD_ALIGN.RIGHT &&
+      s.hudBadgeX === 71 &&
+      s.hudBadgeY === 33 &&
+      s.hudTopStripScale === 120 &&
+      s.hudSlotStripScale === 85 &&
+      s.hudBadgeScale === 150 &&
+      s.hudStickScale === 60,
+    "a layout the player set must not quietly reset itself",
+  );
+  check(
+    "the options that should ship off are off",
+    (() => {
+      const d = defaultSettings();
+      return (
+        !d.insectFreeSprites &&
+        !d.autoAim &&
+        !d.batterySaver &&
+        !d.speedrunToolkit &&
+        !d.dailyReminderAsked &&
+        !d.dailyReminderOptIn
+      );
+    })(),
+    "insect-free sprites and auto-aim are options, not the default look",
+  );
+  check(
+    "and the ones that should ship on are on",
+    (() => {
+      const d = defaultSettings();
+      return (
+        d.chatEnabled &&
+        d.chatFromNonFriends &&
+        d.hudBadgesDocked &&
+        d.chatKeyboard === CHAT_KEYBOARD.PHONE &&
+        d.hudBadgeAlign === HUD_ALIGN.LEFT
+      );
+    })(),
+    "docked-left badges and the phone keyboard are the defaults we settled on",
   );
   check(
     "every opt-in defaults to off",
@@ -430,6 +502,104 @@ section("limits");
     })(),
     "an official event is not a black mark",
   );
+}
+
+/* ---- an old save is migrated, not thrown away ---------------------------------------------------- */
+
+section("migrating a version 1 save");
+{
+  /**
+   * Builds a real v1 blob by hand. Not by calling our own encoder with a flag — a migration test that
+   * uses the current writer to make its input proves nothing, because the bug being guarded against is
+   * exactly "the writer changed and the reader was not told".
+   */
+  function buildV1(gold: number, flags: number): Uint8Array {
+    const bytes = new Uint8Array(saveBytesFor(1));
+    const view = new DataView(bytes.buffer);
+    const bodyLen = saveBytesFor(1) - 64;
+    view.setUint32(0, 0x5653_524e, true); // "NRSV"
+    view.setUint16(4, 1, true); // version 1
+    view.setUint16(6, 3, true); // contentVersion
+    view.setUint32(8, 777, true); // buildId
+    view.setUint32(12, 42, true); // generation
+    view.setUint32(16, 1_700_000_000, true);
+    view.setUint32(20, gold, true);
+    view.setUint32(24, gold * 3, true);
+    view.setUint32(28, 11, true); // runsStarted
+    view.setUint32(32, 4, true); // runsCompleted
+    view.setUint32(36, 9_000, true); // secondsPlayed
+    view.setUint32(40, 1_830, true); // bestSurvivalSeconds
+    view.setUint32(44, 0, true);
+    view.setUint32(48, bodyLen, true);
+    // A little progress, so the test can prove the parts that did not change were carried across.
+    bytes[64] = 0b0000_0011; // characters 0 and 1 unlocked
+    const settingsAt = 64 + bodyLen - 20;
+    bytes[settingsAt] = 55; // masterVolume
+    bytes[settingsAt + 3] = 2; // colorblindMode
+    view.setUint16(settingsAt + 8, 130, true); // hudScale
+    view.setUint16(settingsAt + 10, flags, true);
+    // Checksum last, over the whole thing with its own field zeroed — same rule as v2.
+    let h = 0x811c_9dc5;
+    for (let i = 0; i < bytes.length; i++) {
+      const b = i >= 52 && i < 56 ? 0 : (bytes[i] as number);
+      h = (h ^ b) >>> 0;
+      h = Math.imul(h, 0x0100_0193) >>> 0;
+    }
+    view.setUint32(52, h >>> 0, true);
+    return bytes;
+  }
+
+  // Shake and damage numbers on, flash off, telemetry on.
+  const v1 = buildV1(1234, (1 << 0) | (1 << 2) | (1 << 3));
+  check("a v1 save is shorter than a v2 one", v1.length < saveBytes(), `${v1.length} vs ${saveBytes()}`);
+
+  const out = decodeSave(v1);
+  check("it is read, not refused", out.error === SAVE_ERROR.NONE, describeSaveError(out.error));
+  const m = out.save;
+  check("progress crosses over", m.gold === 1234 && m.goldLifetime === 3702);
+  check("counters cross over", m.runsStarted === 11 && m.runsCompleted === 4);
+  check("best time crosses over", m.bestSurvivalSeconds === 1830);
+  check("unlocks cross over", bitGet(m.unlockedCharacters, 0) && bitGet(m.unlockedCharacters, 1));
+  check("generation is read from the old header", out.generation === 42 && m.generation === 42);
+  check("the result calls itself v2", m.version === SAVE_VERSION);
+
+  const ms = m.settings;
+  check("old settings cross over", ms.masterVolume === 55 && ms.colorblindMode === 2 && ms.hudScale === 130);
+  check("on becomes full strength", ms.screenShake === 100 && ms.damageNumbers === 100);
+  check("off becomes zero", ms.screenFlash === 0);
+  check("an old opt-in is still opted in", ms.telemetryOptIn === true);
+  check(
+    "everything decided after v1 takes its default",
+    ms.chatKeyboard === CHAT_KEYBOARD.PHONE &&
+      ms.chatEnabled === true &&
+      ms.hudBadgesDocked === true &&
+      ms.hudBadgeAlign === HUD_ALIGN.LEFT &&
+      ms.hudStickScale === 100 &&
+      ms.autoAim === false &&
+      ms.insectFreeSprites === false,
+  );
+
+  // Rewritten, it must come back as a normal v2 save and be the same profile.
+  const rewritten = encodeSave(m);
+  check("rewriting gives a full-length v2 save", rewritten.length === saveBytes());
+  const again = decodeSave(rewritten);
+  check("which reads cleanly", again.error === SAVE_ERROR.NONE, describeSaveError(again.error));
+  check("with the same gold", again.save.gold === 1234);
+  check("and the migrated slider values", again.save.settings.screenFlash === 0);
+
+  // The failure modes still have to fail.
+  const truncated = v1.slice(0, v1.length - 1);
+  check("a v1 save of the wrong length is refused", decodeSave(truncated).error !== SAVE_ERROR.NONE);
+  const corrupt = buildV1(9, 0);
+  corrupt[70] = (corrupt[70] as number) ^ 0xff;
+  check("a corrupt v1 save is refused", decodeSave(corrupt).error === SAVE_ERROR.BAD_CHECKSUM);
+  const tooOld = buildV1(9, 0);
+  new DataView(tooOld.buffer).setUint16(4, 0, true);
+  check(
+    "a version older than we migrate is refused, not guessed at",
+    decodeSave(tooOld).error === SAVE_ERROR.UNSUPPORTED_VERSION,
+  );
+  check("and v1 is the oldest we claim to read", SAVE_OLDEST_READABLE === 1);
 }
 
 console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures === 1 ? "" : "s"}`}`);

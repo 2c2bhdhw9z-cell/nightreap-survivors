@@ -24,6 +24,10 @@
  *   56  u32  reserved
  *   60  u32  reserved
  *   64  ...  body: bitsets, byte arrays, ascension u16s, then settings
+ *
+ * VERSIONS
+ * v1 is readable and migrated forward; its settings block is 20 bytes rather than 48. Everything before
+ * the settings block is identical in both, which is why the migration is a settings-only special case.
  */
 
 import { HASH_SEED, hashByte, hashWord } from "../net/state-hash";
@@ -31,6 +35,7 @@ import {
   SAVE_HEADER_BYTES,
   SAVE_LIMITS,
   SAVE_MAGIC,
+  SAVE_OLDEST_READABLE,
   SAVE_VERSION,
   createSaveData,
   defaultSettings,
@@ -76,10 +81,16 @@ export function describeSaveError(error: SaveError): string {
   }
 }
 
-/** Settings occupy a fixed 20 bytes: 15 declared fields, the rest reserved for the next few options. */
-const SETTINGS_BYTES = 20;
+/**
+ * Settings occupy a fixed 48 bytes: 32 declared fields, the rest reserved. v1's block was 20 bytes with
+ * 15 fields, which ran out the moment the co-op switches and the HUD layout options were decided — hence
+ * a version bump rather than squeezing.
+ */
+const SETTINGS_BYTES = 48;
+const SETTINGS_BYTES_V1 = 20;
 
-export function bodyBytes(): number {
+/** Body length for a given save version. Everything before settings is unchanged between v1 and v2. */
+function bodyBytesFor(version: number): number {
   const L = SAVE_LIMITS;
   return (
     L.characterBytes +
@@ -90,12 +101,21 @@ export function bodyBytes(): number {
     L.powerUpCount +
     L.masteryCount +
     L.ascensionCount * 2 +
-    SETTINGS_BYTES
+    (version === 1 ? SETTINGS_BYTES_V1 : SETTINGS_BYTES)
   );
+}
+
+export function bodyBytes(): number {
+  return bodyBytesFor(SAVE_VERSION);
 }
 
 export function saveBytes(): number {
   return SAVE_HEADER_BYTES + bodyBytes();
+}
+
+/** Total length a save of `version` must be. Used to validate an older slot before migrating it. */
+export function saveBytesFor(version: number): number {
+  return SAVE_HEADER_BYTES + bodyBytesFor(version);
 }
 
 function checksumOf(bytes: Uint8Array): number {
@@ -120,18 +140,42 @@ function packSettings(view: DataView, at: number, s: SaveSettings): void {
   view.setUint8(at + 7, s.joystickY & 0xff);
   view.setUint16(at + 8, s.hudScale & 0xffff, true);
   let flags = 0;
-  if (s.damageNumbers) flags |= 1 << 0;
-  if (s.screenFlash) flags |= 1 << 1;
-  if (s.screenShake) flags |= 1 << 2;
+  // Bits 0..2 were the three comfort booleans in v1 and are now the sliders below. They stay written so a
+  // v1-era reader — a downgraded build, a bug report tool — still sees "shake on" rather than "shake off".
+  if (s.damageNumbers > 0) flags |= 1 << 0;
+  if (s.screenFlash > 0) flags |= 1 << 1;
+  if (s.screenShake > 0) flags |= 1 << 2;
   if (s.telemetryOptIn) flags |= 1 << 3;
   if (s.crashReportOptIn) flags |= 1 << 4;
   if (s.personalisedAdsOptIn) flags |= 1 << 5;
   if (s.customNameOptIn) flags |= 1 << 6;
-  view.setUint16(at + 10, flags, true);
-  // 12..19 reserved, left zero.
+  if (s.batterySaver) flags |= 1 << 7;
+  if (s.chatEnabled) flags |= 1 << 8;
+  if (s.chatFromNonFriends) flags |= 1 << 9;
+  if (s.dailyReminderOptIn) flags |= 1 << 10;
+  if (s.dailyReminderAsked) flags |= 1 << 11;
+  if (s.insectFreeSprites) flags |= 1 << 12;
+  if (s.autoAim) flags |= 1 << 13;
+  if (s.speedrunToolkit) flags |= 1 << 14;
+  if (s.hudBadgesDocked) flags |= 1 << 15;
+  view.setUint16(at + 10, flags & 0xffff, true);
+  // v2 additions. Bytes 12..19 were reserved in v1 and are still reserved, so a v1 blob widened to v2
+  // length would read as defaults here rather than as garbage.
+  view.setUint8(at + 20, s.chatKeyboard & 0xff);
+  view.setUint8(at + 21, s.hudBadgeAlign & 0xff);
+  view.setUint8(at + 22, s.hudBadgeX & 0xff);
+  view.setUint8(at + 23, s.hudBadgeY & 0xff);
+  view.setUint8(at + 24, s.damageNumbers & 0xff);
+  view.setUint8(at + 25, s.screenFlash & 0xff);
+  view.setUint8(at + 26, s.screenShake & 0xff);
+  view.setUint16(at + 28, s.hudTopStripScale & 0xffff, true);
+  view.setUint16(at + 30, s.hudSlotStripScale & 0xffff, true);
+  view.setUint16(at + 32, s.hudBadgeScale & 0xffff, true);
+  view.setUint16(at + 34, s.hudStickScale & 0xffff, true);
+  // 36..47 reserved, left zero.
 }
 
-function unpackSettings(view: DataView, at: number): SaveSettings {
+function unpackSettings(view: DataView, at: number, version: number): SaveSettings {
   const s = defaultSettings();
   s.masterVolume = view.getUint8(at);
   s.musicVolume = view.getUint8(at + 1);
@@ -143,13 +187,40 @@ function unpackSettings(view: DataView, at: number): SaveSettings {
   s.joystickY = view.getUint8(at + 7);
   s.hudScale = view.getUint16(at + 8, true);
   const flags = view.getUint16(at + 10, true);
-  s.damageNumbers = (flags & (1 << 0)) !== 0;
-  s.screenFlash = (flags & (1 << 1)) !== 0;
-  s.screenShake = (flags & (1 << 2)) !== 0;
   s.telemetryOptIn = (flags & (1 << 3)) !== 0;
   s.crashReportOptIn = (flags & (1 << 4)) !== 0;
   s.personalisedAdsOptIn = (flags & (1 << 5)) !== 0;
   s.customNameOptIn = (flags & (1 << 6)) !== 0;
+
+  if (version === 1) {
+    // The three comfort options were on/off. On becomes full strength, off becomes zero, which is exactly
+    // what the player had. A v1 slot has no bytes past 19, so everything else keeps its default.
+    s.damageNumbers = (flags & (1 << 0)) !== 0 ? 100 : 0;
+    s.screenFlash = (flags & (1 << 1)) !== 0 ? 100 : 0;
+    s.screenShake = (flags & (1 << 2)) !== 0 ? 100 : 0;
+    return s;
+  }
+
+  s.batterySaver = (flags & (1 << 7)) !== 0;
+  s.chatEnabled = (flags & (1 << 8)) !== 0;
+  s.chatFromNonFriends = (flags & (1 << 9)) !== 0;
+  s.dailyReminderOptIn = (flags & (1 << 10)) !== 0;
+  s.dailyReminderAsked = (flags & (1 << 11)) !== 0;
+  s.insectFreeSprites = (flags & (1 << 12)) !== 0;
+  s.autoAim = (flags & (1 << 13)) !== 0;
+  s.speedrunToolkit = (flags & (1 << 14)) !== 0;
+  s.hudBadgesDocked = (flags & (1 << 15)) !== 0;
+  s.chatKeyboard = view.getUint8(at + 20);
+  s.hudBadgeAlign = view.getUint8(at + 21);
+  s.hudBadgeX = view.getUint8(at + 22);
+  s.hudBadgeY = view.getUint8(at + 23);
+  s.damageNumbers = view.getUint8(at + 24);
+  s.screenFlash = view.getUint8(at + 25);
+  s.screenShake = view.getUint8(at + 26);
+  s.hudTopStripScale = view.getUint16(at + 28, true);
+  s.hudSlotStripScale = view.getUint16(at + 30, true);
+  s.hudBadgeScale = view.getUint16(at + 32, true);
+  s.hudStickScale = view.getUint16(at + 34, true);
   return s;
 }
 
@@ -226,13 +297,14 @@ export function decodeSave(bytes: Uint8Array | undefined): DecodedSave {
   if (version > SAVE_VERSION) {
     return { error: SAVE_ERROR.FUTURE_VERSION, save: blank, generation };
   }
-  if (version < SAVE_VERSION) {
-    // Version 1 is the first, so nothing can legitimately be older. Migrations land here when v2 exists,
-    // and the shape of that is already decided: migrate forward into a fresh `createSaveData`, never
-    // in place, so a failed migration leaves the older slot untouched.
+  if (version < SAVE_OLDEST_READABLE) {
+    // Older than anything this build has a migration for. Refusing is right: guessing at a layout we no
+    // longer have would turn a readable-but-old profile into a silently wrong one.
     return { error: SAVE_ERROR.UNSUPPORTED_VERSION, save: blank, generation };
   }
-  if (bytes.length !== saveBytes() || view.getUint32(48, true) !== bodyBytes()) {
+  // Older but readable: validated at *its* length, then migrated forward field by field into a fresh
+  // profile. Never in place, so a migration that goes wrong leaves the old slot exactly as it was.
+  if (bytes.length !== saveBytesFor(version) || view.getUint32(48, true) !== bodyBytesFor(version)) {
     return { error: SAVE_ERROR.BAD_LENGTH, save: blank, generation };
   }
   if (view.getUint32(52, true) !== checksumOf(bytes)) {
@@ -240,7 +312,9 @@ export function decodeSave(bytes: Uint8Array | undefined): DecodedSave {
   }
 
   const save = createSaveData();
-  save.version = version;
+  // The migrated result is a v2 profile regardless of what it was read from — the next write must not
+  // claim to be v1 with v2 bytes in it.
+  save.version = SAVE_VERSION;
   save.contentVersion = view.getUint16(6, true);
   save.buildId = view.getUint32(8, true);
   save.generation = generation;
@@ -271,7 +345,7 @@ export function decodeSave(bytes: Uint8Array | undefined): DecodedSave {
     save.ascensionTiers[i] = view.getUint16(at, true);
     at += 2;
   }
-  save.settings = unpackSettings(view, at);
+  save.settings = unpackSettings(view, at, version);
 
   return { error: SAVE_ERROR.NONE, save, generation };
 }

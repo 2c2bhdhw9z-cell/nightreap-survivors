@@ -26,7 +26,14 @@
 
 import { TAINT } from "../replay/format";
 
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+
+/**
+ * Versions this build can still read. A v1 save has a shorter settings block and none of the switches
+ * decided after it was written, so it is migrated forward: every v1 field is kept, every new field takes
+ * its default. Migration is forward-only and never in place — see `decodeSave`.
+ */
+export const SAVE_OLDEST_READABLE = 1;
 
 /** "NRSV". Rejects a foreign or truncated blob before anything reads a field out of it. */
 export const SAVE_MAGIC = 0x5653_524e;
@@ -103,6 +110,25 @@ export interface SaveData {
   settings: SaveSettings;
 }
 
+/** Which keyboard the lobby chat field raises. `plan.md`: two keyboards, player's choice, PHONE default. */
+export const CHAT_KEYBOARD = {
+  /** The operating system keyboard. Brings autocorrect, swipe, emoji, dictation and every language. */
+  PHONE: 0,
+  /** Our own atlas-drawn grid. Looks like the game, English and latin only. */
+  IN_GAME: 1,
+} as const;
+
+export type ChatKeyboard = (typeof CHAT_KEYBOARD)[keyof typeof CHAT_KEYBOARD];
+
+/** Where the party badges sit when docked to the slot strip. */
+export const HUD_ALIGN = {
+  LEFT: 0,
+  CENTRE: 1,
+  RIGHT: 2,
+} as const;
+
+export type HudAlign = (typeof HUD_ALIGN)[keyof typeof HUD_ALIGN];
+
 export interface SaveSettings {
   masterVolume: number; // 0..100
   musicVolume: number; // 0..100
@@ -111,9 +137,15 @@ export interface SaveSettings {
   colorblindMode: number;
   /** 0 full, 1 reduced, 2 minimal. */
   vfxLevel: number;
-  damageNumbers: boolean;
-  screenFlash: boolean;
-  screenShake: boolean;
+  /**
+   * Comfort sliders, 0..100, where 0 is off. These were booleans in v1. Sliders because the people who
+   * need them do not all need the same amount: a player who cannot take full screen shake can often take
+   * a third of it, and forcing that person to choose between all and nothing is the accessibility failure
+   * we said we would not ship.
+   */
+  damageNumbers: number;
+  screenFlash: number;
+  screenShake: number;
   /** Joystick radius in points, and its anchor as a percentage of the safe area. */
   joystickSize: number;
   joystickX: number;
@@ -126,6 +158,47 @@ export interface SaveSettings {
   personalisedAdsOptIn: boolean;
   /** Player chose a custom display name instead of a generated one. */
   customNameOptIn: boolean;
+
+  /* ---- decided after v1 ------------------------------------------------------------------------- */
+
+  /** `CHAT_KEYBOARD`. The stored *choice*; what actually opens is `effectiveChatKeyboard`. */
+  chatKeyboard: number;
+  /** Caps the frame rate and trims effects to save battery. Off by default. */
+  batterySaver: boolean;
+  /**
+   * Chat comfort switch. On by default. Turning it off does NOT lower the age rating — the rating is set
+   * by what the app can do, not by what one player switched off — it exists so a player who does not want
+   * to read strangers can play anyway.
+   */
+  chatEnabled: boolean;
+  /** Narrower version of the same: friends can still talk, nobody else can. */
+  chatFromNonFriends: boolean;
+  /** Daily reminder notification. Asked once, on day two, and never again. */
+  dailyReminderOptIn: boolean;
+  /** Whether that one ask has happened, so it cannot happen twice. */
+  dailyReminderAsked: boolean;
+  /** Replaces every insect-shaped enemy with a non-insect sprite. OFF by default: an option, not the look. */
+  insectFreeSprites: boolean;
+  /**
+   * Aims weapons at the nearest target. Off by default and legal on every leaderboard — an accessibility
+   * option that costs you your scores is not an accessibility option.
+   */
+  autoAim: boolean;
+  /** Read-only speedrun overlay: input display, precise timer, seed. Reads do not taint a run. */
+  speedrunToolkit: boolean;
+
+  /** Party badges fused to the slot strip (true) or a free-floating cluster the player drags (false). */
+  hudBadgesDocked: boolean;
+  /** `HUD_ALIGN`, used only while docked. */
+  hudBadgeAlign: number;
+  /** Undocked badge cluster anchor, percentage of the safe area. */
+  hudBadgeX: number;
+  hudBadgeY: number;
+  /** Independent scales, 100 = default: the two top strips, the badges, and the stick. */
+  hudTopStripScale: number;
+  hudSlotStripScale: number;
+  hudBadgeScale: number;
+  hudStickScale: number;
 }
 
 export function defaultSettings(): SaveSettings {
@@ -135,9 +208,9 @@ export function defaultSettings(): SaveSettings {
     sfxVolume: 85,
     colorblindMode: 0,
     vfxLevel: 0,
-    damageNumbers: true,
-    screenFlash: true,
-    screenShake: true,
+    damageNumbers: 100,
+    screenFlash: 100,
+    screenShake: 100,
     joystickSize: 64,
     joystickX: 18,
     joystickY: 78,
@@ -146,6 +219,23 @@ export function defaultSettings(): SaveSettings {
     crashReportOptIn: false,
     personalisedAdsOptIn: false,
     customNameOptIn: false,
+    chatKeyboard: CHAT_KEYBOARD.PHONE,
+    batterySaver: false,
+    chatEnabled: true,
+    chatFromNonFriends: true,
+    dailyReminderOptIn: false,
+    dailyReminderAsked: false,
+    insectFreeSprites: false,
+    autoAim: false,
+    speedrunToolkit: false,
+    hudBadgesDocked: true,
+    hudBadgeAlign: HUD_ALIGN.LEFT,
+    hudBadgeX: 6,
+    hudBadgeY: 22,
+    hudTopStripScale: 100,
+    hudSlotStripScale: 100,
+    hudBadgeScale: 100,
+    hudStickScale: 100,
   };
 }
 
