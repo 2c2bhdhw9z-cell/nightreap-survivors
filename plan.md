@@ -1339,9 +1339,33 @@ devices is newer — and that guess is how people lose 200 hours.
 |---|---|
 | **Battery saver mode** — a 30fps cap and reduced VFX, user-selectable, plus an automatic prompt if the device thermally throttles. | The sim already runs at a fixed 60Hz independent of rendering, so this is a render-rate change and nothing more. Free today. |
 | **Install size budget: under 100MB.** Atlas budget set before art is drawn, not after. | Install size measurably affects install conversion, and it's a nightmare to claw back once 20 art sheets exist at the wrong resolution. |
-| **First-run experience: no tutorial screens.** The first run *is* the tutorial — one weapon, gentle first minute, card screen at 30 seconds. | Genre convention, and it means we never build a tutorial system. Decided now so nobody designs one. |
+| ~~**First-run experience: no tutorial screens.**~~ **REVERSED 2026-08-13 by the user — an optional guided first run ships.** See "The guided run" below. | Original reasoning was genre convention. The user's call: better to have one than not, and some people genuinely want to be shown. |
 | **Daily Run reminder notification, opt-in, asked on the second day and never again.** | Permission prompt timing is the whole ballgame — asked at first launch, most people decline forever. |
 | **Daily seed comes from the server, never the device clock.** | Otherwise changing the phone's date farms Daily attempts. Already listed as a `system`-tier dev capability; this states the server side of it. |
+
+### The guided run — DECIDED 2026-08-13 (reverses "no tutorial screens")
+
+Not screens of text, and not a walled-off sandbox. It is a real run with a handful of
+short prompts that appear at the exact moment they matter and fade on their own.
+
+- **Offered once, on the very first launch:** two buttons — *Show me how* / *I've got it*.
+  Neither answer is permanent.
+- **Findable forever:** Settings → *How to play* has two entries — *Start a guided run*
+  (arms the prompts on the next run, any character, any stage) and *What things mean*
+  (one scrolling reference page: the bar colours, the clock, the card screen, banishing,
+  the magnet, evolutions, the Reaper). Available whether or not the first offer was taken.
+- **Skippable mid-run at any time**, one tap, and it stays off unless re-armed.
+- **The prompts change nothing in the simulation.** They are drawn from the same cue
+  stream the HUD already reads, so a guided run is a normal run and stays leaderboard-legal
+  and replay-identical. No taint, no separate mode, no mode-specific sim code.
+- **Every line of text is a string id from day one**, so it survives the Phase 3 string
+  table and pseudo-localization without being rewritten.
+- **Co-op:** prompts are local to the player who armed them. A guided guest never puts
+  text on anyone else's screen.
+- **Where it lands: Phase 3**, with the rest of the out-of-run menu set, mock-first like
+  every other screen. Cost estimate: roughly 1,000–1,300 lines of code plus its tests,
+  one mock for the offer and one for the reference page.
+
 
 ---
 
