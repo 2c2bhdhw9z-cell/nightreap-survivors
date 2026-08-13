@@ -34,7 +34,7 @@ and anything further down disagree, this section wins and the other place is a b
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 2 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
 | **Phase 2** — co-op | **Closed on the build list.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, the lobby screen, the four-player HUD (rules and drawn), dev menu v2's co-op panels, remote config, and the dev menu wired to it are also done and tested. The networking test-ratio catch-up sweep is **done**, which was the last item on the Phase 2 build list. The only thing still outstanding is relay hosting, which is **decided but not built** (Cloudflare, built when four real phones need it). |
-| **Phase 3** — progression spine | **Started 2026-08-13.** The guided run's engine is built and tested; its two screens are not. Nothing else in Phase 3 has begun. |
+| **Phase 3** — progression spine | **Started 2026-08-13.** The guided run is complete: engine, both screens, and the Settings entry. Its in-run prompts are decided and scheduled but not yet painted — that waits for the atlas. Nothing else in Phase 3 has begun. |
 | **Phases 4–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -1693,8 +1693,15 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
 prompt catalogue, the prompt scheduler, and the arming rules. 1,195 lines of code against 997 lines of
 test, which clears the standing 1:2 rule. Seventeen deliberate breakages were tried against it and all
 seventeen were caught. Proven by test, not by eye: a guided run and an unguided run of the same seed with
-the same inputs finish in a bit-identical world, so prompts cannot affect a score. Still to build in this
-item: the two screens (the first-launch offer, and the "what things mean" page) and the Settings entry.
+the same inputs finish in a bit-identical world, so prompts cannot affect a score.
+
+Both screens are now built too, from the approved mocks and with the four recorded corrections applied
+rather than the pictures: the offer appears the instant a run starts (not over a run already in progress),
+the gem icon is flat and dark rather than a bright cut gemstone, the evolution icon is two item sockets and
+a star rather than crossed weapons, and the XP bar sits inside the top stone block. The seven reference
+icons are placeholder shapes on the 8px grid, marked `// FIDELITY:`, and become atlas cells in Phase 4
+without any layout moving. The one remaining piece of the guided run is painting the prompts themselves,
+which needs the atlas — the scheduler already decides what to say, where it sits and what it points at.
 - Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
 - Character select; 8 characters with distinct stats, starting weapons, growth quirks.
 - Unlock system, save/load with migrations, account-backed sync.

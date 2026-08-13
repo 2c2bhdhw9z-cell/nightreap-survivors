@@ -2397,3 +2397,30 @@ suite and the build all clean.
 the Settings entry, all three from the mocks already approved, with the four corrections recorded earlier
 (XP bar inside the top stone block; the offer appears the instant the run starts; a flatter, darker gem
 icon; the evolution icon is two sockets and a star, never crossed weapons).
+
+## The guided run — screens built (13 Aug)
+
+**What got built.** Three pieces. The first-launch offer ("FIRST TIME HERE?" with SHOW ME HOW and I'VE
+GOT IT), the "How to play" page holding the arming switch and the seven-row reference list, and the seven
+little icons that list needs.
+
+**Corrections applied, not the pictures.** The offer now appears the instant a run starts rather than over
+a run already twelve seconds old with enemies closing in. The gem is flat and dark instead of a bright cut
+gemstone, because fifty bright gems on a dark floor turn the floor into glitter and hide the enemies. The
+evolution icon is two item sockets and a star, never crossed weapons — no held weapon appears anywhere in
+our art.
+
+**One thing I got wrong and fixed.** My first version only showed the offer while the run clock was under
+half a second. On a slow save read that window has already gone by, so the only offer the player ever gets
+would have been silently swallowed. It now decides once, the moment the save is readable, and the shipped
+run screen will simply not start a run before the save has loaded.
+
+**Where the page lives.** Settings does not exist yet, so for now it is reachable from the dev launcher.
+The shipped route is Settings > How to play, which is the address the offer's footnote already gives.
+
+**Checked.** Types clean, lint clean, the whole engine suite passes, the build passes, and both screens
+were loaded in a browser and photographed to confirm they actually draw.
+
+**Still to do on the guided run:** painting the prompts inside a run. The part that decides what to say,
+when, where it sits and what it points at is done and tested; the drawing needs the sprite atlas, so it
+lands with the art in Phase 4.

@@ -41,6 +41,9 @@ import { Link } from "expo-router";
 
 import { useScreenAwake } from "@/hooks/use-screen-awake";
 import { useSettings } from "@/hooks/use-settings";
+import { GuideOffer } from "@/components/guide-offer";
+import { recordOfferAnswer, shouldOfferGuide, type OfferAnswer } from "@/game/guide/arming";
+import { saveStore } from "@/hooks/use-settings";
 import { Palette } from "@/constants/theme";
 
 import { FixedLoop } from "@/game/core/loop";
@@ -186,6 +189,13 @@ export default function PlayScreen() {
   /** Seats in the run. The other three stand still — this is here to look at the four-player HUD. */
   const [partySize, setPartySize] = useState(1);
   const [paused, setPaused] = useState(false);
+  /**
+   * The one-time guide offer. It is shown the instant a run starts and never over a run in progress — a
+   * player asked whether they would like to be taught while something is already eating them has been
+   * asked at the worst possible moment. `null` means "not decided yet this mount"; the save decides
+   * whether it is ever put on screen at all.
+   */
+  const [offerAnswered, setOfferAnswered] = useState(false);
 
   // The HUD draws itself from resolved settings and from nothing else, so the screen reads them the
   // same way every other screen does. Party size is passed in because it decides whether badges exist.
@@ -584,6 +594,19 @@ export default function PlayScreen() {
     );
   }
 
+  // Decided once, the first moment the save is readable, and then latched. Deliberately not "while the
+  // run clock is under half a second": the save arrives asynchronously and on a slow read that window has
+  // already gone by, which would silently swallow the only offer the player ever gets. The shipped run
+  // screen will not start a run before the save has loaded, so latching here and starting late there give
+  // the same thing — the question is on screen before anything can reach the player.
+  const showOffer = settings.ready && !offerAnswered && shouldOfferGuide(settings.save);
+
+  const answerOffer = (answer: OfferAnswer): void => {
+    setOfferAnswered(true);
+    recordOfferAnswer(settings.save, answer);
+    void saveStore().save(settings.save);
+  };
+
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.root}>
       <View style={styles.fill} onLayout={onLayout}>
@@ -591,6 +614,8 @@ export default function PlayScreen() {
 
         {/* One invisible surface over the whole screen. The engine decides what a touch means. */}
         <View style={styles.touchLayer} {...stick.panHandlers} />
+
+        {showOffer ? <GuideOffer onAnswer={answerOffer} /> : null}
 
         <View style={styles.hud} pointerEvents="box-none">
           <Text style={styles.clock}>

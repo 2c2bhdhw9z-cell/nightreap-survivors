@@ -44,6 +44,14 @@ export default function Index() {
         <Text style={styles.ctaAltText}>LEAK ISOLATION</Text>
       </Link>
 
+      {/*
+        Player-facing, unlike everything above it. Lives here only because the real Settings screen is not
+        built yet; the shipped route into this page is Settings > How to play.
+      */}
+      <Link href="/how-to-play" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>HOW TO PLAY</Text>
+      </Link>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>How to run the real test</Text>
         {STEPS.map((step, i) => (
