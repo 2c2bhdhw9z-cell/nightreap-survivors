@@ -2343,3 +2343,19 @@ Where that leaves us: the whole networking folder now has 5,350 lines of tests a
 code, comfortably past the rule. **Phase 2's build list is finished.** The one thing still open is
 where the multiplayer server gets hosted — decided (Cloudflare), not built, and it waits until four
 real phones need to reach each other, which cannot happen on this machine anyway.
+
+## Cloudflare deploy screen (13 Aug) — not yet
+
+Asked whether the Cloudflare "deploy from GitHub" and API-token screens were something to do now.
+No. The project contains no Cloudflare instructions file yet, so Cloudflare would look at the repo,
+find nothing it recognises, and either fail or serve an empty page. Nothing was created and nothing
+was deployed. That screen becomes real at the four-real-phones co-op gate, after the switchboard is
+rebuilt in Cloudflare's shape.
+
+## Phase 2 closed on the build list (13 Aug)
+
+Plan updated: the Phase 2 row and status line now read **closed on the build list** rather than in
+progress, with relay hosting explicitly carried forward instead of blocking. Two stale bullets in
+"Also outstanding" were wrong and are corrected: the networking test-ratio debt is paid, and the
+relay does now have a chosen home. Re-verified before committing: types clean, lint clean, the whole
+game test suite passes, the build passes.
