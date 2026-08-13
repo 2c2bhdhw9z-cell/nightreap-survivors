@@ -30,6 +30,7 @@
  * player: it is what their profile says right now.
  */
 
+import { type AwardReport, createAwardReport, resetAwardReport, sweepUnlocks } from "../unlocks/awards";
 import { type ProfileDelta, type RunSummary, createProfileDelta, profileDeltaFor } from "../sim/results";
 import { type PayoutReceipt, bankRun, createPayoutReceipt } from "./payout";
 import type { SaveData } from "./schema";
@@ -85,11 +86,18 @@ export interface ResultView {
   weapons: ResultWeaponRow[];
 }
 
-/** A staged result: what happened, and what it paid. */
+/**
+ * A staged result: what happened, what it paid, and what it unlocked.
+ *
+ * `awards` is the live report the handoff owns, not a copy. It is safe to hand out because the only thing
+ * that ever writes it is the next `stage` call, and a `stage` call cannot happen while a result is still
+ * sitting unread in the slot.
+ */
 export interface StagedResult {
   runId: string;
   view: ResultView;
   receipt: PayoutReceipt;
+  awards: AwardReport;
 }
 
 /** Copy the display fields out of the live summary. Weapon rows are copied element by element. */
@@ -126,6 +134,8 @@ export interface StageOutcome {
   code: HandoffCode;
   staged: boolean;
   receipt: PayoutReceipt;
+  /** How many unlocks the banked profile just earned. Zero on every refusal. */
+  unlocked: number;
 }
 
 /**
@@ -141,6 +151,8 @@ export class RunHandoff {
   private readonly banked = new Set<string>();
   /** Reused so a normal run end allocates nothing beyond the view. */
   private readonly delta: ProfileDelta = createProfileDelta();
+  /** Reused for the same reason. Wiped at the start of every sweep, and on every refusal. */
+  private readonly report: AwardReport = createAwardReport();
 
   /**
    * Bank a finished run and put its result in the slot.
@@ -151,20 +163,27 @@ export class RunHandoff {
   stage(runId: string, summary: RunSummary, save: SaveData): StageOutcome {
     const receipt = createPayoutReceipt();
     if (this.banked.has(runId)) {
-      return { code: HANDOFF.ALREADY_STAGED, staged: false, receipt };
+      resetAwardReport(this.report);
+      return { code: HANDOFF.ALREADY_STAGED, staged: false, receipt, unlocked: 0 };
     }
     if (this.slot !== null) {
-      return { code: HANDOFF.SLOT_BUSY, staged: false, receipt };
+      return { code: HANDOFF.SLOT_BUSY, staged: false, receipt, unlocked: 0 };
     }
     // The view is built before banking so a payout refusal leaves nothing half-made behind.
     const view = viewOf(summary);
     bankRun(save, profileDeltaFor(summary, this.delta), receipt);
     if (!receipt.banked) {
-      return { code: HANDOFF.PAYOUT_REFUSED, staged: false, receipt };
+      // Wipe the rows as well as the numbers. A refused run must not leave last run's unlocks sitting in a
+      // report for a screen to draw, which is the same bug the payout receipt already had once.
+      resetAwardReport(this.report);
+      return { code: HANDOFF.PAYOUT_REFUSED, staged: false, receipt, unlocked: 0 };
     }
+    // The sweep runs *after* banking, so it reads the profile this run just changed. Running it first
+    // would hand out last run's unlocks and announce them a second time.
+    const unlocked = sweepUnlocks(save, this.report);
     this.banked.add(runId);
-    this.slot = { runId, view, receipt };
-    return { code: HANDOFF.OK, staged: true, receipt };
+    this.slot = { runId, view, receipt, awards: this.report };
+    return { code: HANDOFF.OK, staged: true, receipt, unlocked };
   }
 
   /** Read the staged result without consuming it, so a screen can re-render freely. */
@@ -193,6 +212,7 @@ export class RunHandoff {
   reset(): void {
     this.slot = null;
     this.banked.clear();
+    resetAwardReport(this.report);
   }
 }
 

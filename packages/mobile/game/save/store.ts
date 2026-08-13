@@ -29,6 +29,7 @@
  */
 
 import { SAVE_ERROR, decodeSave, describeSaveError, encodeSave, saveBytes } from "./codec";
+import { seedStarters } from "../unlocks/awards";
 import { SAVE_SLOTS, createSaveData, type SaveData } from "./schema";
 
 /**
@@ -64,6 +65,14 @@ export interface LoadResult {
   readonly slotErrors: readonly number[];
   /** True when a slot existed but could not be used. Worth surfacing to the player once. */
   readonly recovered: boolean;
+  /**
+   * How many starting characters had to have their bit written on the way in.
+   *
+   * Expected to be non-zero exactly once per profile — on the fresh one — and again on a profile migrated
+   * up from a version that did not keep character bits at all. Non-zero on an established profile means
+   * something arrived with bits missing, which is worth a log line.
+   */
+  readonly seeded: number;
 }
 
 export interface SaveResult {
@@ -109,12 +118,17 @@ export class SaveStore {
     if (decoded.length === 0) {
       this.currentSlot = -1;
       const anySlotExisted = errors.some((e) => e !== SAVE_ERROR.EMPTY);
+      const fresh = createSaveData();
+      // A brand new profile has no character bits at all. Seeding here rather than in `createSaveData`
+      // keeps the save format ignorant of the roster, and this is the one door the app loads through.
+      const seeded = seedStarters(fresh);
       return {
-        save: createSaveData(),
+        save: fresh,
         source: LOAD_SOURCE.FRESH,
         slot: -1,
         slotErrors: errors,
         recovered: anySlotExisted,
+        seeded,
       };
     }
 
@@ -128,12 +142,18 @@ export class SaveStore {
     const otherError = errors[otherSlot] as number;
     const recovered = otherError !== SAVE_ERROR.NONE && otherError !== SAVE_ERROR.EMPTY;
 
+    // Seeded on the way out of a real load too, not only for a fresh profile: a save migrated up from a
+    // version with no character bits would otherwise open on a roster where nobody is playable. Setting a
+    // bit that is already set changes nothing, so this costs an established profile nothing.
+    const seeded = seedStarters(best.save);
+
     return {
       save: best.save,
       source: recovered ? LOAD_SOURCE.BACKUP : LOAD_SOURCE.PRIMARY,
       slot: best.slot,
       slotErrors: errors,
       recovered,
+      seeded,
     };
   }
 

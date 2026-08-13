@@ -47,6 +47,7 @@ import { COUNT_MS, countDone, countValue } from "@/game/save/countup";
 import { formatDuration, formatGold } from "@/game/save/payout";
 import { describeRunEnd, isCompletion, RUN_END } from "@/game/sim/results";
 import { runHandoff, type StagedResult } from "@/game/save/handoff";
+import { AWARD_LIMIT, type AwardReport } from "@/game/unlocks/awards";
 
 /**
  * The title plate wording.
@@ -150,6 +151,50 @@ function GoldCount({ from, to }: { from: number; to: number }): ReactNode {
   );
 }
 
+/**
+ * What this run just opened up.
+ *
+ * The rows are read straight off the report the hand-off filled when the run was banked. This screen does
+ * not decide whether anything was unlocked and cannot: an unlock is a bit in the profile, set the moment the
+ * gold landed, and all that is left here is saying so once. The report holds at most sixteen rows, so a
+ * profile that somehow earns more in one run is summarised rather than truncated in silence.
+ */
+function UnlockBlock({ awards }: { awards: AwardReport }): ReactNode {
+  if (awards.count === 0 && awards.overflow === 0) return null;
+  const rows = Math.min(awards.count, AWARD_LIMIT);
+  const total = awards.count + awards.overflow;
+  return (
+    <Slab style={styles.flourish} tint={Palette.violet}>
+      <StoneText tone="violet" size={13} bold align="center">
+        {total === 1 ? "NEW CHARACTER UNLOCKED" : `${total} NEW CHARACTERS UNLOCKED`}
+      </StoneText>
+      {Array.from({ length: rows }, (_, i) => (
+        <View key={`${awards.tracks[i]}-${awards.indices[i]}`} style={styles.unlockRow}>
+          {/* A placeholder mark until the portrait atlas is packed. It is deliberately a shape and not an
+              empty gap, so the row reads as "a character" rather than as a layout bug. */}
+          <View style={styles.unlockMark} />
+          <View style={styles.unlockText}>
+            <StoneText tone="bone" size={12} bold>
+              {awards.names[i]}
+            </StoneText>
+            <StoneText tone="ash" size={9}>
+              {awards.lines[i]}
+            </StoneText>
+          </View>
+        </View>
+      ))}
+      {awards.overflow > 0 ? (
+        <StoneText tone="ash" size={10} align="center">
+          {`AND ${awards.overflow} MORE — SEE THE CHARACTER SCREEN`}
+        </StoneText>
+      ) : null}
+      <StoneText tone="ash" size={9} align="center">
+        Pick them on the character screen before your next run.
+      </StoneText>
+    </Slab>
+  );
+}
+
 export default function ResultsScreen(): ReactNode {
   const router = useRouter();
   // Read once into state. Peeking on every render would be harmless today and would quietly become a bug
@@ -179,7 +224,7 @@ export default function ResultsScreen(): ReactNode {
     );
   }
 
-  const { view, receipt } = held;
+  const { view, receipt, awards } = held;
   const { title, tone } = titleFor(view.end);
 
   return (
@@ -232,6 +277,8 @@ export default function ResultsScreen(): ReactNode {
             </StoneText>
           </Slab>
         ) : null}
+
+        <UnlockBlock awards={awards} />
 
         <Mortar />
 
@@ -346,6 +393,23 @@ const styles = StyleSheet.create({
   },
   damagePercent: {
     width: Grid * 5,
+  },
+  unlockRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Grid,
+    paddingTop: 2,
+  },
+  unlockMark: {
+    width: Grid * 4,
+    height: Grid * 4,
+    backgroundColor: Palette.ink,
+    borderWidth: 1,
+    borderColor: Palette.violet,
+  },
+  unlockText: {
+    flex: 1,
+    gap: 1,
   },
   footBlock: {
     padding: Grid,

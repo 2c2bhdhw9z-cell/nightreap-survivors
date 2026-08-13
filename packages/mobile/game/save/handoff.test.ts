@@ -20,7 +20,9 @@
  * unpayable.
  */
 
+import { CHARACTERS, CHAR_UNLOCK } from "../characters/roster";
 import { RUN_END, RunSummary } from "../sim/results";
+import { TRACK, isHeld, seedStarters } from "../unlocks/awards";
 import { HANDOFF, RunHandoff, describeHandoff, runIdOf, viewOf } from "./handoff";
 import { createSaveData } from "./schema";
 
@@ -338,6 +340,114 @@ section("reset forgets, which is why nothing in play calls it");
   const again = h.stage(id, summary, save);
   check("so it can be paid a second time", again.staged, describeHandoff(again.code));
   check("which is a double payment", save.gold === 1180, `${save.gold}`);
+}
+
+// -------------------------------------------------------- what the run unlocked
+
+/*
+ * The results screen is the only place an unlock is ever announced, and the hand-off is the only thing that
+ * can tell it. Two things have to be true and neither is obvious from reading the code:
+ *
+ *   - The sweep runs AFTER the gold and time are banked. If it ran first, a character earned by this run's
+ *     gold would stay silent tonight and be announced tomorrow, on a run that did not earn it.
+ *   - A refused payout leaves no rows behind. The report is reused between runs, so stale names surviving a
+ *     refusal is exactly the bug the payout receipt already had once.
+ */
+
+/** Who each name in a report belongs to, by roster position. Keeps the checks readable. */
+function reportedNames(h: RunHandoff): string[] {
+  const held = h.peek();
+  if (held === null) return [];
+  const out: string[] = [];
+  for (let i = 0; i < held.awards.count; i++) out.push(held.awards.names[i]);
+  return out;
+}
+
+section("a banked run hands out the unlocks it just earned");
+{
+  const h = new RunHandoff();
+  const save = profile();
+  seedStarters(save);
+  const summary = finished();
+  const out = h.stage(runIdOf(summary), summary, save);
+  check("it staged", out.staged, describeHandoff(out.code));
+  check("and it unlocked somebody", out.unlocked > 0, `${out.unlocked}`);
+
+  const names = reportedNames(h);
+  check("the report lists exactly what was granted", names.length === out.unlocked, `${names.length} rows`);
+  check("every row has a name", names.every((n) => n.length > 0), names.join(", "));
+
+  const held = h.peek();
+  if (held === null) throw new Error("nothing staged");
+  check("every row has a line of plain English", held.awards.lines.slice(0, held.awards.count).every((l) => l.length > 0));
+  check("nothing overflowed", held.awards.overflow === 0, `${held.awards.overflow}`);
+
+  // The starters were already seeded, so they must not be in the announcement. A player being told they
+  // just unlocked the character they have had since install is worse than saying nothing.
+  const starters = CHARACTERS.filter((c) => c.unlock === CHAR_UNLOCK.ALWAYS).map((c) => c.name);
+  check("no starter was announced", !names.some((n) => starters.includes(n)), names.join(", "));
+
+  // And the bits really are in the profile, not just in the report.
+  let bitsSet = 0;
+  for (let i = 0; i < CHARACTERS.length; i++) if (isHeld(save, TRACK.CHARACTER, i)) bitsSet++;
+  check("the profile holds the starters plus the new ones", bitsSet === starters.length + out.unlocked, `${bitsSet}`);
+}
+
+section("the sweep reads the profile the run just changed, not the one before it");
+{
+  const h = new RunHandoff();
+  const save = profile();
+  seedStarters(save);
+  // One character wants 8,000 gold earned in total. Park the profile just under it and let the run's own
+  // gold cross the line: if the sweep ran before banking, this run would announce nothing.
+  const wanted = CHARACTERS.find((c) => c.unlock === CHAR_UNLOCK.LIFETIME_GOLD && c.unlockValue === 8_000);
+  if (wanted === undefined) throw new Error("the roster no longer has an 8,000 gold unlock");
+  save.goldLifetime = wanted.unlockValue - 100;
+  const summary = finished(340);
+  const out = h.stage(runIdOf(summary), summary, save);
+  check("the run crossed the line", save.goldLifetime >= wanted.unlockValue, `${save.goldLifetime}`);
+  check("and it was announced on this run", reportedNames(h).includes(wanted.name), reportedNames(h).join(", "));
+  check("it is not announced twice", out.unlocked > 0);
+}
+
+section("an unlock is announced once and then stays quiet");
+{
+  const h = new RunHandoff();
+  const save = profile();
+  seedStarters(save);
+  const first = finished(340, 725);
+  h.stage(runIdOf(first), first, save);
+  const announcedFirst = h.peek()?.awards.count ?? -1;
+  check("the first run announced something", announcedFirst > 0, `${announcedFirst}`);
+  h.take();
+
+  const second = finished(10, 100);
+  const out = h.stage(runIdOf(second), second, save);
+  check("the second run staged", out.staged, describeHandoff(out.code));
+  check("but announced nothing new", out.unlocked === 0, `${out.unlocked}`);
+  check("and its report is empty", (h.peek()?.awards.count ?? -1) === 0, `${h.peek()?.awards.count}`);
+  check("with no stale names left in it", (h.peek()?.awards.names[0] ?? "x") === "", h.peek()?.awards.names[0]);
+}
+
+section("a refused run leaves no unlocks lying around");
+{
+  const h = new RunHandoff();
+  const save = profile();
+  seedStarters(save);
+  const good = finished(340);
+  h.stage(runIdOf(good), good, save);
+  check("the good run announced something", (h.peek()?.awards.count ?? 0) > 0);
+  const report = h.peek()?.awards;
+  h.take();
+
+  const bad = finished(340, 725);
+  bad.seed = 999;
+  bad.gold = -5;
+  const out = h.stage(runIdOf(bad), bad, save);
+  check("the bad run was refused", out.code === HANDOFF.PAYOUT_REFUSED, describeHandoff(out.code));
+  check("it unlocked nothing", out.unlocked === 0, `${out.unlocked}`);
+  check("and the report was wiped", (report?.count ?? -1) === 0, `${report?.count}`);
+  check("names included", (report?.names[0] ?? "x") === "", report?.names[0]);
 }
 
 // ------------------------------------------------------------------- the code names

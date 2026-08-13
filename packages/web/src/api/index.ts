@@ -1,6 +1,7 @@
 import type { RouterClient } from "@orpc/server";
 import { createApp } from "./__core/app";
 import { admin } from "./routes/admin";
+import { cloud } from "./routes/cloud";
 import { config } from "./routes/config";
 import { events } from "./routes/events";
 import { ping } from "./routes/ping";
@@ -14,6 +15,7 @@ import { ping } from "./routes/ping";
 export const router = {
   ping,
   admin,
+  cloud,
   config,
   events,
 };

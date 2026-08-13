@@ -39,6 +39,7 @@ import {
   defaultSettings,
   noteTaint,
 } from "./schema";
+import { CHARACTERS, CHAR_UNLOCK } from "../characters/roster";
 import { LOAD_SOURCE, MemoryBackend, SLOT_KEYS, SaveStore } from "./store";
 
 let failures = 0;
@@ -600,6 +601,53 @@ section("migrating a version 1 save");
     decodeSave(tooOld).error === SAVE_ERROR.UNSUPPORTED_VERSION,
   );
   check("and v1 is the oldest we claim to read", SAVE_OLDEST_READABLE === 1);
+}
+
+/* ---- nobody ever opens the game with an empty roster ---------------------------------------------- */
+
+section("the starting roster is seeded on the way in");
+{
+  /*
+   * The bits for the always-available characters are written by the loader, not by the save format, and not
+   * by the character screen. Two reasons that matters enough to test:
+   *
+   *   - A profile migrated up from a version that kept no character bits would otherwise open on a roster
+   *     where nothing at all is playable.
+   *   - Unlock bits are only ever set, never cleared, so seeding a profile that is already seeded has to be
+   *     free. If it ever stops being free, "seeded" stops being a useful warning sign.
+   */
+  const starters = CHARACTERS.filter((c) => c.unlock === CHAR_UNLOCK.ALWAYS);
+  check("the roster has starters to seed", starters.length > 0, `${starters.length}`);
+
+  const backend = new MemoryBackend();
+  const store = new SaveStore(backend);
+
+  const fresh = await store.load();
+  check("a fresh profile is seeded", fresh.seeded === starters.length, `${fresh.seeded} of ${starters.length}`);
+  let playable = 0;
+  for (let i = 0; i < CHARACTERS.length; i++) if (bitGet(fresh.save.unlockedCharacters, i)) playable++;
+  check("and every starter is playable on it", playable === starters.length, `${playable}`);
+
+  fresh.save.gold = 111;
+  await store.save(fresh.save, 1_700_000_100);
+  const reloaded = await store.load();
+  check("a stored profile came back", reloaded.save.gold === 111, `${reloaded.save.gold}`);
+  check("and needed no seeding", reloaded.seeded === 0, `${reloaded.seeded}`);
+
+  // Now the migration case, without needing a v1 blob: a stored profile whose character bits are missing.
+  reloaded.save.unlockedCharacters.fill(0);
+  await store.save(reloaded.save, 1_700_000_200);
+  const repaired = await store.load();
+  check("a profile with no character bits is repaired on load", repaired.seeded === starters.length, `${repaired.seeded}`);
+  check("its gold was not touched by the repair", repaired.save.gold === 111, `${repaired.save.gold}`);
+  let repairedPlayable = 0;
+  for (let i = 0; i < CHARACTERS.length; i++) if (bitGet(repaired.save.unlockedCharacters, i)) repairedPlayable++;
+  check("and the starters are playable again", repairedPlayable === starters.length, `${repairedPlayable}`);
+
+  // Seeding must never hand out somebody who has to be earned.
+  const earned = CHARACTERS.findIndex((c) => c.unlock !== CHAR_UNLOCK.ALWAYS);
+  check("there is an earned character to check", earned >= 0, `${earned}`);
+  check("seeding did not hand out an earned character", !bitGet(repaired.save.unlockedCharacters, earned));
 }
 
 console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures === 1 ? "" : "s"}`}`);

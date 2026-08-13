@@ -43,3 +43,48 @@ export const eventLog = sqliteTable(
     index("event_log_restores_idx").on(table.restores),
   ],
 );
+
+/**
+ * One row per account: the cloud copy of a profile.
+ *
+ * WHAT THIS TABLE IS AND IS NOT
+ *
+ * It is a locker, not a referee. The blob is the save bytes exactly as the phone wrote them, base64'd, and
+ * the server never opens it — the codec that understands those bytes lives in the game package and reading
+ * it here would mean two implementations of one format, which is how a sync starts corrupting saves after a
+ * version bump. Merging happens on the device, in `game/save/sync.ts`, where it is tested.
+ *
+ * The loose columns beside the blob are declared by the client and are for *us*: they let a support screen
+ * say "this account has 14 unlocks and 5,000 lifetime gold" without decoding anything, and they let a push
+ * be refused for being stale without a round trip through the codec. They are not authority and nothing is
+ * granted from them. Anti-cheat reads submitted runs, not this.
+ *
+ * `generation` is the only ordering rule: a push must carry a higher generation than the row it replaces.
+ * Because a merge always produces a generation above both of its inputs, a device that pulls, merges and
+ * pushes always wins, and a device that pushes without merging always loses. That is the intended shape —
+ * losing a push costs a retry, and losing an unlock costs a player.
+ *
+ * `ownerHash` is a placeholder for real accounts: the first push for an id records a hash of the device
+ * secret that made it, and later pushes must present the same secret. It is a lock on the locker, not a
+ * sign-in, and it is replaced wholesale when accounts land.
+ */
+export const cloudSave = sqliteTable(
+  "cloud_save",
+  {
+    accountId: text("account_id").primaryKey(),
+    ownerHash: text("owner_hash").notNull(),
+    generation: integer("generation").notNull(),
+    saveVersion: integer("save_version").notNull(),
+    buildId: integer("build_id").notNull(),
+    /** Base64 of the save bytes. Never decoded here — see the note above. */
+    blob: text("blob").notNull(),
+    bytes: integer("bytes").notNull(),
+    /** Client-declared, for support screens only. */
+    unlockBits: integer("unlock_bits").notNull(),
+    goldLifetime: integer("gold_lifetime").notNull(),
+    /** Server wall clock. The client's clock is never stored as truth. */
+    updatedAt: integer("updated_at").notNull(),
+    pushCount: integer("push_count").notNull().default(0),
+  },
+  (table) => [index("cloud_save_updated_idx").on(table.updatedAt)],
+);
