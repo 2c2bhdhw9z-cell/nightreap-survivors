@@ -1621,3 +1621,34 @@ Asked and answered: cost per picture is about the same either way. The differenc
 something on the canvas and describing the change keeps the rest of the picture intact and only redraws
 that part, so it usually takes fewer tries to land. Canvas is for tweaks — "shrink this", "move that".
 Ask in chat for whole-screen rethinks, like the character silhouette problem above.
+
+## Two keyboards in the lobby, and what still has to be drawn — 2026-08-13
+
+**The keyboard is a choice now.** When you type in the co-op lobby you can use your phone's normal
+keyboard or the drawn one that matches the game's look. It sits in Settings under Interface as
+"Chat keyboard: phone / in-game", and it starts on **phone**.
+
+Why phone by default: your phone's keyboard already knows autocorrect, swipe typing, emoji, voice
+dictation, your language, and every accessibility feature your phone has. A keyboard we draw ourselves
+can never do all that. So the pretty one is the option, not the default — it's there for people who want
+the whole screen to look like one thing, and for wide screens where the phone keyboard covers the chat.
+
+Both keyboards type into the same box and both go through the same filter before anything sends. The
+switch changes what you tap on, nothing else. The drawn keyboard is English letters only — if your phone
+is set to a language it can't show, the game quietly uses the phone keyboard instead. And this is lobby
+and end-of-run only. Still no keyboard during a fight, ever.
+
+**Monsters: yes, there's a lot more to draw.** The sheet you just looked at is the plain monsters. Two
+more tiers come with it when we do the real art:
+
+- **Elites** — a tougher version of a normal monster. Rule we just locked: an elite has to be *visibly*
+  different, not just a different colour. Extra armour, a crown of horns, a second head, something. If
+  you can't spot the elite in a crowd of sixty at a glance, we drew it wrong.
+- **Bosses** — every boss gets its own body and its own outline, same rule as the characters. No two
+  bosses may look like the same creature in a different palette, and they're drawn bigger with more
+  frames of animation.
+- **Shadow versions** of anything stay a pure colour swap, which is why they cost us almost nothing.
+
+The Reaper and the White Hand are their own thing and get drawn last, because that sequence is the ending.
+
+All of this is the big art pass, which is still where it was — after the co-op work is finished.

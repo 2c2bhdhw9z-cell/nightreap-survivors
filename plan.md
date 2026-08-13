@@ -1095,6 +1095,34 @@ Full free-text typing exists only in the **lobby** (large scrollable chat panel,
 presets above the keyboard, per-party mute bell) and on the **results screen**. Sender-side filtering
 runs before transmission; host-side and relay-side re-check is the actual enforcement.
 
+**Lobby keyboard — DECIDED 2026-08-13. Two keyboards, player's choice.** The lobby chat panel can be
+typed on with either the phone's own keyboard or a drawn in-style keyboard rendered from our atlas.
+Setting: Settings -> Interface -> "Chat keyboard: PHONE / IN-GAME". **Default is PHONE.** Rationale:
+the phone keyboard brings autocorrect, swipe typing, emoji, dictation, every language layout, and every
+platform accessibility feature for free, and we can never match that with drawn keys. The in-game
+keyboard exists for players who want the screen to stay in one visual style and for tablet/landscape
+layouts where the system keyboard eats the panel. Both write into the same text field and run through the
+same pre-transmission filter; the toggle changes input surface only, never behaviour, never moderation.
+Build constraint: the chat panel reads the keyboard choice from settings the first time it is written, the
+same way the in-run HUD reads position and scale from settings. The in-game keyboard is an atlas-drawn
+9-slice grid, not an image file, and it is **English/latin only** — selecting a non-latin system language
+forces PHONE and greys the toggle. Applies to the lobby and the results screen. Never in a run; the
+no-keyboard-mid-fight rule is unchanged.
+
+**Elites and bosses — enemy art tiers, DECIDED 2026-08-13.** Enemy sheet 01 (the basic mob set) is
+approved for now. The rest is Phase 4 and splits into three tiers with different art rules:
+- **Basic mobs** (~40 types): sheet-drawn, cheap, may share body plans across a family; palette and
+  size distinguish family members.
+- **Elites**: an elite is a base mob plus a **read-at-a-glance addition** — added armour plate, a
+  second head, a crown of horns, a visible aura frame — *and* a palette shift. A plain recolour of a
+  base mob is **not** an elite; if the player cannot tell an elite from a mob in a crowd of sixty, the
+  art has failed. Elites are drawn as their own frames, not tinted at runtime.
+- **Bosses**: unique silhouette each, same hard rule as characters — identifiable from outline alone,
+  no boss may share a head shape or body mass with another boss or with any mob. Bosses are drawn at
+  larger cell size on their own sheets with their own frame counts.
+- **Shadow variants** remain a pure data recolour of whatever they shadow, at every tier.
+The Reaper sequence (Red Reaper, White Hand) is separate from all three and is drawn last.
+
 **Character silhouette rule — HARD, added 2026-08-13.** Every character must be identifiable from its
 outline alone, before colour. No two characters may share a head shape or body mass. A recolour of the
 same hooded figure is not a character. This is a playability requirement, not an aesthetic one: in a
