@@ -1112,3 +1112,68 @@ has already been scored.
 for approved mock images per the standing rule, so the engine side is done and parked there.
 
 Verified: typecheck clean, lint clean, 16 automated test files pass, build succeeds.
+
+---
+
+## Co-op networking — what it means for the game (plain English)
+
+**The problem.** Four phones, one game. Enemies, damage, gems, level-ups — all of it has to look the
+same on all four screens, on phone connections that lose things.
+
+**The trick we use.** The game is built so that if two phones start from the same starting number and
+are told exactly which directions everyone held their thumb in, they end up with exactly the same
+world — the same 800 enemies in the same places, the same gems, the same damage numbers. So we never
+send the enemies. Whoever is hosting sends only "here is what all four thumbs were doing on frame
+4,312", which is seventeen bytes, and everyone's game builds the same frame from it. Describing 800
+enemies sixty times a second would be a hundred times more traffic and would still go wrong.
+
+**What a bad connection actually costs.** If your thumb's position hasn't arrived in time, the host
+doesn't wait for you — waiting would mean everyone plays at the speed of the worst connection. It just
+reuses where your thumb was on the previous frame, and tells everyone it did that. So a bad moment
+costs one-sixtieth of a second of your own movement being slightly stale. It cannot cause the four
+games to drift apart, because everyone got told the same slightly-wrong thing.
+
+**When a packet goes missing.** Every message the host sends also contains the last few hundred
+milliseconds of history, so a missing message is simply covered by the next one. No "did you get
+that?", no waiting for a reply — at 150ms a reply costs nine frames and the thing being replaced is
+four bytes.
+
+**When a phone falls properly behind** — screen off, lift, tunnel, thirty seconds of nothing — history
+isn't enough. So the host takes a complete photograph of the game world and sends it over in small
+slices spread across a few frames, and that phone throws away its own version and adopts the
+photograph. Sending half a megabyte in one lump would freeze the game, which is the thing we were
+fixing. Everyone else keeps playing normally the whole time — one player's bad connection is nobody
+else's problem.
+
+**Twice a second every phone compares notes.** Each one boils its whole world down to a single number
+and the host publishes its own. If yours doesn't match, you don't argue about it — you ask for the
+photograph and start again from the truth. That's the safety net for anything we haven't thought of.
+
+**Two real bugs the fake network found.** We can't test any of this with four phones on the same wifi,
+because good wifi never does the bad things. So there's a fake network that lags, drops, duplicates and
+reorders on purpose, from a fixed recipe so the same bad moment can be repeated on demand. It caught
+two problems that would absolutely have shipped: a phone that asked for a second photograph while the
+first was still arriving ended up mixing the two into nonsense; and a photograph with one missing slice
+left that phone frozen forever, on exactly the connection that needed it most. Now a phone says which
+slices it's missing and gets those back — a photo now survives a connection that loses a quarter of
+everything.
+
+**What it costs the person hosting.** About 24KB a second up at four players — roughly a quarter of what
+streaming music uses. Each guest downloads about 8KB a second. While measuring this we halved the
+host's upload with no downside.
+
+**Card screens.** When someone levels up, everyone's game freezes on the same frame and unfreezes on
+the same frame, and the pick is sent as part of the normal frame information, so any player can answer
+the screen and everyone applies it identically. If two people tap at once it's settled by a fixed
+order, not by whose connection is faster — so it's always reproducible.
+
+**Solo pays nothing.** There's one copy of the game code, not a solo version and a co-op version.
+Playing alone sends literally zero bytes and produces the identical game to having no co-op code at
+all — that's checked automatically, tick by tick.
+
+**Still to do in this stage:** the real internet plumbing (the relay and the 6-character room codes),
+making your own character feel instant on your own screen even though you're technically a fraction of
+a second behind the host, and handing the host role over when the host quits. The co-op lobby screens
+wait on approved mock images like all UI.
+
+Verified: typecheck clean, lint clean, 17 automated test files pass, build succeeds, pushed to GitHub.

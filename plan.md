@@ -1255,7 +1255,29 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
 - **Known hole, Phase 4:** a run that ends on a *time limit* cannot be revalidated from its log alone,
   because the limit is not in the header. Timed modes need to carry their limit as mode data like every
   other rule. Endings that exist today — defeat, White Hand — are fine.
-- State-hash reconciliation + compact resync. Host migration, drop-out grace, rejoin.
+- ~~**The co-op session: host-confirmed lockstep**~~ — **DONE.** The layer that turns four phones into
+  one game. Nothing about spawns, damage or deaths is ever sent; the host confirms the seventeen bytes
+  of input for each tick and every guest replays them, so all four worlds match for free. A late input
+  costs one repeated frame of that player's movement, identically on every machine — a guess everyone
+  shares is not a desync. A lost packet is repaired by the next one, not by an acknowledgement. Card
+  screens travel inside the confirmed record, arbitrated in fixed slot order, so who answered first is
+  reproducible instead of a race. Solo runs through the exact same code and send nothing at all.
+- ~~**State-hash reconciliation + chunked resync**~~ — **DONE.** The host publishes a fingerprint of its
+  world twice a second; a guest that disagrees stops guessing and is sent the whole world as a snapshot,
+  streamed in bounded slices so it never stalls a frame. A snapshot that fails its checksum is refused
+  outright rather than half-applied.
+- **Found and fixed here:** two failures the fake network caught that four phones on one desk never
+  would. A guest that hit a second hash mismatch mid-resync started a second snapshot on top of the
+  first, and the two interleaved into a byte stream that looked valid until the final checksum. And a
+  resync with a single lost chunk waited forever — frozen for good, on the one connection bad enough to
+  need a resync in the first place. Now a guest names the pieces it is missing and gets exactly those
+  back; a snapshot survives a wire that eats a quarter of it.
+- **Measured here:** hosting four players costs the host about 24KB a second up, each guest about 8KB a
+  second down. Confirm redundancy was cut from a full second of history to 0.4s once the numbers were in
+  front of us — it still sends every record eight times over, and it halved the host's upload.
+- Host migration, drop-out grace, rejoin.
+- **Still outstanding in this phase:** the real WebSocket relay and room codes, render-side prediction so
+  a guest's own thumb feels instant, and host migration.
 - RN co-op lobby with the full 1–4 flow; 4× HUD; palette swaps; shared XP + batch level-up; downs and
   revives; per-player-count scaling.
 - **Remote-config gate** so co-op ships locked.
@@ -1265,6 +1287,11 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
   as a legal replay; force-quitting mid-run and reopening resumes the run.
 - **Gate:** 4 devices across iOS + Android + web, 10-minute run at 150ms latency and 2% loss — no player
   ever sees a divergent game state, and induced drift visibly self-heals within ~0.3s. Re-run every phase.
+- **Gate (added, MET in the engine):** 2, 3 and 4-player sessions run a full minute of simulated play
+  over a wire with 150ms of lag, 2% loss, jitter and duplicate packets, with the host and every guest
+  agreeing on the state fingerprint at every single tick — plus a 200ms / 10% loss run that may stall and
+  resync but is not allowed to disagree. Nine sections, all passing, reproducible from a seed. The
+  four-real-devices version of this gate still has to be run on hardware.
 
 ### Phase 3 — Progression spine
 - Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
