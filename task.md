@@ -1513,3 +1513,69 @@ already knew were open: the artwork awaiting your yes/no, the test-coverage catc
 to do in one pass at the end of the co-op phase, the fact that the co-op server has no permanent home
 on the internet yet, and the case where a dropped player's held seat finally expires and nobody in the
 room is told.
+
+
+## Dev menu look approved — 2026-08-13
+
+You approved the stone version of the dev menu ("for now looks good, can iterate it more
+in the future"). That is now the design of record for every dev screen: a cobblestone
+border frame around the outside, with darker recessed slate slabs behind all the text,
+and the mortar channels showing through between sections.
+
+What that means in practice: the dev menu no longer needs design decisions to get built.
+It gets built in Phase 3 when the out-of-run screens go in, and the extra Phase 2 tabs
+(the ones for testing bad connections) just reuse the same look automatically.
+
+Two smaller questions were raised and deliberately left for later, because you said it can
+be iterated in future:
+  1. Should more of the cobblestone show through in the gaps between sections, or does that
+     make small text harder to read?
+  2. Should the text slabs be rough chiselled granite, or blackened iron plates riveted onto
+     the stone, instead of smooth slate?
+
+Neither blocks anything.
+
+
+## The in-run screen is settled — 2026-08-13
+
+Four rounds of mock-ups and this is what we're building. Written down in the plan too.
+
+**Top of the screen, thin and out of the way:** a cyan bar showing progress to your next card, then a
+single row with your level, health, the clock, gold and kills, with the pause icon at the far right.
+Pause is the only button in the whole interface. Under that, one row of twelve tiny slots — your six
+weapons then your six items.
+
+**Your party.** Each of the four spots is a tiny picture of that player's actual character, gently
+bobbing, with their colour around the edge, a thin health bar, and their number shown as dots. Someone
+who dies or drops out goes grey with a red X. Your own has a brighter edge so you can find yourself.
+
+The dots stay even though there's a picture now. At that size all four hooded characters look basically
+identical, so the picture is decoration and the colour plus dot count is what actually tells you who's
+who — which also means colourblind players aren't left guessing.
+
+Costs no extra drawing: it reuses the standing-still frames of the characters we're already making.
+
+**You decide where it goes.** Both versions you liked are shipping as a setting:
+  - Attached to the bar (nothing ever covers the fight) — and you pick left, middle, or right.
+  - Detached, floating (drag it anywhere you want on the screen).
+  - Starts attached on the left. Playing alone, it isn't shown at all.
+
+**Moving works exactly like Vampire Survivors and Survivor.io.** No pad you have to hunt for — press
+anywhere on the lower part of the screen and the stick appears right under your thumb, drag to steer,
+let go to stop. It's invisible until you touch it. Attacking is always automatic. You can set its size,
+its position, and swap it to the right side if you're left-handed. Auto-aim stays a settings switch, not
+a button you'd hit by accident mid-fight.
+
+**Nothing else is on the bottom.** No buttons, both bottom corners empty. Roughly the bottom 80% of the
+screen is pure fight.
+
+**Everything is resizable and movable,** from one layout screen: attach or detach, where it sits, and
+separate size sliders for the top row, the slot row, the party pictures, and the stick. There's a
+"put it back how it was" button — a layout editor you can wreck with no way to undo is asking for
+trouble.
+
+One thing that matters for building it: the screen has to read all its positions and sizes from your
+settings from the very first day of work. Building it one fixed way and adding the sliders later is
+exactly the kind of rework that costs a week.
+
+Still to mock before any of this gets built: the layout editor screen itself.

@@ -1042,6 +1042,51 @@ worth more than 50 strangers farming each other's counters. You need 12; find 18
   In-app reporter attaches the last N seconds of input log, so I can *replay your bug* rather than guess.
 - **Accessibility, all of it:** colorblind-safe palettes, damage-number/flash/shake toggles, adjustable
   joystick size and position, scalable HUD text, reduced-VFX mode (which doubles as a perf win).
+- **HUD layout is the player's, not ours** — see "In-run screen layout" below.
+
+### In-run screen layout — DECIDED 2026-08-13
+
+The in-run screen was mocked four times and this is the settled shape of it. All of it approved by
+Brett off `mocks/hud-in-run-v4a-docked` and `mocks/hud-in-run-v4b-floating`.
+
+**The stone block at the top, in order:**
+1. A thin experience bar in XP cyan across the full screen width, filling toward the next card.
+2. One narrow slate strip: level, health with its bar, the run clock, gold, kills, and a small pause
+   icon at the far right. Pause is the ONLY button in the interface.
+3. One thin strip of twelve tiny slots — six weapons then six passives, separated by a cobble
+   divider, each weapon slot carrying its level number.
+
+**The party badges — the player chooses where these live.** Each badge is a tiny slate cell with a
+border tinted that player's colour, containing a very small animated head-and-shoulders bust of that
+player's ACTUAL character (idle bob, reuses existing character frames, so it costs no new art), a
+hairline health bar, and that player's pip dots. A dead or disconnected player's badge drains to grey
+with a red X. The local player's badge has a brighter border.
+
+Colour identity rule still holds without exception: the pip dots stay even though the portrait exists.
+At badge size all four hoods read as the same shape, so the portrait is flavour and the colour + dot
+count is the actual information.
+
+**Both docked and undocked ship, as a setting:**
+- **Docked** — badges fuse to the bottom edge of the slot strip, sharing its stone frame, so nothing
+  ever overlaps the field. Docked position is choosable: LEFT, CENTRE, or RIGHT along the strip.
+- **Undocked** — badges detach into a small floating cluster the player can drag anywhere on screen,
+  and they sit over the gameplay floor.
+- Default is docked-left. Solo hides the badges entirely.
+
+**Movement matches the genre — Vampire Survivors and Survivor.io.** No fixed pad. Touch anywhere in
+the lower region and the stick materialises under the thumb, drag to steer, release to stop. The ring
+renders faint and only while touched. Attacks always fire themselves. Position/handedness and size are
+player settings; auto-aim is a settings switch (off by default, ladder-legal), never an in-run button.
+
+**Everything else is bare.** No buttons in the bottom half, no buttons in either bottom corner. The
+lower ~80% of the screen is fight, uninterrupted.
+
+**Player-adjustable, all of it, one layout editor:** dock/undock, docked alignment, free-drag position
+when undocked, plus independent size scaling for the top strip, the slot strip, the party badges, and
+the stick. A reset-to-default is mandatory — a layout editor with no way back is a support ticket
+generator. The editor is a Phase 3 screen and needs its own mock; the layout values themselves are just
+saved settings, so the in-run screen must read every position and scale from settings from the first
+line of HUD code rather than hardcoding one arrangement and retrofitting later.
 
 ### Original assets only — including the font
 
