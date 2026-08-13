@@ -1365,6 +1365,18 @@ short prompts that appear at the exact moment they matter and fade on their own.
 - **Where it lands: Phase 3**, with the rest of the out-of-run menu set, mock-first like
   every other screen. Cost estimate: roughly 1,000–1,300 lines of code plus its tests,
   one mock for the offer and one for the reference page.
+- **Polish bar, set by the user 2026-08-13: the guided run must feel expensive.** Animated, not
+  static text boxes. Prompts slide and settle rather than pop, the thing being pointed at is
+  actually pointed at (a drawn arrow or a soft ring that breathes, both atlas-drawn), nothing
+  ever covers the fight, and every prompt leaves on its own without being dismissed. Same
+  animation vocabulary as the rest of the game — no separate tutorial art style, no cartoon
+  hand, no dimming the whole screen. This raises the estimate to roughly 1,600 lines plus
+  tests and adds animation cells to the atlas budget, which is why it is being written down
+  before the atlas is sized.
+- **Reference to come:** the user will send a video of Vampire Survivors' treasure-chest
+  opening animation as the quality bar for our own chest opening (Phase 4 art). Wanted
+  *similar in feel*, not copied — the beat structure (anticipation, burst, reveal, settle) is
+  the part to match; the actual shapes and palette are ours.
 
 
 ---
@@ -1429,7 +1441,7 @@ short prompts that appear at the exact moment they matter and fade on their own.
 
 ### Phase 2 — Co-op, proven on the small slice
 
-**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask), and the lobby rules themselves — a roster only the host may change, chat that routes guest to host to everyone so a name cannot be faked, presets that travel as ids, a bursty token-bucket rate limit, every refusal distinguishable, and a start button that refuses while a held seat is still reconnecting. Not started: the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
+**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask), and the lobby rules themselves — a roster only the host may change, chat that routes guest to host to everyone so a name cannot be faked, presets that travel as ids, a bursty token-bucket rate limit, every refusal distinguishable, and a start button that refuses while a held seat is still reconnecting. Also done and tested: the four-player HUD's rules — experience, health, clock, gold, kills, the twelve item cells and the party badge row, with every coordinate read from resolved settings so the layout editor is possible rather than retrofitted, a dropped player reading as absent rather than dead, identity carried by both colour and countable pips, seat order never reshuffling, revive and down rings that cannot survive a rescue, and a frame that allocates nothing. Still to do: drawing that HUD on the GL surface (placeholder shapes until Phase 4 art), dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
 
 - ~~**The co-op lobby screens**~~ — **DONE**, and verified with two real browsers in one party through the
   real relay: names, ready, a typed line, a preset shout and the start unblocking all crossed correctly.

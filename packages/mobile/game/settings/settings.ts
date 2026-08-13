@@ -97,6 +97,8 @@ export interface ResolvedHud {
   badgesDocked: boolean;
   /** Where the badge cluster starts, and the size of one badge. */
   badges: HudRect;
+  /** Gap between two badges. Exposed so the HUD lays the row out from resolved numbers only. */
+  badgeGap: number;
   /** Joystick radius in points. The stick has no fixed position — it appears under the thumb. */
   stickRadius: number;
   /** The lower region where a touch summons the stick. Everything above it is the fight. */
@@ -273,6 +275,7 @@ export function resolveHud(stored: SaveSettings, device: DeviceFacts): ResolvedH
     badgesVisible,
     badgesDocked: stored.hudBadgesDocked,
     badges: { x: badgeX, y: badgeY, width: badgeW, height: badgeH },
+    badgeGap,
     stickRadius,
     stickZone,
   };

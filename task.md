@@ -1983,3 +1983,54 @@ Left in this phase: the four-player heads-up display, the co-op tools in the dev
 keeps co-op off until it is ready, where the server lives, and one catch-up pass on tests for the older
 networking files.
 
+
+## The bar at the top of a fight now knows about four people - 2026-08-13
+
+The heads-up display is what you stare at while something is chasing you, so its mistakes are the
+expensive kind: a party row that reshuffles itself when a friend goes down, a revive ring still spinning
+over somebody who was rescued ten seconds ago, a clock counting the wrong way. None of that turns up by
+playing for five minutes, because each one needs a particular party in a particular state, so all of it
+is written as a tested module first and the screen will only be allowed to draw what it is told.
+
+What is decided in there now: how full your experience bar is, your health, the run clock, gold, kills,
+the twelve item cells (six weapons, a stone divider, six passives), the pause icon, and the row of small
+party badges - one per seat, each with its own colour, its own countable dots, a hairline health bar, and
+a distinct look for down, dead and dropped.
+
+Four things worth calling out, because they were choices and not accidents:
+
+- **Not one position is invented.** Every coordinate comes from your settings. Scale the top bar up, drag
+  the party row somewhere else, switch it from docked to floating, and the display follows without knowing
+  anything happened. That is what makes the layout editor possible later instead of impossible.
+- **A dropped player reads as *away*, not dead.** Their seat is held for forty-five seconds and their
+  health stays on their badge. A party that thinks a reconnecting friend is dead gives up and starts
+  without them.
+- **Your identity is carried twice** - the colour of your badge and the number of dots under it. Either
+  one on its own fails somebody, and now neither can be quietly removed without a test noticing.
+- **A frame costs nothing.** Two hundred frames in a row reuse the same memory, so the display cannot be
+  the thing that makes the game stutter at minute forty.
+
+Solo hides the party row entirely, and the settings get the final word: a screen that asks for four badges
+on a layout that says there are none does not get them.
+
+578 lines of code to 484 of tests. Five deliberate breaks - hiding the row in solo, giving everyone the
+same number of dots, treating a dropped player as dead, making the clock always count up, and leaving the
+revive ring on after a rescue - all five were caught. 28 test files now, plus the live server test, the
+two-players-over-a-real-connection test, typecheck, lint and build, all green.
+
+Next on this: actually drawing it, which is quads and placeholder shapes until the art phase - seats will
+show a seat number rather than a face until characters are drawn.
+
+Also settled today, at your request: **there will be a tutorial after all.** The plan said never build one;
+that is now reversed with your reasoning on the record. It is offered once on first launch, it is a real
+run rather than a walled-off practice room, one tap turns it off, and it lives in Settings under "How to
+play" forever so anyone can ask for it whenever they like - including people who said no the first time.
+It has to be animated and it has to feel expensive: prompts that slide and settle, a drawn arrow or a
+breathing ring pointing at the thing being talked about, nothing ever covering the fight, and every prompt
+leaving on its own. It changes nothing about the game itself, so a guided run still counts for
+leaderboards. It is built in the next phase with the rest of the menus, and it is written into the atlas
+budget now rather than discovered later. Roughly 1,600 lines plus tests.
+
+Also noted for the art phase: you are sending a video of Vampire Survivors' chest opening as the quality
+bar for ours. What gets matched is the timing - the wind-up, the burst, the reveal, the settle - not the
+shapes or the colours, which stay ours.
