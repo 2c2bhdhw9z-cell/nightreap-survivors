@@ -1579,3 +1579,45 @@ settings from the very first day of work. Building it one fixed way and adding t
 exactly the kind of rework that costs a week.
 
 Still to mock before any of this gets built: the layout editor screen itself.
+
+
+## Chat and pings — how they work, decided 2026-08-13
+
+You spotted that there was nowhere to type and nowhere to use pings. Here's the shape of it.
+
+**The rule: no keyboard during a run, ever.** Nothing pauses in this kind of game. Enemies keep
+walking toward you while your thumb is on a keyboard, so a text box mid-fight is just a way to die.
+
+**During a run** you get pings and short preset messages only:
+  - A small round button in the bottom-right. Hold it and six presets fan out under your thumb:
+    HERE, DANGER, HELP, NICE, REGROUP, LOOT. Slide onto one, let go, it sends.
+  - Tap the field to drop a ping — a marker with your colour pulses on that spot with your name
+    under it, so "over there" works without words.
+  - Messages from other players appear as a few short lines in the upper left and fade away on
+    their own. No panel, no box to dismiss.
+  - These presets are free with co-op. They are not something you buy.
+
+**In the lobby** you get the full thing: a proper big chat window taking up half the screen, scrollable
+history, a text box with a keyboard, a send button, the same six presets sitting right above the
+keyboard, and a bell icon to mute the party if someone's being annoying. Everything typed runs through
+the language filter before it leaves your phone, and gets checked again on the other side.
+
+**After a run** the results screen also allows typing, since nothing is trying to kill you there.
+
+## The twelve characters must not be the same person — 2026-08-13
+
+First version drew the same hooded plague-doctor twelve times in twelve colours. Fixed, and this is now
+a hard rule for the art: every character must be recognisable from its outline alone, before you see any
+colour. No two share a head shape. The seven drawn so far: the beaked gravedigger in a wide flat hat, a
+heavy bald butcher, a veiled nun in a tall pointed headdress, a horned knight in a closed helm, a bare
+skull with no hood at all, a small ragged kid in a lopsided cap, and an antlered witch with red eyes.
+
+Reason this matters beyond looks: in a four-player run you need to find yourself instantly in a crowd of
+sixty monsters. Same body in a different colour fails that. Different silhouettes solve it for free.
+
+## Canvas vs chat for changes — 2026-08-13
+
+Asked and answered: cost per picture is about the same either way. The difference is that circling
+something on the canvas and describing the change keeps the rest of the picture intact and only redraws
+that part, so it usually takes fewer tries to land. Canvas is for tweaks — "shrink this", "move that".
+Ask in chat for whole-screen rethinks, like the character silhouette problem above.

@@ -1078,8 +1078,32 @@ the lower region and the stick materialises under the thumb, drag to steer, rele
 renders faint and only while touched. Attacks always fire themselves. Position/handedness and size are
 player settings; auto-aim is a settings switch (off by default, ladder-legal), never an in-run button.
 
-**Everything else is bare.** No buttons in the bottom half, no buttons in either bottom corner. The
-lower ~80% of the screen is fight, uninterrupted.
+**Everything else is bare.** No buttons in the bottom half, no buttons in either bottom corner — with
+one exception, the comms button below.
+
+**Comms — DECIDED 2026-08-13. No keyboard in a run, ever.** Nothing pauses in this genre, so a text
+field mid-fight is a death sentence. In-run comms is therefore:
+- A small round comms button in the bottom-right corner. Held, it fans six preset cells out under the
+  thumb: HERE, DANGER, HELP, NICE, REGROUP, LOOT. Slide-and-release to send. Semi-transparent so the
+  fight stays visible behind it.
+- Tap-to-ping on the field: a marker in the sender's colour pulses at that spot with their name beneath.
+- Incoming messages render as a few short lines in the upper-left of the field, no panel, self-fading.
+- The preset set is free infrastructure shipping with co-op in Phase 5, NOT an IAP.
+- The comms button is subject to the same layout editor as everything else, and hides in solo.
+
+Full free-text typing exists only in the **lobby** (large scrollable chat panel, text field, keyboard,
+presets above the keyboard, per-party mute bell) and on the **results screen**. Sender-side filtering
+runs before transmission; host-side and relay-side re-check is the actual enforcement.
+
+**Character silhouette rule — HARD, added 2026-08-13.** Every character must be identifiable from its
+outline alone, before colour. No two characters may share a head shape or body mass. A recolour of the
+same hooded figure is not a character. This is a playability requirement, not an aesthetic one: in a
+four-player run against sixty enemies the player must locate themselves instantly. Approved reference
+set in `mocks/screen-character-select-v2`: beaked gravedigger in a wide flat-brimmed hat, heavyset bald
+butcher, veiled figure in a tall pointed wimple, horned knight in a closed visored helm, bare exposed
+skull with no headwear, child-sized urchin in a lopsided cap, antlered witch with crimson eye-dots.
+Note this constrains Phase 4: shadow variants stay a pure recolour of a given character, but the twelve
+characters themselves may never be recolours of each other.
 
 **Player-adjustable, all of it, one layout editor:** dock/undock, docked alignment, free-drag position
 when undocked, plus independent size scaling for the top strip, the slot strip, the party badges, and
