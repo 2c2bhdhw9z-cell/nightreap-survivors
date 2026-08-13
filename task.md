@@ -2070,3 +2070,58 @@ reads fine because the badges are somewhere else on screen and the dots back the
 looks muddy, that is why, and the fix is a data change.
 
 Next on this: the dev menu's co-op panels, then remote config, which co-op has to ship behind.
+
+
+## The tools for breaking multiplayer on purpose - 2026-08-13
+
+The co-op part of the dev menu is built. This is the page a developer opens when four people are in a
+party and something is going wrong, and it does two jobs: it shows what the connection is actually doing,
+and it lets us cause the exact failures we would otherwise have to wait for.
+
+What it shows, updating four times a second: whether this device is hosting, how many seats are filled and
+how many are being held for someone reconnecting, how long a round trip is taking (typical, bad, and
+worst), how much data is going up and coming down, how often the game had to guess a missing player's
+input, how many times it had to resend the whole game state, how many times two players disagreed about
+what happened, and how big that state is. When no party is in a run it says so plainly instead of showing
+zeros that look like answers.
+
+What it can break, on purpose: add delay, add unevenness to that delay, throw away a percentage of
+packets, and - separately, off by default - allow packets to overtake each other. Those last two are kept
+apart deliberately. Delay is not the same failure as arriving in the wrong order, and if a slider did both
+at once we would never know which one a bug needed.
+
+Then the five buttons that cause real incidents: force two players to disagree, drop a guest, move hosting
+to somebody else, freeze the host for a second, and make a replay come out differently. None of these
+reach into the running game. The page cannot touch a session at all - it reads numbers through a hatch and
+it leaves a request for whoever owns the session to carry out on its next frame. A debugging tool that can
+reach into a run is eventually the reason a run breaks.
+
+Every one of those write controls marks the run as tainted, which means no leaderboard. That mark is
+one-way: putting the sliders back to zero afterwards does not clear it. Watching costs nothing - the
+readout and the agreement board never taint anything.
+
+Three things in the approved picture were wrong and the built page follows the decisions, not the picture.
+The TAINTS warning had drifted onto section headings, so it now sits on each individual control that
+writes something - a heading that warns about a group containing a read-only readout teaches the wrong
+thing. The readout lettering is the same chunky lettering as everywhere else, not the thin typewriter face
+the picture drew. And the panel count in the footer is counted in code rather than being the number the
+picture invented.
+
+A real bug came out of writing this. The agreement board was storing "this seat has reported" and "do we
+agree with it" in the same place, which meant the moment a seat reported before we did, its report was
+overwritten and that seat never got judged at all. They are two separate facts now and there is a test for
+exactly that ordering.
+
+Seven deliberate breaks were tried against the tests: letting jitter reorder packets when reordering is
+off, removing the packet-loss roll, folding disagreement into agreement, never recording that a seat
+reported, handing the same fault out twice, and unclamping the loss slider - all six caught. The seventh,
+letting a delayed packet point at the sender's own buffer instead of a copy, was **not** caught, which
+means the tests had a real hole. A packet held for a fifth of a second and then delivered would have
+carried whatever the sender had since written into that buffer - garbage, arriving late, in a tool whose
+whole purpose is diagnosing garbage arriving late. A test for it now exists and it kills that break.
+
+121 checks in the new file. Typecheck, lint, the whole game suite, the live server test, the
+two-players-over-a-real-connection test and the build are all green.
+
+Next on this: remote config, which co-op has to ship behind, and deciding where the relay is actually
+hosted.
