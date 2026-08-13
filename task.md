@@ -2233,3 +2233,54 @@ Typecheck, lint, the whole game suite, the server test, the two-players-over-a-r
 the build are all green.
 
 Next on this: deciding where the multiplayer server actually lives when it isn't on this machine.
+
+---
+
+## Where the multiplayer server is going to live (decided 13 Aug)
+
+Cloudflare, for the multiplayer part only. Everything else stays where it is. Those are two different jobs
+and they do not need to be in the same place.
+
+The multiplayer server's whole job is holding the line open between up to four players for the length of a
+fight, and then forgetting it happened. It keeps nothing important and it never even looks inside what
+players send each other - only at the four bytes of address on the front. That is a switchboard operator,
+and Cloudflare is very good and very cheap at being one.
+
+The other half is the filing cabinet: your account, your unlocks, your saves, the leaderboards, the admin
+page, and the score re-checking that is the real anti-cheat. That has to remember things forever, and it
+has to be the same thing that gets published to the store, so it stays on the platform this project is
+built from. It is not moving, and that is not a preference - it is the same thing that ships.
+
+The good part: these two halves barely talk to each other. The switchboard never opens the filing cabinet.
+It was built that way from the first line, months before this question came up. So splitting them across
+two companies is the tidier arrangement of the two, not a workaround.
+
+Why this is not a rewrite. All the actual thinking - who is allowed into a room, what a room code looks
+like, which messages are legal from which player, who takes over when the host quits, how long a dropped
+player's seat is kept, when an empty room gets cleaned away - lives in the game's own tested code, about
+2,500 lines of it, and it does not know or care where it is running. Wrapped around that is a thin shell
+whose only job is holding the phone lines open. The shell is 535 lines and exactly two of them are tied to
+the software it currently runs on. Moving means throwing away the shell. The rules and their tests are
+untouched.
+
+The one bit of real work: right now one program keeps a list of every live room in its own memory.
+Cloudflare does not work that way - there, each room becomes its own separate little thing, with a small
+directory in front turning a room code into the right one, and the cleanup sweep becomes each room setting
+its own alarm clock instead of one clock for all of them. That reshaping is the genuine effort. Two working
+sessions, roughly 700 new lines plus 400 of tests.
+
+On cost: Cloudflare's own pricing page has an alarming $419-a-month example for games broadcasting state,
+but that is at a size we are nowhere near. At what we actually measured, a half-hour four-player match
+comes out well under a cent, and a lobby with people sitting in it waiting costs almost nothing, because
+Cloudflare can put a waiting room to sleep without dropping anyone's connection. I want to prove that with
+a real load test before treating it as fact.
+
+When: not now. It gets built at the point where four real phones in real hands need to reach each other,
+because that test cannot be run on this machine anyway. Standing up a live server months before a single
+real player touches it just creates something to babysit, and the rules it will run are already written and
+already tested.
+
+One thing I am deliberately not promising: using Cloudflare in front of everything else too - the domain,
+the caching, the attack shield. That depends on how the publishing side lets a custom domain be attached,
+which is a setting on the publish screen and not something I control. It is a five-minute question when we
+get there, not a rewrite. Do not count it as a yes yet.
