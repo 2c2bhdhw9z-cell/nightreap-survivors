@@ -1601,3 +1601,168 @@ Assume this exists for our game on day one. Two corrections to §5b:
 
 Neither changes the architecture. Both narrow where trust lives: nothing the client asserts is
 ever believed, including its own claim of being clean.
+
+---
+
+## Feature backlog — from the 200-item review (settled 2026-08-13)
+
+A 200-item feature list was reviewed item by item. Full sort with reasoning lives in
+`features-review.md`. Counts: 19 already planned, 14 accepted immediately, 74 accepted for a later
+phase, 88 rejected, 5 escalated as open decisions. Only the accepted items are recorded here.
+
+### Two new locked rules
+
+- **Difficulty and drops never react to how well the player is doing.** No hidden pity timers, no
+  catch-up chests, no secret buffs to unused items, no armour that spikes when you're being hit, no
+  spawns that target your weakest stat. Thirteen separate proposals were versions of this and all
+  thirteen were rejected. A numbers game whose numbers are secretly adjusted has no numbers.
+- **Anti-kite enrage timers apply to normal bosses only, never to the Red Reaper.** Killing the
+  Reaper through an invulnerability loop is a deliberate secret path to the Golden Eggs.
+
+### Accepted — folds into work already scheduled
+
+- Restart the same character and stage from the pause and death screens (Phase 3 — treat as a
+  launch requirement, not polish).
+- In-run stats screen showing the live math behind every stat, plus item tooltips on pause (Phase 3).
+- Save three loadout presets — character, Arcanas, modifier stack (Phase 3).
+- Copy the run seed and modifier stack to the clipboard from the death screen (Phase 3), and type a
+  seed in manually (Phase 6). Format is ours, not a 10-digit one.
+- Weapon **tags** as an append-only content field, added when the content layer lands (Phase 3).
+  Visible set bonuses and banish-by-tag come later (Phase 5). No hidden bonuses.
+- Skip the chest animation; audio mix presets including a music-off/warnings-on mode; player-chosen
+  XP gem colours; a slider that fades out your own character (Phase 4/7 settings).
+- Ascension handicaps are **chosen by the player**, not assigned.
+- Bug reports auto-attach the input log and recent frames.
+- Effect sliders replace on/off toggles for shake, hit-stop, flash and particle count.
+
+### Accepted — Phase 4, alongside launch content
+
+- Elites spawn with randomised auras (reflect, aura of speed for nearby mobs, etc.).
+- Mimic chests; cursed coins (10× gold, spawns an elite on the player); an overcharge pickup
+  (all weapons fire 500% faster for 10s); exploding barrels.
+- Enemies that pull player projectiles into themselves; Goliaths (huge, slow, screen-filling);
+  enemies that split on death, with a hard cap on split depth.
+- Anti-kite enrage on normal bosses; enraged boss variant with better rewards if the player reached
+  it having taken no damage.
+- A ground-painting weapon archetype (damaging trail along the path walked).
+- **Decided before art starts:** palette-swap Shadow variants and insect-free sprite alternates are
+  both planned for, so the swaps are drawn in the same pass as the originals.
+
+### Accepted — Phase 5, post-launch content and co-op depth
+
+- **Primer / detonator co-op combo** — one player marks an elite, another detonates it. Highest-value
+  co-op idea found; requires no coordination.
+- **Ping marker** in co-op (one button, drops a marker plus a sound). This is the only communication
+  channel; no voice, no text. Rides the confirmed-input channel.
+- Hold a button to transfer your own health to a downed teammate.
+- Ban up to 3 passives from the global drop pool.
+- Passive items branch into two choices at max level.
+- Merge two maxed weapons into one, freeing a slot (the missing answer to late-run slot pressure).
+- Shrines and altars with real costs: full heal for −5 minutes off the run clock; half max HP to wipe
+  an elite wave; clear all Curse for resetting your best weapon to level 1.
+- Marked-for-death state after 1,000 kills untouched — enemies 2× faster, 3× gold, ends on first hit.
+- Killing a boss far faster than intended spawns its angry mate.
+- New weapon/passive archetypes: tethered "clothesline" projectiles; reverse magnet that shoves
+  enemies away; health-cost casting that heals on crit; damage that scales with unbroken straight-line
+  movement.
+- A minion/necromancer character (own friendly-entity pool — real work, not a data row).
+- Shadow character variants; a wandering merchant at minute 15; miniboss squads that support each
+  other; a wandering black hole that eats enemies, players and gems; expanding arena boundaries;
+  a buildable lightning fence.
+- Day/night mutations; holiday reskins; server-flipped daily hazards; pitch-black events;
+  trick-or-treat chests; infection/DoT stages; utility pets that must be unlocked, not bought.
+- In-run draftable mini-objectives at 5/10/15 minutes.
+- Stance-switching character; shared team ultimate; decoy turrets (all low priority).
+- Ambush lockdown zones, implemented as hazard rings rather than walls.
+
+### Accepted — Phase 6, endgame and modes
+
+- **Ghost racing** — download a validated replay and race a friend's ghost on an identical seed.
+- **Watch the last 30 seconds of the top-ranked run** from the leaderboard.
+- **Doppelganger event** — an AI clone with your exact loadout hunts you.
+  All three are nearly free because the replay and validation work is already done.
+- **Tower climb mode** — 2-minute room clears, pick a permanent handicap per floor. Short sessions,
+  which is what mobile actually wants.
+- Weekly gauntlet (five 3-minute stages, build carries, no healing); boss rush score attack; defend
+  a central core.
+- Modifiers, all cheap and data-only: one-hit wonder; loadout rerolled every 60s; forced weapon swap
+  every 5 minutes; gun-game (weapon changes every 100 kills); Golden Gun (one slot, 1000% damage);
+  glass cannon as a chosen item, never automatic; Nemesis (the elite that killed you returns) as an
+  opt-in modifier only, since it makes a run depend on save data.
+- Bank an Endless run at intervals (the snapshot work already covers it, including staying
+  ladder-legal).
+- Permanently corrupt a weapon — large upside, severe downside.
+- Account-wide opt-in handicap in exchange for a permanent gold multiplier.
+- Faction reputation from killing specific enemy types — cosmetic unlocks only.
+- **God-mode sandbox unlocked at 100% completion** — reuses the existing developer menu, exposes only
+  the safe half, and flags those runs non-competitive.
+
+### Accepted — Phase 7, polish and accessibility
+
+- Screen-edge arrows for off-screen elites and bosses. Treated as required, not polish.
+- Tap-anywhere-to-move as an alternative to the fixed thumbstick.
+- Automatic dimming when flash frequency crosses a safe threshold.
+- Per-event vibration toggles, including a heartbeat pulse below 20% HP and distinct patterns per
+  weapon impact.
+- Optional auto-aim for directional weapons — off by default, available to everyone, and
+  **fully leaderboard-legal.** No accessibility setting sits behind a competitive penalty.
+- High-contrast hitbox overlay; bright outlines on enemy projectiles; thick enemy outlines
+  (needs a performance measurement — at 800 enemies this roughly doubles what we draw).
+- Music split into layers that build with on-screen threat; weapon sounds duck when a boss winds up.
+- Dyslexia-friendly alphabet — honest cost: a second full glyph set drawn by hand.
+- Post-run heat map of where you walked, got hurt and died; scrubbable timeline of every pickup.
+- Insect-free sprite mode (sprites drawn in Phase 4).
+- Screen-reader labelling on every menu element rather than a custom voiced UI.
+
+### Accepted — Phase 8 and post-launch
+
+- Cosmetic only, all of it: tombstones visible to teammates, emote wheel (shares the ping system),
+  lobby pets, in-run pets with zero gameplay effect, trail colours, death animations, CRT/Game Boy/VHS
+  screen filters, announcer voice packs, a $5 founders credits roll.
+- Golden weapon skins are **earned only**. A separate premium skin line may be sold. Selling the thing
+  that proves mastery makes the mastery worthless.
+- Streamer mode hiding room codes and player names — may need to land as early as co-op ships.
+- Delete-my-data and export-my-data, both one tap. Legally required.
+- Charity cosmetic bundles and Discord supporter roles, post-launch, low priority.
+
+### Rejected outright, recorded so it stays rejected
+
+- Anything requiring enemy pathfinding around geometry: destructible terrain, elevation, line-of-sight
+  walls, drawbridges, destructible cover, escort missions. Enemies walk straight at the player, and
+  that is precisely why 800 of them fit on the target phone.
+- Anything that hides the rules: pity timers, catch-up chests, silent buffs to unused items, adaptive
+  armour, spawns aimed at your weakest stat, auto-vacuum saves, automatic time-freeze.
+- Anything that makes co-op adversarial or role-locked: friendly fire, card stealing, gold wagering,
+  hidden traitor roles, revive minigames that punish the reviver, XP penalties for splitting up,
+  healer/tank/DPS composition, an asymmetric commander player.
+- Second permanent power ladders outside the gold shop: constellation trees, stat inheritance between
+  characters, relics that level forever, titles that grant damage, paying gold to permanently weaken a
+  monster.
+- Gambling and loot-box mechanics: cosmetic slot machines, an in-game stock market.
+- Ads or purchases that grant power, including a rewarded ad for a level-2 starting weapon. Rewarded
+  ads stay limited to revive and bonus gold, both player-initiated.
+- Permadeath profiles that wipe the whole account. Separate save slot, fine. Wiping everything, never.
+- Undo on a card pick; turning auto-fire off; manual reload / overheat; weapon durability; a grid
+  inventory; rhythm-synced crits; pacifist builds; inverted-control handicaps.
+- A HUD that resizes itself; wireframe rendering under load.
+- Anything needing a large live population: collective global unlocks, faction wars, server-wide bingo,
+  gold tipping, draft tournaments.
+- Third-party and community integrations: Twitch chat voting on card picks, community-sourced
+  translations, community-drawn weapon skins, licensed guest characters from other games.
+- An entire second art style for a weekend event.
+- Randomising the simulation's own rules mid-run. Chaos Sandbox Day already covers chaos.
+- Bribing the Reaper to delay him. His arrival is the game's one ceremony.
+
+### Open decisions (blocking nothing yet)
+
+1. **Elements** (fire/ice/lightning with resistances) — recommendation: **no**, use tags instead.
+   Roughly a tenth of the cost, most of the identity, and no resistance chart forced on the player.
+2. **An active defence button** — dash with brief invincibility, or a directional shield.
+   Recommendation: **not at launch**; revisit as a character-specific ability, where it is a build
+   choice rather than a change to the game's rules.
+3. **Cosmetic battle pass** — recommendation: **not at launch.** Adding one later is easy; removing
+   one is not.
+4. **Palette-swap Shadow variants** — recommendation: **yes, plan in Phase 4, build in Phase 5.**
+   Must be decided before art begins.
+5. **Insect-free sprite mode** — recommendation: **yes, decide now**, draw swaps in the Phase 4 pass.
+   Also shapes which enemies get designed as insects at all.
