@@ -33,7 +33,7 @@ and anything further down disagree, this section wins and the other place is a b
 | --- | --- |
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 3 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
-| **Phase 2** — co-op | **In progress.** Save/restore, autosave, lockstep, resync, rooms, matchmaking and the relay process are done and tested. Client transport, host-migration handling, lobby UI and dev menu v2 are not. |
+| **Phase 2** — co-op | **In progress.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process and the client's connection to it are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Host-migration handling on the player's side, local movement smoothing, lobby UI, dev menu v2 and relay hosting are not. |
 | **Phases 3–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -1405,7 +1405,32 @@ devices is newer — and that guess is how people lose 200 hours.
 
 ### Phase 2 — Co-op, proven on the small slice
 
-**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, and a real WebSocket relay process verified by a live socket test. Not started: the client's connection to that relay, host migration on the player's side, the co-op lobby screens, dev menu v2, and where the relay actually gets hosted.
+**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Not started: host migration on the player's side, render-side local movement smoothing, the co-op lobby screens, dev menu v2, and where the relay actually gets hosted.
+
+- ~~**The client transport**~~ — **DONE.** One connection to one relay, with the reconnect behaviour a
+  phone actually needs. A quit says goodbye and frees the seat at once; a drop says nothing, holds the
+  seat for the 45-second grace window, and retries with growing, jittered backoff so four phones on one
+  bad connection do not retry in lockstep. Retrying stops when the grace window closes instead of
+  hammering a seat that has been given away. Game bytes sent while disconnected are dropped and counted,
+  never queued — every message is about a specific tick, and the confirm stream already repairs gaps.
+  Room codes are normalised on the way in: case, spaces, dashes, and the confusable characters the
+  alphabet leaves out. S and 5 are deliberately *not* repaired — neither exists in the alphabet, so a
+  guess would turn a typo into a different valid room.
+- **Refusals are now spoken, not implied.** A failed WebSocket handshake exposes neither status nor body
+  to the client, so refusing before the upgrade meant every rejection reached the player as "could not
+  connect". The relay now upgrades a refused socket anyway, says `room_full` / `no_such_room` /
+  `bad_code` / `already_seated` / `server_busy` on the control channel, and closes with 4001. A wrong
+  seat token is still reported as `no_such_room` on purpose.
+- **Found and fixed here:** quitting closed the socket without sending LEAVE, so the relay assumed a
+  crash and held the seat for 45 seconds — a party could not replace someone who left for nearly a
+  minute. Also, the host addressed each shared message once per guest; over a relay that fans out, four
+  players meant nine deliveries where three were meant. The host now writes a broadcast once.
+- ~~**End-to-end proof**~~ — **DONE** (`bun run test:e2e`). Starts its own relay, seats a host and a
+  guest through the real transport, runs 240 ticks of real simulation, and compares state hashes at
+  every tick both have applied. Then it kills the guest's socket the way a tunnel does, watches it
+  rejoin its own seat unaided, runs 120 more ticks and re-checks agreement, then quits and confirms the
+  seat frees immediately. This is the first test where a message leaves one simulation, crosses an OS
+  socket and the relay process, and is applied by another.
 Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren't.
 - WebSocket relay, room codes, public matchmaking by party size, friends-first fill.
 - Host authority, authoritative event bus, **rolling correction sweep**, ~2-tick input delay with local

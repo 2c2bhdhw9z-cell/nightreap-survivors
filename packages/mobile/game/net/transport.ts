@@ -26,6 +26,8 @@
 
 import { claimedSlot } from "./routing";
 import { HDR_TYPE, HEADER_BYTES, MAX_PLAYERS, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "./protocol";
+import { Writer } from "./codec";
+import { encodeLeave, LEAVE_REASON } from "./messages";
 
 /* ---------------------------------------------------------------------------------------------- */
 /* Admission                                                                                       */
@@ -271,6 +273,15 @@ export function backoffMs(attempt: number, random: () => number): number {
 /** A close code we chose ourselves, so a deliberate hang-up is never mistaken for a lost connection. */
 export const CLOSE_INTENTIONAL = 4000;
 
+/**
+ * Close code for a connection we are giving up on without giving up the seat.
+ *
+ * Used when the OS tells us the network went away, and by the end-to-end test to reproduce a tunnel.
+ * The relay treats every close that was not preceded by a goodbye the same way, so the code itself is
+ * only there to keep the two cases apart in logs.
+ */
+export const CLOSE_LOST = 4002;
+
 /* ---------------------------------------------------------------------------------------------- */
 /* Transport state                                                                                 */
 /* ---------------------------------------------------------------------------------------------- */
@@ -344,6 +355,8 @@ export class Transport {
   /** When we lost the seat, so we can stop retrying once the grace window has passed. */
   private droppedAtMs = -1;
   private hasBeenReady = false;
+  /** Only ever used to write the single goodbye message. */
+  private readonly writer = new Writer();
 
   readonly stats = {
     opens: 0,
@@ -505,13 +518,37 @@ export class Transport {
     (this.socket as RawSocket).send(text);
   }
 
-  /** Leave on purpose. Frees the seat immediately and stops all retrying. */
+  /**
+   * Leave on purpose. Frees the seat immediately and stops all retrying.
+   *
+   * The goodbye matters. The relay cannot tell a closed socket apart from a dead one, so it assumes the
+   * worst and holds the seat for the grace window. Saying LEAVE first is the only thing that turns
+   * "they will be back" into "they are gone", and without it a player who quits keeps a seat nobody
+   * can use for another forty-five seconds.
+   */
   quit(): void {
     const sock = this.socket;
+    if (sock !== null && this.state === LINK_STATE.READY) {
+      sock.send(encodeLeave(this.writer, this.slot < 0 ? 0 : this.slot, LEAVE_REASON.QUIT));
+      this.stats.sent++;
+    }
     this.state = LINK_STATE.DEAD;
     this.retryDueMs = -1;
     this.socket = null;
     if (sock !== null) sock.close(CLOSE_INTENTIONAL, "quit");
+  }
+
+  /**
+   * Throw the connection away but keep the seat.
+   *
+   * This is the deliberate counterpart of `quit`: no goodbye is sent, so the relay holds the seat for
+   * the grace window and the normal retry path brings us back into it. The app uses it when the OS
+   * reports the network has gone; the tests use it to reproduce a tunnel without waiting for one.
+   */
+  loseConnection(): void {
+    const sock = this.socket;
+    if (sock === null) return;
+    sock.close(CLOSE_LOST, "lost");
   }
 
   private die(reason: string): void {

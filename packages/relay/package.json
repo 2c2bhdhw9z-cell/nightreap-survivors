@@ -8,7 +8,8 @@
     "dev": "bun --watch src/server.ts",
     "start": "bun src/server.ts",
     "typecheck": "tsc --noEmit",
-    "smoke": "bun test/smoke.ts"
+    "smoke": "bun test/smoke.ts",
+    "e2e": "bun test/e2e-session.ts"
   },
   "devDependencies": {
     "@types/bun": "1.3.14",

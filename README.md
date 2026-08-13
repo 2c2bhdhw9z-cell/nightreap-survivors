@@ -40,8 +40,9 @@ call these named verbs. Never rename or remove them; their internals are free to
 | `bun run lint` | Releases + conventions + oxlint |
 | `bun run typecheck` | Typecheck all packages |
 | `bun run db:generate` / `db:migrate` / `db:push` | Database workflows |
-| `bun run test:game` | The engine test suite — 19 headless suites, no phone needed. Must be green before any deliver. |
+| `bun run test:game` | The engine test suite — 20 headless suites, no phone needed. Must be green before any deliver. |
 | `bun run test:relay` | Live socket test of the co-op relay. Needs the relay running (`bun run --cwd packages/relay dev`). |
+| `bun run test:e2e` | The whole co-op stack over a real socket: two simulations, one relay, a drop and a rejoin. Starts and stops its own relay on port 4401. |
 | `bun run test:soak` | 20 minutes of simulated quad-storm time, headless. Not the Endless soak (that arrives with Endless in Phase 6). Kept out of `test:game` for runtime. |
 
 Fixed conventions the contract relies on: server listens on `$PORT` (default `4200`), health

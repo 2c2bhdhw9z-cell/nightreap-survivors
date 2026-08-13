@@ -20,7 +20,7 @@
  *  11. The seat token never appears in anything the lobby can see.
  */
 
-import { HDR_PLAYER, HEADER_BYTES, MAX_PLAYERS, MSG } from "./protocol";
+import { HDR_PLAYER, HDR_TYPE, HEADER_BYTES, MAX_PLAYERS, MSG } from "./protocol";
 import {
   CLOSE_INTENTIONAL,
   CONTROL,
@@ -342,6 +342,9 @@ section("7. Quitting and being refused both stop for good");
   t.connect(createAdmission());
   w.seat(0, 42);
   t.quit();
+  // Without this the relay holds the seat for the grace window, so a player who quits blocks a slot.
+  const goodbye = w.latest().binary.at(-1);
+  check("quitting says goodbye before hanging up", goodbye !== undefined && goodbye[HDR_TYPE] === MSG.LEAVE);
   check("quitting closes the socket with our own code", w.latest().closedWith === CLOSE_INTENTIONAL);
   check("and the transport is finished", t.state === LINK_STATE.DEAD);
   w.latest().handlers.onClose(CLOSE_INTENTIONAL);

@@ -302,9 +302,16 @@ export class HostSession {
   private lastConfirmSent = -1;
   private readonly wireScratch = new Int32Array(MAX_WIRE_MODIFIERS);
 
+  /**
+   * @param relayed True when every guest is reached through one relay socket rather than a direct link
+   *   each. It changes exactly one thing: a broadcast is written once and addressed to everyone, instead
+   *   of once per guest. Over a relay the per-guest version would send the same confirm three times and
+   *   have the relay fan each copy out to all three guests — nine deliveries where three were meant.
+   */
   constructor(
     readonly run: Run,
     readonly playerCount: number,
+    readonly relayed = false,
   ) {
     for (let p = 0; p < MAX_PLAYERS; p++) {
       this.guests.push({
@@ -596,6 +603,16 @@ export class HostSession {
 
   private broadcast(bytes: Uint8Array): void {
     // Addressed to every guest at once. A direct link ignores the stamp; a relay reads it and fans out.
+    if (this.relayed) {
+      // One socket for the whole room, so one write. Any connected seat's link is the same socket.
+      for (let p = 1; p < this.playerCount; p++) {
+        const g = this.guests[p] as GuestConn;
+        if (g.link === null || !g.connected) continue;
+        this.sendTo(p, bytes, RELAY_BROADCAST);
+        return;
+      }
+      return;
+    }
     for (let p = 1; p < this.playerCount; p++) this.sendTo(p, bytes, RELAY_BROADCAST);
   }
 

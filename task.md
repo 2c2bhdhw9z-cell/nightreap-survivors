@@ -1652,3 +1652,41 @@ more tiers come with it when we do the real art:
 The Reaper and the White Hand are their own thing and get drawn last, because that sequence is the ending.
 
 All of this is the big art pass, which is still where it was — after the co-op work is finished.
+
+## Two phones, one world — 2026-08-13
+
+Plain English: until today the co-op code had never once been tested with a message actually leaving
+one copy of the game, crossing a real network connection, and arriving at another copy. Everything was
+tested against a pretend network. That gap is now closed.
+
+What got built:
+
+- **The part of the game that holds the connection.** It knows the difference between "I pressed quit"
+  and "I went into a tunnel". Quitting hands your spot back to the party straight away. Losing signal
+  keeps your spot warm for 45 seconds and quietly keeps trying to get back into it, waiting a little
+  longer between each attempt so four phones on the same bad wifi don't all retry at the same instant.
+  After 45 seconds it stops and tells you the spot is gone instead of spinning forever.
+- **Room codes are forgiving.** Type it in lowercase, with spaces or dashes, and it still works. If you
+  read an O off a friend's screen where the code has a Q, we fix it for you. The one thing we refuse to
+  guess at is S — there is no letter it could honestly become, so a code with an S in it is reported as
+  wrong rather than silently turned into somebody else's room.
+- **Being turned away now says why.** Before, if a room was full or the code was wrong, your phone just
+  saw "could not connect" — the reason existed but was sent in a way no phone can read. Now the server
+  opens the connection, says "room full" or "no such room" in words the lobby can put on screen, and
+  hangs up.
+- **Quitting properly frees your seat.** Found while testing: the game was closing the connection
+  without saying goodbye, so the server assumed you'd crashed and held your seat for 45 seconds. A
+  party of four could not replace someone who left for almost a minute. Fixed.
+- **The host stopped repeating itself.** Over a real server the host was addressing the same shared
+  message once per player, and the server was then forwarding each copy to everyone — nine deliveries
+  where three were meant. Now it is written once.
+
+The proof: a new end-to-end test starts a real server, connects two real players, runs 240 ticks of
+actual game, and checks both copies of the world agree at every single tick. Then it kills one player's
+connection the way a tunnel does, watches them reconnect into the same seat on their own, runs another
+120 ticks, and checks the two worlds still match. Then it has them quit and confirms someone else can
+take the seat immediately. All green.
+
+Still to do in this phase: the party lobby screen itself, what the screen shows while someone is
+reconnecting, the extra developer tools for testing co-op, and smoothing out your own character's
+movement so it never feels like it's waiting on the network.
