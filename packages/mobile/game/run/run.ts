@@ -342,6 +342,20 @@ export class Run {
   }
 
   /**
+   * Copy this run's modifier wire ids into `out` and report how many were written.
+   *
+   * A joining guest has to be told which modifiers the run is carrying, and a network message cannot
+   * carry object references — only numbers. The wire id is that number, and it is the same reason the
+   * snapshot stores ids rather than objects: whoever reads it looks the id up in their own registry.
+   * Writing into a caller-owned array keeps this allocation-free on the send path.
+   */
+  writeModifierWireIds(out: Int32Array): number {
+    const n = Math.min(this.modifierCount, out.length);
+    for (let i = 0; i < n; i++) out[i] = this.modifierWire[i];
+    return n;
+  }
+
+  /**
    * Fold the modifier stack into a fresh set of stats and report whether it agrees with the live ones.
    *
    * This exists for one reason: to let a test prove that a restored run's stats could have been derived

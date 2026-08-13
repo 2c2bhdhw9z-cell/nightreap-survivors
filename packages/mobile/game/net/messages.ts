@@ -307,6 +307,37 @@ export function readResyncChunkHeader(r: Reader, out: ResyncChunkHeader): Resync
   return out;
 }
 
+/**
+ * A list of snapshot chunks that never arrived: `u32 tick, u16 count`, then count × `u16 index`.
+ *
+ * Named per chunk rather than as a range, because loss is scattered — a 10% path drops the 3rd, the
+ * 11th and the 40th, not the last forty.
+ */
+export const RESYNC_NACK_HEADER_BYTES = 6;
+
+export function encodeResyncNack(
+  w: Writer,
+  slot: number,
+  tick: number,
+  indices: Uint16Array,
+  count: number,
+): Uint8Array {
+  w.begin(MSG.RESYNC_NACK, slot).u32(tick).u16(count);
+  for (let i = 0; i < count; i++) w.u16(indices[i] as number);
+  return w.finish();
+}
+
+export interface ResyncNackHeader {
+  tick: number;
+  count: number;
+}
+
+export function readResyncNackHeader(r: Reader, out: ResyncNackHeader): ResyncNackHeader {
+  out.tick = r.u32();
+  out.count = r.u16();
+  return out;
+}
+
 /* ---------------------------------------------------------------------------------------------- */
 /* CORRECTION                                                                                      */
 /* ---------------------------------------------------------------------------------------------- */
@@ -403,6 +434,105 @@ export function encodeLeave(w: Writer, slot: number, reason: number): Uint8Array
 
 export function encodeHostMigrate(w: Writer, newHostSlot: number, tick: number): Uint8Array {
   w.begin(MSG.HOST_MIGRATE, newHostSlot).u8(newHostSlot).u32(tick);
+  return w.finish();
+}
+
+
+/* ---------------------------------------------------------------------------------------------- */
+/* TICK_CONFIRM — the confirmed input record, which is what actually keeps four sims identical      */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Card-screen actions, as a single byte inside the confirmed record.
+ *
+ * A level-up screen freezes the simulation, so answering it is not an input — it is a decision about
+ * when the world resumes, and every client has to make it on the same tick or they part company on
+ * the frame the screen closes. Carrying it here rather than as a separate event means it inherits the
+ * confirm stream's ordering and retransmission for free.
+ *
+ * Never renumber.
+ */
+export const CARD_ACTION = {
+  NONE: 0,
+  PICK_0: 1,
+  PICK_1: 2,
+  PICK_2: 3,
+  PICK_3: 4,
+  REROLL: 5,
+  SKIP: 6,
+  BANISH_0: 7,
+  BANISH_1: 8,
+  BANISH_2: 9,
+  BANISH_3: 10,
+} as const;
+
+export type CardAction = (typeof CARD_ACTION)[keyof typeof CARD_ACTION];
+
+/** `u32 firstTick, u8 count, u8 playerCount`. */
+export const TICK_CONFIRM_HEADER_BYTES = 6;
+
+/** Per confirmed tick: `playerCount` x (i8 x, i8 y, u8 buttons, u8 flags), then `u8 cardAction`. */
+export function tickRecordBytes(playerCount: number): number {
+  return playerCount * 4 + 1;
+}
+
+export function tickConfirmBytes(playerCount: number, count: number): number {
+  return 4 + TICK_CONFIRM_HEADER_BYTES + count * tickRecordBytes(playerCount);
+}
+
+/**
+ * Write a run of confirmed ticks straight out of the host's record ring.
+ *
+ * `records` is the flat ring: `stride` bytes per tick, indexed by `tick % capacity`. Copying out of
+ * it byte-wise avoids materialising anything per tick, which matters because this runs twenty times
+ * a second for the whole run.
+ */
+export function encodeTickConfirm(
+  w: Writer,
+  slot: number,
+  firstTick: number,
+  count: number,
+  playerCount: number,
+  records: Uint8Array,
+  stride: number,
+  capacity: number,
+): Uint8Array {
+  const bytes = tickRecordBytes(playerCount);
+  w.begin(MSG.TICK_CONFIRM, slot).u32(firstTick).u8(count).u8(playerCount);
+  for (let i = 0; i < count; i++) {
+    const base = ((firstTick + i) % capacity) * stride;
+    for (let b = 0; b < bytes; b++) w.u8(records[base + b] as number);
+  }
+  return w.finish();
+}
+
+export interface TickConfirmHeader {
+  firstTick: number;
+  count: number;
+  playerCount: number;
+}
+
+export function decodeTickConfirmHeader(r: Reader, out: TickConfirmHeader): TickConfirmHeader {
+  out.firstTick = r.u32();
+  out.count = r.u8();
+  out.playerCount = r.u8();
+  return out;
+}
+
+/** Read one confirmed tick record into a caller-owned ring at `destOffset`. */
+export function decodeTickRecord(
+  r: Reader,
+  playerCount: number,
+  dest: Uint8Array,
+  destOffset: number,
+): void {
+  const bytes = tickRecordBytes(playerCount);
+  for (let b = 0; b < bytes; b++) dest[destOffset + b] = r.u8();
+}
+
+/** guest -> host: `u8 action`. The host is free to ignore it. */
+export function encodeCardRequest(w: Writer, slot: number, action: number): Uint8Array {
+  w.begin(MSG.CARD_REQUEST, slot).u8(action);
   return w.finish();
 }
 

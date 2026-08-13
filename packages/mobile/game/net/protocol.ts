@@ -25,7 +25,7 @@
  * than desync in a way that looks like a bug. Bump it on ANY layout change below.
  */
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /** Hard ceiling on party size. Sized so per-player arrays can be flat and preallocated. */
 export const MAX_PLAYERS = 4;
@@ -82,6 +82,27 @@ export const MSG = {
   LEAVE: 11,
   /** server -> all: the host went away, here is the new host slot. */
   HOST_MIGRATE: 12,
+  /**
+   * host -> guests: the confirmed input record for a run of ticks.
+   *
+   * This is the backbone of the session. Because the simulation is deterministic given a seed and a
+   * per-tick input record, a guest that replays the host's confirmed records produces the identical
+   * world without being told a single spawn or damage number. HOST_EVENTS and CORRECTION exist for
+   * the cases determinism cannot cover on its own (a late joiner, a guest that fell too far behind),
+   * not for the steady state.
+   */
+  TICK_CONFIRM: 13,
+  /** guest -> host: I tapped a level-up card. Advisory; the host decides and confirms it. */
+  CARD_REQUEST: 14,
+  /**
+   * guest -> host: these snapshot chunks never arrived, send them again.
+   *
+   * A resync happens precisely when the connection is bad, so assuming the snapshot itself arrives
+   * intact is the one assumption guaranteed to be wrong. Naming the missing chunks costs two bytes
+   * each and repairs a 10%-loss stream in a couple of passes; re-sending the whole snapshot on a
+   * timeout would, at that loss rate, essentially never complete.
+   */
+  RESYNC_NACK: 15,
 } as const;
 
 export type MsgType = (typeof MSG)[keyof typeof MSG];
@@ -101,6 +122,15 @@ export const HDR_RESERVED = 3;
  */
 export const MAX_MESSAGE_BYTES = 1200;
 
+/** Ticks a guest waits for a quiet resync stream before naming the chunks it is missing. */
+export const RESYNC_NACK_WAIT_TICKS = 18;
+
+/** Most chunk indices named in one RESYNC_NACK. Two bytes each, so 256 fits inside a message. */
+export const MAX_NACK_CHUNKS = 256;
+
+/** How long the host keeps a served snapshot around to answer repair requests from. */
+export const RESYNC_KEEP_TICKS = 240;
+
 /** Room codes are 6 characters from an ambiguity-free alphabet (no O/0, I/1, S/5). */
 export const ROOM_CODE_LENGTH = 6;
 export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXYZ23467889";
@@ -111,3 +141,37 @@ export const CORRECTION_SWEEP_PERCENT = 5;
 /** Entities per CORRECTION message. 12 bytes each keeps us far inside MAX_MESSAGE_BYTES. */
 export const CORRECTION_ENTITY_BYTES = 12;
 export const CORRECTION_MAX_ENTITIES = 64;
+
+/**
+ * Ticks of input the host resends in every TICK_CONFIRM.
+ *
+ * Retransmission, not acknowledgement. A dropped confirm is repaired by the next one instead of by a
+ * round trip, which matters because a round trip at 150ms costs nine ticks and the thing we are
+ * repairing is worth four bytes. Sized to keep the message inside MAX_MESSAGE_BYTES at four players.
+ */
+export const CONFIRM_REDUNDANCY_TICKS = 64;
+
+/**
+ * Ticks of input actually resent in a steady-state confirm.
+ *
+ * The window above is the widest the message format can carry; this is what a healthy connection is
+ * worth. Confirms go out every three ticks, so a 24-tick window already sends every record eight
+ * times over — at 2% loss the odds of all eight copies vanishing are one in fifty trillion, and the
+ * host is a phone paying for every byte it uploads. Four players at the full 64 would cost the host
+ * about 66KB a second; at 24 it costs 25KB, and the repair story is unchanged. Anything a guest is
+ * missing beyond this window was a real outage, and a real outage is answered with a snapshot.
+ */
+export const CONFIRM_WINDOW_TICKS = 24;
+
+/**
+ * How often the host broadcasts confirms, in ticks. Three ticks is 50ms — small enough to be
+ * invisible, large enough that we send twenty packets a second rather than sixty.
+ */
+export const CONFIRM_INTERVAL_TICKS = 3;
+
+/**
+ * How far behind the confirmed horizon a guest may fall before it stops waiting and asks for a
+ * snapshot instead. Beyond this the missing records have aged out of the retransmission window, so
+ * waiting longer cannot help.
+ */
+export const RESYNC_AFTER_STALL_TICKS = 90;
