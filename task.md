@@ -2424,3 +2424,48 @@ were loaded in a browser and photographed to confirm they actually draw.
 **Still to do on the guided run:** painting the prompts inside a run. The part that decides what to say,
 when, where it sits and what it points at is done and tested; the drawing needs the sprite atlas, so it
 lands with the art in Phase 4.
+
+## The event log — built (13 Aug)
+
+Second Phase 3 item done, and the last thing still carried over from Phase 0.
+
+**What it is, in plain English.** Instead of storing "this player has 300 gold" and changing that number,
+the server stores the list of things that happened — 500 granted, 120 spent, 80 spent — and works the 300
+out from the list every time it is asked. The list is only ever added to. There is no code anywhere that
+edits a line of it and no code that deletes one, and that is on purpose: undoing something means adding a
+line that says "that earlier line does not count", so the mistake and the fix are both permanently visible.
+
+**Why it was worth building before there is anything to protect.** Every recovery story in the plan needs
+it. An exploit that ran for six hours is undone by undoing six hours of lines. An automated ban wave that
+hit ten thousand innocent players is lifted in one action — and if a few of those lines cannot be lifted,
+the action lifts the rest and hands back a list of the exceptions, instead of refusing and leaving 9,998
+people punished. "Who did this, when, from which version of the game" always has an answer. And a bad
+admin action is itself a line, so it can be undone the same way.
+
+**Tamper-evident, not tamper-proof.** Every line carries a fingerprint of the line before it, so editing
+old history breaks the chain from that point on and a check reports exactly where. This is a tripwire, not
+a lock — anyone who can rewrite lines can rewrite fingerprints. What it does guarantee is that nobody can
+do it by accident, and nobody can do it to only part of the log and have it look fine.
+
+**Some rules that took thought:**
+- An undo has to be about the same account as the thing it undoes. Without that check, one mistyped account
+  id in a bulk undo takes gold from a bystander and the log records it as legitimate.
+- An undo cannot be undone. If the undo was wrong, the original is re-applied as a fresh line, and the log
+  shows all three things in the order they happened.
+- Not everything can be undone, and pretending otherwise is worse than saying no. "A run arrived" cannot be
+  un-arrived; the answer to a bad run is a new line revoking it.
+- Bulk undos work newest-first, so anything with a floor — a balance that cannot go below zero — unwinds
+  through states that actually happened rather than states that never existed.
+- The server's clock is treated as evidence, never as the order of events. A clock that steps backwards is
+  counted as an oddity worth looking at and never as a broken chain, because clocks step backwards for real
+  reasons and a log that refuses writes during a clock correction is a log that stops working.
+
+**Numbers.** 975 lines of rules and storage, 736 lines of test, 207 checks. Nine deliberate breakages tried;
+the first pass caught eight. The escapee was a genuine hole in the tests — two different lines could have
+been made to produce the same fingerprint by shifting a separator between two fields — so a check for
+exactly that was added and it is caught now.
+
+**Live.** The table is created in the real database and the real reads were run against it. Real writes were
+deliberately not tried: a test line in an append-only table can never be removed. The endpoints sit behind
+an admin token compared in constant time, and a server with no token configured refuses every one of them
+rather than serving the log to anyone who asks.

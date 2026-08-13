@@ -34,7 +34,7 @@ and anything further down disagree, this section wins and the other place is a b
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 2 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
 | **Phase 2** — co-op | **Closed on the build list.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, the lobby screen, the four-player HUD (rules and drawn), dev menu v2's co-op panels, remote config, and the dev menu wired to it are also done and tested. The networking test-ratio catch-up sweep is **done**, which was the last item on the Phase 2 build list. The only thing still outstanding is relay hosting, which is **decided but not built** (Cloudflare, built when four real phones need it). |
-| **Phase 3** — progression spine | **Started 2026-08-13.** The guided run is complete: engine, both screens, and the Settings entry. Its in-run prompts are decided and scheduled but not yet painted — that waits for the atlas. Nothing else in Phase 3 has begun. |
+| **Phase 3** — progression spine | **Started 2026-08-13.** Two items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. Nothing else in Phase 3 has begun. |
 | **Phases 4–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -45,9 +45,14 @@ and anything further down disagree, this section wins and the other place is a b
    at a week), stable per-player rollout slots so raising a percentage only ever adds players, unknown
    switches off, old builds blockable but never un-killable, the publishing route, the offline cache, and
    the co-op entry screen now behind the switch. Explicitly **not** a security boundary.
-2. **Append-only event-log scaffolding does not exist yet.** Same story: listed in Phase 0, no code.
-   Needed before anything server-side grants, bans or revokes. **Latest it can slip: Phase 3**, when
-   the first real server writes appear.
+2. ~~**Append-only event-log scaffolding does not exist yet.**~~ **CLEARED 2026-08-13**, in Phase 3,
+   which was the latest it was allowed to slip. Built and tested: the four rules (nothing is ever
+   overwritten or deleted, every row commits to the one before it, an undo is itself a row, and the
+   vocabulary can grow but the shape cannot change), the exact bytes a row is proved by, the checks that
+   say what may be written and what may undo what, the check that proves a stretch of history has not
+   been edited, the bulk undo that reports its exceptions instead of abandoning everyone else, and an
+   account's standing rebuilt from the log alone. The table is live in the database and the admin-only
+   endpoints exist. Explicitly **a tripwire, not a security boundary**.
 3. **The Phase 0 UI mock approval loop never happened.** The deliverable was a static HUD mock and
    one menu mock for a yes/no. Two dev-menu mocks were generated and never approved, and no HUD or
    menu mock was ever made. The mock-first rule is intact — no unapproved screen code was written —
@@ -1702,6 +1707,28 @@ a star rather than crossed weapons, and the XP bar sits inside the top stone blo
 icons are placeholder shapes on the 8px grid, marked `// FIDELITY:`, and become atlas cells in Phase 4
 without any layout moving. The one remaining piece of the guided run is painting the prompts themselves,
 which needs the atlas — the scheduler already decides what to say, where it sits and what it points at.
+
+Second item done: **the append-only event log**, the thing every recovery story in this plan quietly
+depends on. Nothing about a player is true because a column says so; the truth is the ordered list of
+things that happened, and a balance, an unlock, a ladder row or a ban is worked out from that list. What
+this buys, and what was impossible before it: an exploit that ran for six hours is undone by undoing six
+hours of rows; a wrongly-banned wave of ten thousand players is lifted in one action that reports the
+handful it could not lift instead of leaving the other 9,998 punished; "who did this, when, from which
+build" always has an answer; and a bad admin action is itself a row, so it can be undone too. Every row
+carries a fingerprint of the row before it, so if anyone ever edits old history — us, a stolen admin
+session, a bad migration — it shows up as a broken chain rather than as nothing at all. That is a
+tripwire, not a lock: whoever can rewrite rows can rewrite fingerprints. What it guarantees is that they
+cannot do it by accident and cannot do it to only part of the log.
+
+975 lines of rules and storage against 736 lines of test (184 checks on the rules, 23 on the door), which
+clears the standing 1:2 rule. Nine deliberate breakages were tried and the first attempt caught eight —
+the escapee was a real hole in the tests, not a false alarm: two different rows could have been made to
+produce the same fingerprint by moving a separator between two fields. A check for exactly that was added,
+and the breakage is caught now. The table is live in the real database and the real database reads were
+run against it; writes through the real database were deliberately not tried, because a test row in an
+append-only table can never be removed. The endpoints are behind an admin token, checked in constant time,
+and a server with no token configured refuses every one of them rather than serving the log wide open.
+
 - Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
 - Character select; 8 characters with distinct stats, starting weapons, growth quirks.
 - Unlock system, save/load with migrations, account-backed sync.
