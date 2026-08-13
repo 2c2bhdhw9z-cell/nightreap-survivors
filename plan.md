@@ -1318,10 +1318,39 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
 - **Decided here:** the relay cannot live in the web package — the dev server does no WebSocket upgrades
   and the production server file is template-managed. It becomes a separate thin Bun process that imports
   the tested room/routing logic; all judgement stays in the tested modules, the shim holds none.
+- ~~**The relay process itself**~~ — **DONE, and running.** A separate thin Bun process on port 4400.
+  Admission happens *before* the socket exists, in the connect address, so a refused join is a plain
+  error instead of a socket that opens and goes quiet: create a room, join by code, quick-match by party
+  size, or rejoin with your token. Two channels share one socket — binary is game traffic (four header
+  bytes read, body never opened), text is lobby news the relay itself writes, and text from a client is
+  ignored outright so no future lobby feature can be faked by something shipped today. A health address
+  reports room counts and, per reason, everything it threw away. It never explains a drop to the sender.
+  Verified against real sockets, not mocks: 23 checks covering seating, codes typed wrong, a code for no
+  room, forged messages, a host dropping mid-run, promotion, and walking back into your own seat. All
+  pass; the script lives in the relay package so it can be re-run any time.
+- **Found and fixed here — three more real bugs:**
+  - **The relay was swallowing the join handshake.** A guest's opening hello was being answered by the
+    server instead of forwarded, so a guest was admitted to the room and then never greeted by the host —
+    every join would have hung on a black screen. Admission and the game's own handshake are two
+    different conversations.
+  - **The relay was answering the clock probe.** Guests measure how far ahead of the host to run by asking
+    the host what tick it is on. The relay was replying with its own answer, which would have set every
+    guest's timing to a number that means nothing, on every connection.
+  - **A fourth player could walk into a three-player room.** Room size was being treated as a hint rather
+    than a promise, and empty seats were filled up to four regardless. Enemy *count* scales with player
+    count, so an uninvited extra makes the run harder for everyone who agreed to a smaller one. Party size
+    is now enforced everywhere a seat is counted.
+- **Nobody can be somebody else.** A relay-backed host talks to the whole room down one socket, so it can
+  no longer tell who sent what from the connection alone. The relay therefore overwrites the sender byte
+  with the true seat on every message it forwards. Impersonation is erased rather than detected.
 - Host migration client-side, drop-out grace, rejoin.
-- **Still outstanding in this phase:** the WebSocket transport itself (relay process + client link),
-  host-migration handling on the client, the rejoin flow, and render-side prediction so a guest's own
-  thumb feels instant.
+- **Still outstanding in this phase:** the client's own link to the relay so the session code can run over
+  a real socket, host-migration handling on the client, the rejoin flow, render-side prediction so a
+  guest's own thumb feels instant, where the relay is actually hosted in production, and telling the
+  remaining players when a held seat finally expires (today the server just quietly frees it).
+- **Debt, deliberately deferred to the end of this phase:** the networking folder sits at roughly one line
+  of test per 2.7 lines of code, under the one-to-two rule. The shortfall is all in files written before
+  the rule existed; one catch-up sweep closes it at the end of Phase 2.
 - RN co-op lobby with the full 1–4 flow; 4× HUD; palette swaps; shared XP + batch level-up; downs and
   revives; per-player-count scaling.
 - **Remote-config gate** so co-op ships locked.

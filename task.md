@@ -1374,3 +1374,49 @@ referee — so there is no message anyone can build that reaches another player 
 
 **Cost:** 200,000 messages routed through this in a row and memory did not move at all. That matters
 because this code runs on every single packet, for every player, sixty times a second.
+
+
+## The server half of online co-op is real now
+
+Up to this point the multiplayer code was proven against a pretend network — useful, and it caught
+real bugs, but nothing had ever travelled over an actual connection. It has now. There is a small
+server program running, and three real connections joined a real room, played, watched the host drop
+out, promoted a new one, and let the dropped player walk back into their own seat. 23 checks, all
+passing, and the test is saved in the project so it can be run again any time something changes.
+
+**Joining fails before you ever see a lobby.** If a room code is wrong, or the room is full, the
+connection is turned away up front. You get a clear "no such room" instead of a lobby that opens and
+then sits there doing nothing. That is a deliberate choice: silence is the worst possible answer.
+
+**Wrong codes still work.** Lowercase, spaces, dashes — all fine. "ab-cd ef" finds the same room as
+"ABCDEF".
+
+**One connection, two kinds of traffic.** Game data and lobby news travel down the same pipe but are
+kept completely separate, and the server only ever writes the lobby news itself. Nothing a player's
+phone says on that channel is listened to. That means a lobby feature we add in a year can't be
+faked by a copy of the game shipped today.
+
+**Nobody can pretend to be another player.** This was the important find. When everyone talks through
+the server, the referee phone has one connection for the whole room, so it can't tell who sent what
+just by which line it came in on — a modified phone could claim to be player 2 and move their
+character. The server now stamps the real seat number onto every message it passes along. It isn't
+caught and reported; it simply cannot happen.
+
+**Three more real bugs, all caught by putting it on a real wire:**
+
+1. **Joining would have hung forever.** There are two separate introductions when you join: one to the
+   server (may I come in?) and one to the referee phone (here I am, what's the game state?). The server
+   was answering the second one itself and never passing it on, so a player would be let into the room
+   and then greeted by nobody. Black screen, every single join.
+2. **Everyone's timing would have been wrong.** Players need to run slightly ahead of the referee, and
+   they work out how far by asking the referee what moment it's on. The server was answering that
+   question with its own answer, which is meaningless — it has no idea what's happening in the game. Every
+   player on every connection would have been out of step.
+3. **A fourth player could gate-crash a three-player room.** Room size was being treated as a suggestion.
+   This matters more than it sounds: the number of enemies scales with the number of players, so an
+   uninvited extra makes the run harder for everyone who agreed to a smaller party. Three now means three.
+
+**Still to come before co-op is playable:** the game itself doesn't dial the server yet — that's the
+next piece. Then handling a host swap gracefully on your screen, the come-back-from-a-dropped-signal
+flow, and making your own thumb feel instant even at 150ms away. The lobby screens wait on artwork
+approval like everything else visual.
