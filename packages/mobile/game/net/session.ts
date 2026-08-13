@@ -300,6 +300,15 @@ export class HostSession {
   private localButtons = 0;
   private pendingCard: number = CARD_ACTION.NONE;
   private lastConfirmSent = -1;
+  /**
+   * First tick this host sealed itself.
+   *
+   * Zero for a host that started the run. After a migration it is the tick the new host took over on,
+   * and the confirm window is clamped to it: the records before that point were sealed by a host that
+   * is gone, this host never had them, and sending its own empty ring rows for them would hand every
+   * guest that is running behind a stretch of fabricated input.
+   */
+  private ownedFrom = 0;
   private readonly wireScratch = new Int32Array(MAX_WIRE_MODIFIERS);
 
   /**
@@ -312,6 +321,13 @@ export class HostSession {
     readonly run: Run,
     readonly playerCount: number,
     readonly relayed = false,
+    /**
+     * Which seat this host is playing from. Zero for the player who opened the room, and any seat
+     * at all after a migration: when the host leaves, the relay promotes the lowest *live* seat,
+     * which is whoever is left, not whoever was first. A host that assumed it was seat zero would
+     * write its own stick into another player's column and confirm it to the whole room.
+     */
+    readonly localSlot = 0,
   ) {
     for (let p = 0; p < MAX_PLAYERS; p++) {
       this.guests.push({
@@ -331,15 +347,54 @@ export class HostSession {
     }
   }
 
+  /**
+   * Take over a run in progress at the tick it had reached.
+   *
+   * Called on the player the relay promotes when the host disappears. The world is already correct —
+   * this machine was simulating it a moment ago — so nothing about the simulation moves. What resets
+   * is the bookkeeping: this host has sealed no records yet, so its confirm window starts empty and
+   * grows from here, and its hash trail starts with the world as it stands so the very next hash it
+   * publishes is one it can stand behind.
+   */
+  resumeFrom(tick: number): void {
+    this.tick = tick;
+    this.lastConfirmSent = tick;
+    this.ownedFrom = tick + 1;
+    this.ring.clear();
+    this.trail.clear();
+    this.trail.record(tick, this.run.hashState(HASH_SEED));
+  }
+
   /** Attach a guest's return path and send it the run it is joining. */
   admit(slot: number, link: Link, name = ""): void {
-    if (slot <= 0 || slot >= this.playerCount) return;
+    if (slot < 0 || slot >= this.playerCount || slot === this.localSlot) return;
     const g = this.guests[slot] as GuestConn;
     g.link = link;
     g.name = name;
     g.connected = true;
     g.inputs.clear();
     this.sendTo(slot, this.encodeWelcomeFor(slot));
+  }
+
+  /**
+   * Mark a seat present or absent without forgetting it.
+   *
+   * The relay tells us when a player's socket dies. The seat is still theirs — they have a grace
+   * window to come back — so the input history stays exactly where it is. What must stop is sending:
+   * a half-finished snapshot aimed at a seat nobody is listening on would keep pumping chunks into
+   * the void for a third of a second and then wait to be told which ones went missing.
+   */
+  setConnected(slot: number, connected: boolean): void {
+    if (slot < 0 || slot >= this.playerCount || slot === this.localSlot) return;
+    const g = this.guests[slot] as GuestConn;
+    g.connected = connected;
+    if (connected) return;
+    g.resync = null;
+    g.resyncTick = -1;
+    g.resyncCursor = 0;
+    g.resyncChunks = 0;
+    g.nackCount = 0;
+    g.pendingCard = CARD_ACTION.NONE;
   }
 
   private encodeWelcomeFor(slot: number): Uint8Array {
@@ -391,7 +446,7 @@ export class HostSession {
 
     for (let p = 0; p < n; p++) {
       const o = base + p * 4;
-      if (p === 0) {
+      if (p === this.localSlot) {
         data[o] = this.localAxes[0] as number;
         data[o + 1] = this.localAxes[1] as number;
         data[o + 2] = this.localButtons;
@@ -424,7 +479,8 @@ export class HostSession {
     // this decision has to be reproducible from the confirm stream alone.
     let action = this.pendingCard;
     this.pendingCard = CARD_ACTION.NONE;
-    for (let p = 1; p < n; p++) {
+    for (let p = 0; p < n; p++) {
+      if (p === this.localSlot) continue;
       const g = this.guests[p] as GuestConn;
       if (action === CARD_ACTION.NONE) action = g.pendingCard;
       g.pendingCard = CARD_ACTION.NONE;
@@ -450,11 +506,15 @@ export class HostSession {
     }
     let count = CONFIRM_WINDOW_TICKS;
     while (count > 1 && tickConfirmBytes(n, count) > MAX_MESSAGE_BYTES) count--;
-    const first = Math.max(0, this.tick - count + 1);
+    const first = Math.max(this.ownedFrom, this.tick - count + 1);
+    if (first > this.tick) {
+      this.lastConfirmSent = this.tick;
+      return;
+    }
     const actual = this.tick - first + 1;
     const bytes = encodeTickConfirm(
       this.writer,
-      0,
+      this.localSlot,
       first,
       actual,
       n,
@@ -470,7 +530,7 @@ export class HostSession {
   private broadcastHash(): void {
     if (this.playerCount < 2) return;
     const hash = this.trail.at(this.tick);
-    this.broadcast(encodeStateHash(this.writer, 0, this.tick, hash));
+    this.broadcast(encodeStateHash(this.writer, this.localSlot, this.tick, hash));
     this.stats.hashesSent++;
   }
 
@@ -482,7 +542,8 @@ export class HostSession {
    * second while leaving the confirm stream untouched.
    */
   private pumpResyncs(): void {
-    for (let p = 1; p < this.playerCount; p++) {
+    for (let p = 0; p < this.playerCount; p++) {
+      if (p === this.localSlot) continue;
       const g = this.guests[p] as GuestConn;
       if (g.resync === null) continue;
 
@@ -517,14 +578,14 @@ export class HostSession {
     if (snap === null || index < 0 || index >= g.resyncChunks) return;
     const from = index * RESYNC_CHUNK_PAYLOAD;
     const size = Math.min(RESYNC_CHUNK_PAYLOAD, snap.byteLength - from);
-    const w = beginResyncChunk(this.writer, 0, g.resyncTick, index, g.resyncChunks, size);
+    const w = beginResyncChunk(this.writer, this.localSlot, g.resyncTick, index, g.resyncChunks, size);
     for (let b = 0; b < size; b++) w.u8(snap[from + b] as number);
     this.sendTo(slot, w.finish());
   }
 
   /** Feed one message received from a guest. */
   receive(slot: number, bytes: Uint8Array): void {
-    if (slot <= 0 || slot >= this.playerCount) return;
+    if (slot < 0 || slot >= this.playerCount || slot === this.localSlot) return;
     this.stats.bytesReceived += bytes.byteLength;
     this.stats.messagesReceived++;
     const r = this.reader.reset(bytes);
@@ -556,7 +617,7 @@ export class HostSession {
       case MSG.PING: {
         const sendTimeMs = r.u32();
         const senderTick = r.u32();
-        this.sendTo(slot, encodePong(this.writer, 0, sendTimeMs, senderTick, this.tick));
+        this.sendTo(slot, encodePong(this.writer, this.localSlot, sendTimeMs, senderTick, this.tick));
         return;
       }
       case MSG.RESYNC_REQUEST: {
@@ -605,7 +666,8 @@ export class HostSession {
     // Addressed to every guest at once. A direct link ignores the stamp; a relay reads it and fans out.
     if (this.relayed) {
       // One socket for the whole room, so one write. Any connected seat's link is the same socket.
-      for (let p = 1; p < this.playerCount; p++) {
+      for (let p = 0; p < this.playerCount; p++) {
+        if (p === this.localSlot) continue;
         const g = this.guests[p] as GuestConn;
         if (g.link === null || !g.connected) continue;
         this.sendTo(p, bytes, RELAY_BROADCAST);
@@ -613,7 +675,10 @@ export class HostSession {
       }
       return;
     }
-    for (let p = 1; p < this.playerCount; p++) this.sendTo(p, bytes, RELAY_BROADCAST);
+    for (let p = 0; p < this.playerCount; p++) {
+      if (p === this.localSlot) continue;
+      this.sendTo(p, bytes, RELAY_BROADCAST);
+    }
   }
 
   private sendTo(slot: number, bytes: Uint8Array, dest: number = slot): void {
@@ -856,6 +921,30 @@ export class GuestSession {
     this.snapshotQuiet = 0;
     this.stats.resyncsRequested++;
     this.send(encodeResyncRequest(this.writer, this.slot, this.tick, localHash, expectedHash));
+  }
+
+  /**
+   * The room has a new host. Throw away everything the old one said and rebuild from the new one.
+   *
+   * This is deliberately the blunt answer. A promoted host is a player, so it was running behind the
+   * host it replaced, and the ticks between its position and ours were sealed by a machine that no
+   * longer exists. Our world is therefore ahead of the only authority left, on records nobody can
+   * confirm, and the queued records for ticks still to come belong to a host that is gone. There is no
+   * version of "keep what we have" that is honest, so we keep nothing: clear the queue, clear the
+   * trail of hashes we would have compared against, and ask the new host for its whole world.
+   *
+   * It costs one snapshot per player, once, on an event that happens when somebody's app is killed.
+   * The alternative saves that snapshot and risks a silently wrong world until the next hash lands.
+   */
+  rehost(): void {
+    this.ring.clear();
+    this.trail.clear();
+    this.horizon = -1;
+    this.pendingHashTick = -1;
+    this.stalledFor = 0;
+    // sendTick is left alone on purpose: local input keeps flowing to the new host without a gap, and
+    // the lead is recomputed from the horizon the moment the first confirm arrives.
+    this.requestResync(0, 0);
   }
 
   /** Feed one message received from the host. */
