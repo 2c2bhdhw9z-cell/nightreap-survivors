@@ -1889,3 +1889,38 @@ messages, and both server tests confirm nothing was pinned to the old number.
 Left in this phase: the lobby screens, the four-player heads-up display, the co-op tools in the dev
 menu, the switch that keeps co-op off until it is ready, where the server lives, and one catch-up pass
 on tests for the older networking files.
+
+## The screens will not be allowed to hold any rules - 2026-08-13
+
+The connection knows about sockets and seats. The party room knows about the roster and chat. Neither
+knows the other, on purpose, because that is what makes both testable. Something still has to marry
+them - and if that something lives inside a screen, then the rules of co-op end up in a file that can
+only be tested by tapping a phone.
+
+So the marriage is its own piece, and it is tested headlessly:
+
+- The server is the only authority on seats, so a party list arriving on *any* message from the server
+  updates the room - not just the one that seated you. A message with no party list in it changes
+  nothing, rather than wiping the party.
+- Reconnecting is not rejoining. Your seat is still yours, but you come back NOT ready, always. A phone
+  that reconnects silently ready lets a party start a run it is not actually in yet.
+- Being refused and being hung up on are the same thing to you - "it did not work" - so there is exactly
+  one path and one sentence, and neither retries. I found and deleted a second path here while testing:
+  it looked like a rule and could never run.
+- The server speaks in machine words. `room_full` becomes "That party is full." A reason from a future
+  version of the game that this build has never heard of still comes out as a readable sentence rather
+  than raw code on your screen.
+- Nothing can be sent before the server has given you a seat, because a message sent before then has no
+  sender. Chat, presets, ready and start all refuse quietly until you are actually sitting down.
+- Your seat token never appears in anything a screen can read. The test checks for it by searching.
+- The screen is handed a copy of the party list, not the live one, so a message arriving halfway through
+  drawing cannot change what is being drawn.
+
+Tested to the usual ratio: 392 lines of code, 378 lines of tests, ten areas, 73 checks. I broke two
+things deliberately - the party-list refresh and the readable-refusal translation - and confirmed both
+fail the build.
+
+Everything else still passes: 25 test files, typecheck and lint.
+
+Next: the two actual lobby screens, which now have nothing left to decide.
+

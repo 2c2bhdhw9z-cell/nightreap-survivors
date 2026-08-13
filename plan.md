@@ -1407,6 +1407,16 @@ devices is newer — and that guess is how people lose 200 hours.
 
 **Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask), and the lobby rules themselves — a roster only the host may change, chat that routes guest to host to everyone so a name cannot be faked, presets that travel as ids, a bursty token-bucket rate limit, every refusal distinguishable, and a start button that refuses while a held seat is still reconnecting. Not started: the co-op lobby screens, the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
 
+- ~~**The lobby session**~~ — **DONE.** The seam between the transport and the lobby, as its own tested
+  module rather than as glue inside a screen. Rules that would otherwise only be testable by tapping a
+  phone: any control frame carrying a room refreshes the seats, a roomless frame changes nothing, a
+  reconnect re-states identity and always comes back NOT ready, refusal and hang-up land on one status
+  with one already-readable sentence (the relay's machine words never reach a player, and an unknown
+  reason from a future build still reads as English), nothing can be sent before the relay has stamped a
+  seat, the seat token never appears in anything a screen can read, and the snapshot handed to the screen
+  is a copy so a frame arriving mid-render cannot change what is being drawn. Found and deleted here: a
+  duplicate refusal path in the session that could never run, because the transport already turns a
+  refusal into a death. Also carries `diagnostics()` for the COOP dev tab, containing no secrets.
 - ~~**The lobby rules**~~ — **DONE.** The party room as a tested module, before any screen exists.
   The host owns the roster and it is always sent whole, never as a difference — a missed difference means
   a permanently wrong party list. A guest's ready button is a request, not an edit: it asks and waits for
