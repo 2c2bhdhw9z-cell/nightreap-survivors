@@ -193,6 +193,26 @@ check("two clear bands are found", P.bands([0, 9, 9, 0, 9, 9, 0], 3) == [(1, 2),
 check("a band running to the edge is closed", P.bands([9, 9], 3) == [(0, 1)])
 check("nothing above the floor means no bands", P.bands([0, 1, 2], 3) == [])
 
+# The props sheet split one real row in two across an object's thin waist.
+check(
+    "a row split by a hairline gap is rejoined",
+    P.merge_thin([(63, 229), (279, 283), (288, 480), (512, 705)])
+    == [(63, 229), (279, 480), (512, 705)],
+    "got %s" % (P.merge_thin([(63, 229), (279, 283), (288, 480), (512, 705)]),),
+)
+check(
+    "genuinely separate rows are left apart",
+    P.merge_thin([(0, 100), (200, 300), (400, 500)])
+    == [(0, 100), (200, 300), (400, 500)],
+)
+check("a single band passes through", P.merge_thin([(5, 9)]) == [(5, 9)])
+check("no bands passes through", P.merge_thin([]) == [])
+check(
+    "a lone sliver is never returned as an empty grid",
+    len(P.merge_thin([(0, 100), (200, 202), (400, 500)])) == 2,
+    "got %s" % (P.merge_thin([(0, 100), (200, 202), (400, 500)]),),
+)
+
 
 # ----------------------------------------------------------- centring in tile
 

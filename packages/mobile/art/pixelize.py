@@ -108,6 +108,36 @@ def bands(counts, floor):
     return out
 
 
+def merge_thin(found):
+    """Join bands split by a hairline gap, then drop leftover slivers.
+
+    A tall object can have a few rows of near-nothing across its middle — the
+    neck of an urn, the gap under a lid — which splits one real row of the grid
+    into two bands and makes the sheet look like it has more rows than it does.
+    Anything separated by much less than a real band is the same band.
+    """
+    if len(found) < 2:
+        return list(found)
+    sizes = sorted((b - a + 1) for a, b in found)
+    typical = sizes[len(sizes) // 2]
+    # Deliberately small. A hairline gap inside one object is a few pixels; the
+    # real gutter between two cells is a large fraction of a cell. Anything
+    # near the gutter's size must stay a gutter, or a sheet quietly collapses
+    # into fewer, wrongly cropped cells.
+    gap_floor = max(2, typical // 8)
+
+    joined = [list(found[0])]
+    for a, b in found[1:]:
+        if a - joined[-1][1] - 1 <= gap_floor:
+            joined[-1][1] = b
+        else:
+            joined.append([a, b])
+
+    # A band far smaller than the typical one is debris, not a cell.
+    keep = [(a, b) for a, b in joined if (b - a + 1) >= max(2, typical // 3)]
+    return keep or [tuple(x) for x in joined]
+
+
 def snap(block_rgb, keep):
     """Pick one palette colour for a block of source pixels.
 
@@ -225,8 +255,19 @@ def main(argv):
     rgb = np.asarray(image)
     foreground = ~magenta_mask(rgb)
 
-    row_bands = bands(foreground.sum(axis=1), 3)
-    col_bands = bands(foreground.sum(axis=0), 3)
+    # Take whichever reading matches what the caller asked for. Merging fixes
+    # a row split across an object's thin waist, but on a sheet with no such
+    # split it can glue two real rows together, so neither reading is right
+    # on its own.
+    def best(counts, want):
+        raw = bands(counts, 3)
+        if len(raw) == want:
+            return raw
+        merged = merge_thin(raw)
+        return merged if len(merged) == want else raw
+
+    row_bands = best(foreground.sum(axis=1), args.rows)
+    col_bands = best(foreground.sum(axis=0), args.cols)
     if len(row_bands) != args.rows or len(col_bands) != args.cols:
         print(
             "grid not found: expected %dx%d, read %d rows and %d columns"
