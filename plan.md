@@ -1652,8 +1652,10 @@ phase, 88 rejected, 5 escalated as open decisions. Only the accepted items are r
 
 - **Primer / detonator co-op combo** — one player marks an elite, another detonates it. Highest-value
   co-op idea found; requires no coordination.
-- **Ping marker** in co-op (one button, drops a marker plus a sound). This is the only communication
-  channel; no voice, no text. Rides the confirmed-input channel.
+- **Ping marker plus a free set of preset messages** in co-op — one button drops a map marker with a
+  sound, and a short fixed list (help / chest here / thanks / over here / going down) covers everything
+  else. This is the entire communication channel: no voice, no text, and the message list is free, not
+  a purchase. Rides the confirmed-input channel.
 - Hold a button to transfer your own health to a downed teammate.
 - Ban up to 3 passives from the global drop pool.
 - Passive items branch into two choices at max level.
@@ -1716,7 +1718,8 @@ phase, 88 rejected, 5 escalated as open decisions. Only the accepted items are r
 
 ### Accepted — Phase 8 and post-launch
 
-- Cosmetic only, all of it: tombstones visible to teammates, emote wheel (shares the ping system),
+- Cosmetic only, all of it: tombstones visible to teammates, extra decorative emotes layered on top of
+  the free Phase 5 message set,
   lobby pets, in-run pets with zero gameplay effect, trail colours, death animations, CRT/Game Boy/VHS
   screen filters, announcer voice packs, a $5 founders credits roll.
 - Golden weapon skins are **earned only**. A separate premium skin line may be sold. Selling the thing
@@ -1748,21 +1751,40 @@ phase, 88 rejected, 5 escalated as open decisions. Only the accepted items are r
 - Anything needing a large live population: collective global unlocks, faction wars, server-wide bingo,
   gold tipping, draft tournaments.
 - Third-party and community integrations: Twitch chat voting on card picks, community-sourced
-  translations, community-drawn weapon skins, licensed guest characters from other games.
+  translations, community-drawn weapon skins. (Licensed guest characters are "not now" rather than
+  never — see the corrections below.)
+- Voice chat and free-text chat in co-op. Preset messages cover the need without moderation exposure.
 - An entire second art style for a weekend event.
 - Randomising the simulation's own rules mid-run. Chaos Sandbox Day already covers chaos.
 - Bribing the Reaper to delay him. His arrival is the game's one ceremony.
 
-### Open decisions (blocking nothing yet)
+### The five decisions — all answered 2026-08-13
 
-1. **Elements** (fire/ice/lightning with resistances) — recommendation: **no**, use tags instead.
-   Roughly a tenth of the cost, most of the identity, and no resistance chart forced on the player.
-2. **An active defence button** — dash with brief invincibility, or a directional shield.
-   Recommendation: **not at launch**; revisit as a character-specific ability, where it is a build
-   choice rather than a change to the game's rules.
-3. **Cosmetic battle pass** — recommendation: **not at launch.** Adding one later is easy; removing
-   one is not.
-4. **Palette-swap Shadow variants** — recommendation: **yes, plan in Phase 4, build in Phase 5.**
-   Must be decided before art begins.
-5. **Insect-free sprite mode** — recommendation: **yes, decide now**, draw swaps in the Phase 4 pass.
-   Also shapes which enemies get designed as insects at all.
+1. **Elements: no. Tags instead — but deferred, not dead.** Weapons get tags (Blunt / Magic / Tech)
+   for set bonuses and build identity. Elements with resistances stay on the table as a possible
+   post-launch depth pass; because every weapon already carries a tag field, adding a type later is
+   an additive content change rather than a rewrite. Nothing about elements gets built now.
+2. **Active defence button (dash / directional shield): not at launch.** Positioning is the only
+   defence. Revisit post-launch as a single character's ability, where it is a build choice rather
+   than a change to the game's rules.
+3. **Cosmetic battle pass: not at launch.** Launch with the cosmetic store and the season ladder
+   rewards already planned. Revisit only once there is a population to justify it.
+4. **Shadow variants: yes.** Palette-swap recolours with swapped stats. The Phase 4 art pass must be
+   built so a recolour is a data row, not a redraw.
+5. **Insect-free sprite mode: yes.** Alternate non-insect sprites are drawn in the same Phase 4 pass
+   as the originals, and this also informs which enemies get designed as insects at all.
+
+### Two corrections to the review (2026-08-13)
+
+- **Preset co-op messages are free infrastructure, not a Phase 8 purchase.** Filing the emote wheel
+  under cosmetic IAP was wrong. Four strangers who cannot type to each other need a way to
+  communicate. A base set of canned messages — help, chest here, thanks, over here, going down —
+  ships **free with co-op in Phase 5**, on the same button as the ping marker. Decorative extra
+  emotes on top of that free set are what sells in Phase 8.
+  Voice and text chat both stay rejected: text needs moderation, voice needs an audio stack plus
+  moderation, both worsen the age rating, and both make the developer responsible for policing
+  strangers. A fixed message list cannot be used to say anything harmful, which is the whole point.
+- **Licensed guest characters: "not now", not "never".** The blocker is a contract with another
+  studio, which realistically only happens after a game succeeds. Post-launch, if a studio
+  approaches us, a guest character is a data row plus a sprite sheet — roughly a week. Nothing to
+  design for now beyond keeping characters fully data-driven, which they already are.
