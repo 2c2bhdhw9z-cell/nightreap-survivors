@@ -1405,7 +1405,7 @@ devices is newer — and that guess is how people lose 200 hours.
 
 ### Phase 2 — Co-op, proven on the small slice
 
-**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Not started: host migration on the player's side, render-side local movement smoothing, the co-op lobby screens, dev menu v2, and where the relay actually gets hosted.
+**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), and render-side local movement prediction so a guest's own thumb feels instant. Not started: the co-op lobby screens, the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
 
 - ~~**The client transport**~~ — **DONE.** One connection to one relay, with the reconnect behaviour a
   phone actually needs. A quit says goodbye and frees the seat at once; a drop says nothing, holds the

@@ -1749,3 +1749,36 @@ Everything passes: 21 test files, the live server test, and the two-phones-on-a-
 Still to do before this phase is finished: making your own thumb feel instant on a guest phone, the
 lobby screen, the four-player heads-up display, the co-op tools in the dev menu, and the switch that
 keeps co-op turned off until it is ready.
+
+## Your own thumb now feels instant - 2026-08-13
+
+The problem this fixes: in a party, one phone runs the world for everyone. Every other phone has to
+send what your thumb is doing across the internet, wait for the host to agree, and only then move
+you. On a decent connection that is a tenth of a second. On a bad one it is worse. You would notice
+it instantly, because the one thing nobody forgives is their own character walking late.
+
+So now each phone draws *you* from what your thumb is doing right now, while everything else - every
+enemy, every pickup, everyone else - still comes from the host. The moment the host confirms, the
+truth quietly takes over. Nothing about the actual fight is guessed, and if this whole thing were
+deleted the game would still be correct, just laggier.
+
+The careful parts:
+
+- It only guesses about a third of a second ahead at most. Past that, guessing is worse than waiting.
+- When the guess turns out wrong - you walked into a wall, something knocked you back - the sprite
+  slides the small distance back over a few frames instead of teleporting, which you cannot see.
+- Big corrections *do* teleport, on purpose. Being revived across the map is not something you should
+  watch yourself skate to.
+- A downed or dead character is never guessed forward. A corpse does not walk.
+- If your phone is hosting, or you are playing solo, this code does nothing at all - same path, no
+  second thing to keep working.
+
+Tested to the usual ratio: the module is 256 lines, the tests are 266. Twelve areas, forty-odd
+checks, including one that runs two hundred thousand ticks to prove it never allocates memory while
+you play. I also deliberately broke the smoothing to confirm the tests actually catch it - they do.
+
+Everything else still passes: 22 test files, the live server test, the two-phones-over-a-real-
+connection test, typecheck, lint and build.
+
+Left in this phase: the lobby screen, the four-player heads-up display, the co-op tools in the dev
+menu, and the switch that keeps co-op turned off until it is ready.
