@@ -58,14 +58,34 @@ check("guests get slots 1 and 2", s1?.slot === 1 && s2?.slot === 2, `${s1?.slot}
 check("a lowercase code finds the same room", s2?.slot === 2);
 check("host was told about both arrivals", host.control.filter((c) => c.t === "peer_joined").length === 2);
 
-// 3. A bad code is refused before the socket opens.
-let refused = "";
-try {
-  await connect(`${BASE}?mode=join&code=ZZZZZZ`);
-} catch {
-  refused = "rejected";
+// 3. A bad code is refused out loud: the socket opens, hears why, and is closed by the relay.
+// The status of a failed WebSocket handshake is invisible to the client, so the reason has to be
+// spoken on the control channel or the player only ever sees "could not connect".
+let refusal: { t?: string; reason?: string } = {};
+let refusedClose = -1;
+{
+  const nobody = await connect(`${BASE}?mode=join&code=ZZZZZZ`);
+  nobody.ws.onclose = (e) => {
+    refusedClose = e.code;
+  };
+  await wait(200);
+  refusal = (nobody.control[0] ?? {}) as { t?: string; reason?: string };
 }
-check("a code for no room is refused at connect", refused === "rejected");
+check("a socket asking for a room that does not exist is still opened", refusal.t === "refused", refusal.t ?? "nothing");
+check("and told why in words the lobby can show", refusal.reason === "no_such_room", refusal.reason ?? "nothing");
+check("and then closed by the relay", refusedClose === 4001, `${refusedClose}`);
+
+// 3b. A wrong seat token is deliberately reported as if the room were gone.
+{
+  const liar = await connect(`${BASE}?mode=rejoin&code=${code}&token=123456`);
+  await wait(200);
+  const said = (liar.control[0] ?? {}) as { t?: string; reason?: string };
+  check("a wrong seat token is told nothing useful", said.reason === "no_such_room", said.reason ?? "nothing");
+}
+
+// 3c. Nonsense in the address is still refused before any socket exists.
+const badRequest = await fetch("http://127.0.0.1:4400/ws?mode=nonsense");
+check("an address the relay cannot parse never becomes a socket", badRequest.status === 400, `${badRequest.status}`);
 
 // 4. Guest traffic reaches the host and nobody else.
 g1.ws.send(msg(MSG.INPUT_BATCH, 3, 2));
@@ -112,16 +132,14 @@ const reseated = back.control[0] as { t: string; slot: number };
 check("the dropped player walks back into the same seat", reseated?.slot === 0, `${reseated?.slot}`);
 
 let stranger = "";
-try {
+{
   const other = await connect(`${BASE}?mode=join&code=${code}`);
-  await wait(150);
-  const st = other.control[0] as { slot: number };
-  stranger = String(st?.slot);
+  await wait(200);
+  const st = (other.control[0] ?? {}) as { t?: string; slot?: number; reason?: string };
+  stranger = st.t === "refused" ? (st.reason ?? "refused") : `seated in slot ${String(st.slot)}`;
   other.ws.close();
-} catch {
-  stranger = "refused";
 }
-check("a full room refuses a fourth", stranger === "refused" || stranger === "undefined", stranger);
+check("a full room turns a fourth player away", stranger === "room_full", stranger);
 
 // 10. Health endpoint.
 const health = (await (await fetch("http://127.0.0.1:4400/health")).json()) as {

@@ -67,6 +67,15 @@ const PORT = Number(Bun.env.RELAY_PORT ?? 4400);
 const SWEEP_INTERVAL_MS = 5_000;
 
 /**
+ * Close code used after a refusal has been spoken.
+ *
+ * Application close codes live in 4000-4999. 4000 is the client's own "I quit" code, so a refusal
+ * takes 4001. The reason itself travels in the control frame; the code just keeps the two apart in
+ * logs and in anything watching the socket from outside.
+ */
+const CLOSE_REFUSED = 4001;
+
+/**
  * Codes and seat tokens come from the OS, not from `Math.random`.
  *
  * A seat token is what proves "I am the player who was in this seat" after a tunnel ate the
@@ -96,6 +105,14 @@ interface ConnData {
   connId: number;
   /** Set once the socket is open, so a close on a connection that never seated does nothing. */
   seated: boolean;
+  /**
+   * Why this connection was refused a seat, or null when it got one.
+   *
+   * A refused connection is still upgraded, told the reason on the control channel and then closed.
+   * The HTTP status a browser or React Native returns for a failed WebSocket handshake is not visible
+   * to the code that opened it, so refusing before the upgrade would leave every client guessing.
+   */
+  refusal: string | null;
 }
 
 type Socket = import("bun").ServerWebSocket<ConnData>;
@@ -404,11 +421,18 @@ const server = Bun.serve<ConnData, never>({
     const connId = nextConnId++;
     const seated = admit(connId, wanted);
     if (seated === null) {
-      return Response.json({ error: joinRefusal(joinResult.status) }, { status: 409 });
+      const reason = joinRefusal(joinResult.status);
+      // Upgrade anyway, purely so the reason can be spoken on a channel the client can actually read.
+      // No seat was taken, so there is nothing to clean up if the client hangs up first.
+      const refused = srv.upgrade(req, {
+        data: { connId, seated: false, refusal: reason } satisfies ConnData,
+      });
+      if (refused) return undefined;
+      return Response.json({ error: reason }, { status: 409 });
     }
 
     const upgraded = srv.upgrade(req, {
-      data: { connId, seated: true } satisfies ConnData,
+      data: { connId, seated: true, refusal: null } satisfies ConnData,
     });
     if (upgraded) return undefined;
 
@@ -422,6 +446,12 @@ const server = Bun.serve<ConnData, never>({
     perMessageDeflate: false,
 
     open(ws) {
+      if (ws.data.refusal !== null) {
+        // Say why, then go. Nothing is registered, so the close handler has nothing to undo.
+        sendControl(ws, { t: "refused", reason: ws.data.refusal });
+        ws.close(CLOSE_REFUSED, ws.data.refusal);
+        return;
+      }
       sockets.set(ws.data.connId, ws);
       const room = registry.roomOf(ws.data.connId);
       if (room === null) {
