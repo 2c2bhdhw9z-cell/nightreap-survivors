@@ -1295,9 +1295,33 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
     (32.0ms p99 / 33.7ms worst) were measured with the broken maths and are slightly optimistic.** p50
     and p95 are essentially unaffected and the gate passed with margin, so no decision changes — but
     re-measure the tail on the REVVL the next time the phone is in hand.
-- Host migration, drop-out grace, rejoin.
-- **Still outstanding in this phase:** the real WebSocket relay and room codes, render-side prediction so
-  a guest's own thumb feels instant, and host migration.
+- ~~**Rooms, codes, matchmaking and relay routing**~~ — **DONE (logic).** Six-character codes chosen so
+  nothing can be misheard read aloud (no O/0, I/1, S/5), typed forgivingly — lowercase, spaces and dashes
+  all resolve to the same room. Seats are held, not freed, when someone drops: 45 seconds, reclaimable
+  only with a private token issued at join that never leaves the owner's device, because freeing instantly
+  turns every tunnel into a lost run. Quitting frees the seat at once. A held seat counts as full.
+  Losing the host promotes the lowest live seat, and a room outlives everyone leaving as long as one seat
+  is still held. Public matchmaking has no queue object at all — the rooms *are* the queue, matched on
+  exact party size, oldest room first; friends-first fill is just handing the code to join. Rooms are
+  reaped on silence (2 min), emptiness (20s) and absolute age (6h), because a six-hour room is a leak,
+  not a run.
+- ~~**The relay cannot read the game**~~ — **DONE.** Byte 3 of every message header is now the
+  destination — a slot number, or "everyone". The relay reads four bytes and forwards; it never opens a
+  body and cannot tell a spawn from a damage number. Each message type has exactly one legal sender role,
+  so a modified guest forging host decisions is dropped at the door, and a guest's only possible
+  destination is the host — there is no message any guest can construct that reaches another guest.
+  Routing writes into a caller-owned decision record: 200,000 messages routed, heap moved 0.0kb. This is
+  cheap defence, **not** the ladder's defence — that stays mandatory server-side replay revalidation.
+- **Found and fixed here:** the room-code alphabet contained `8` twice, so one character would have been
+  twice as likely as every other, forever. The test now counts the letters. Protocol version went 2 -> 3
+  because byte 3 changed meaning.
+- **Decided here:** the relay cannot live in the web package — the dev server does no WebSocket upgrades
+  and the production server file is template-managed. It becomes a separate thin Bun process that imports
+  the tested room/routing logic; all judgement stays in the tested modules, the shim holds none.
+- Host migration client-side, drop-out grace, rejoin.
+- **Still outstanding in this phase:** the WebSocket transport itself (relay process + client link),
+  host-migration handling on the client, the rejoin flow, and render-side prediction so a guest's own
+  thumb feels instant.
 - RN co-op lobby with the full 1–4 flow; 4× HUD; palette swaps; shared XP + batch level-up; downs and
   revives; per-player-count scaling.
 - **Remote-config gate** so co-op ships locked.

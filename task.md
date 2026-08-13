@@ -1329,3 +1329,48 @@ it just paid for itself twice.
 
 Ratio after this pass: the foundation went from nothing to slightly more test than code. The project
 overall sits at roughly one test line for every 1.7 lines of game — comfortably inside your rule.
+
+
+## Online co-op, the matchmaking half — plain English
+
+**What got built:** the part of online co-op that gets four phones into the same run. Not the
+playing-together part (that was already done) — the finding-each-other part.
+
+**Room codes.** Every co-op room gets a six-character code you can read out loud over voice or text.
+The letters were chosen so nothing can be misheard or mistyped: no O and no 0, no I and no 1, no S
+and no 5. Typing it wrong in the obvious ways still works — lowercase is fine, spaces are fine,
+dashes are fine. "ab-cd ef" opens the same room as "ABCDEF". There are 729 million possible codes,
+so two rooms will never collide in practice.
+
+**A bug the tests caught.** The list of allowed letters had the number 8 in it twice. Nothing would
+have crashed, but the 8 would have shown up in codes twice as often as every other character — a
+small, permanent, invisible unfairness in something meant to be random. Fixed, and there is now a
+test that counts the letters so it can never come back.
+
+**Dropping is not quitting.** If your phone loses signal or a call comes in, your seat is held for
+45 seconds and only you can take it back — the game hands your phone a private key when you sit
+down, and it never leaves your phone. Come back inside 45 seconds and you are in your own seat, in
+the same run. If you deliberately hit leave, the seat frees immediately, because holding it would
+block a friend from joining for no reason. A held seat counts as full: someone who dropped four
+seconds ago outranks a stranger who queued one second ago.
+
+**Losing the host does not end the party.** One player's phone is the referee for the run. If that
+player leaves, the next player in slot order takes over the job and everyone keeps playing. The room
+only truly dies when every seat is genuinely empty — if even one person never chose to leave, the
+room waits for them.
+
+**The server cannot read a word of what players send.** This is deliberate. Each message carries
+four bytes at the front saying, in effect, "this one goes to player 3" or "this one goes to
+everybody". The server reads those four bytes and forwards. It never opens the rest. It cannot tell
+a chat line from a damage number from an enemy spawn. That keeps the server dumb and cheap, and it
+means there is no place on our side where game contents pile up.
+
+**Cheating shut down at the door.** Every kind of message has exactly one kind of player allowed to
+send it. Only the referee phone may announce damage, deaths and spawns. Only a regular player may
+send their own stick input. Nobody but the server itself may announce that the referee changed. If a
+modified phone tries to send something that is not its to send, the server throws it away without
+even looking at it. And a regular player's message has exactly one possible destination — the
+referee — so there is no message anyone can build that reaches another player directly.
+
+**Cost:** 200,000 messages routed through this in a row and memory did not move at all. That matters
+because this code runs on every single packet, for every player, sixty times a second.
