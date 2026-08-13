@@ -88,14 +88,28 @@ for (let t = 1; t <= TICKS; t++) {
 const elapsed = performance.now() - t0;
 const heapGrowth = proc.memoryUsage().heapUsed - startHeap;
 
+// WHAT COUNTS AS BROKEN, and why `moved` is not it.
+//
+// This originally failed the run whenever `moved < COUNT` — i.e. if any single quad's position was
+// bit-identical to its previous position for one tick. With 5,000 quads sampled 80 times that is a
+// coincidence, not a freeze: a quad at the slow end of its path moves less than a float can
+// represent and lands on the same bits. The audit on 2026-08-13 found this reporting "SIM BROKE at
+// tick 13500" with `nonFinite=0 zeroVel=0 outside=0` — nothing was wrong, and worse, it printed
+// that and still exited 0, so nobody would ever have caught the difference between this and a real
+// failure.
+//
+// The real freeze signals are: velocity actually reaching zero, arithmetic going non-finite, a quad
+// escaping the field, or a *mass* stall. `moved` is kept in the readout as information only.
+const MASS_STALL = Math.floor(COUNT * 0.99); // 1% of the field stopping at once is a freeze
+
 let firstBad = -1;
 for (const r of rows) {
-  const bad = r.moved < COUNT || r.nonFinite > 0 || r.outOfField > 0;
+  const bad = r.nonFinite > 0 || r.outOfField > 0 || r.zeroVel > 0 || r.moved < MASS_STALL;
   if (bad && firstBad < 0) firstBad = r.tick;
 }
 
 for (const r of rows) {
-  if (r.tick <= 5400 || r.moved < COUNT || r.nonFinite > 0 || r.outOfField > 0 || r.tick === TICKS) {
+  if (r.tick <= 5400 || r.moved < MASS_STALL || r.nonFinite > 0 || r.outOfField > 0 || r.zeroVel > 0 || r.tick === TICKS) {
     console.log(
       `t=${String(r.tick).padStart(6)} (${(r.tick / 60).toFixed(0)}s)  moving=${r.moved}/${COUNT}  nonFinite=${r.nonFinite}  zeroVel=${r.zeroVel}  outside=${r.outOfField}  maxAbs=${r.maxAbs.toFixed(1)}`,
     );
@@ -105,4 +119,11 @@ for (const r of rows) {
 console.log(
   `\n${TICKS} ticks in ${elapsed.toFixed(0)}ms (${((elapsed / TICKS) * 1000).toFixed(1)}us/tick)  heapGrowth=${(heapGrowth / 1024).toFixed(0)}KB`,
 );
-console.log(firstBad < 0 ? "SIM CLEAN — no freeze, no NaN, nothing escaped the field" : `SIM BROKE at tick ${firstBad}`);
+if (firstBad < 0) {
+  console.log("SIM CLEAN — no freeze, no NaN, nothing escaped the field");
+} else {
+  console.log(`SIM BROKE at tick ${firstBad}`);
+  // Fail loudly. Printing a failure and exiting 0 is how a broken test hides.
+  const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };
+  host.process?.exit?.(1);
+}

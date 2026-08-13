@@ -23,6 +23,72 @@ arcanas. Stat names, evolution logic, wave structure, and UI layout language sta
 
 ---
 
+## Where we actually are — status of record
+
+*Audited 2026-08-13 against the code, the tests and git, not against memory. This block and the
+per-phase status lines below are the only place a phase is declared open or closed. If this section
+and anything further down disagree, this section wins and the other place is a bug to fix.*
+
+| Phase | Status |
+| --- | --- |
+| **Phase 0** — foundation + renderer go/no-go | **Closed**, with 3 items carried forward (below). Gate A passed on the REVVL. |
+| **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
+| **Phase 2** — co-op | **In progress.** Save/restore, autosave, lockstep, resync, rooms, matchmaking and the relay process are done and tested. Client transport, host-migration handling, lobby UI and dev menu v2 are not. |
+| **Phases 3–8** | Not started. |
+
+### Carried forward from Phase 0 — real, not blocking
+
+1. **Remote-config scaffolding does not exist yet.** No module reads a server-side feature flag. It
+   was listed as a Phase 0 deliverable. Nothing needs it until co-op ships locked, the dev-menu kill
+   switch goes live, or Chaos Sandbox Day — so it is genuinely deferrable, but it is *not* done and
+   the log previously implied it was. **Latest it can slip: the end of Phase 2**, because co-op
+   shipping locked behind a flag is the whole reason it was scheduled early.
+2. **Append-only event-log scaffolding does not exist yet.** Same story: listed in Phase 0, no code.
+   Needed before anything server-side grants, bans or revokes. **Latest it can slip: Phase 3**, when
+   the first real server writes appear.
+3. **The Phase 0 UI mock approval loop never happened.** The deliverable was a static HUD mock and
+   one menu mock for a yes/no. Two dev-menu mocks were generated and never approved, and no HUD or
+   menu mock was ever made. The mock-first rule is intact — no unapproved screen code was written —
+   but the approval itself is outstanding and Phase 3 depends on it.
+
+### Carried forward from Phase 1 — two gate items not proven
+
+4. **"A 5-minute run is genuinely fun."** Cannot be self-verified; it needs the player to play. You
+   chose to wait for real art (Phase 4). Recorded as **deferred to Phase 4 by your decision**, not
+   as passed.
+5. **"800 enemies hold 60fps"** is proven *indirectly only.* Two real measurements exist: the
+   simulation costs about 0.37ms per tick with 800 enemies on the field (headless, CPU only), and a
+   synthetic 5,176-quad storm held 56fps warm on the REVVL. Neither is the actual game drawing 800
+   actual enemies on that phone. The headroom implied by both is large, so this is expected to pass —
+   but it is **unmeasured**, and it needs one native run on the REVVL. Do this the next time there is
+   a build on the phone anyway; do not schedule a trip for it.
+
+### Fixed by the audit itself
+
+6. **The 20-minute simulation soak was announcing a failure and exiting successfully.** It flagged a
+   freeze whenever any one of 5,000 quads held a bit-identical position for a single tick, which is a
+   float rounding coincidence at that scale, not a freeze — and it printed `SIM BROKE` while returning
+   success, so no automated gate could ever have told a real failure from this. Failure is now defined
+   by the signals that mean something (velocity actually zero, non-finite arithmetic, escaping the
+   field, or a 1%-of-field mass stall) and the process now exits non-zero when it fails. It reports
+   `SIM CLEAN` over 72,000 ticks with zero heap growth. **Standing rule this establishes: a check that
+   can print a failure and still exit 0 is not a check.**
+7. **`bench/soak.test.ts` and the relay's live socket test had no way to be run by name** from the
+   repo root, so neither was in anyone's routine. Now `bun run test:soak` and `bun run test:relay`.
+8. **The README's command table and folder map** never mentioned `test:game`, `packages/mobile/game/`,
+   or `packages/relay/`, and the README did not point at the status section. All corrected.
+
+### Also outstanding, tracked elsewhere and not forgotten
+
+- Enemy sheet 01 and the two dev-menu mocks have never had a yes/no.
+- `net/` sits at roughly one line of test per 2.7 lines of code, under the standing 1:2 rule. The
+  debt is in the older network files. **Agreed fix: one catch-up sweep at the end of Phase 2.**
+- The relay runs locally on port 4400 and has **no production home chosen yet.**
+- When a held seat finally expires, the players still in the room are told nothing. Known, unsolved.
+- The four-real-devices co-op gate can only be run on hardware and has not been run.
+
+---
+
 ## Progression ceilings — the level cap answer
 
 Researched against the original so our curve matches.
@@ -1185,6 +1251,8 @@ devices is newer — and that guess is how people lose 200 hours.
 ## Phases
 
 ### Phase 0 — Foundation + renderer go/no-go
+
+**Status: CLOSED** (2026-08-11). Gate A passed on the REVVL. Three items carried forward — see *Where we actually are*: remote config, the event log, and the HUD/menu mock approval.
 - **GitHub connected and first push**, before anything else is worth losing.
 - `app_init` → `/home/user/nightreap-survivors`; `design.md` (palette, pixel font, UI language).
 - **UI mock approval loop starts here:** static HUD + one menu mock as images for your yes/no, iterated
@@ -1222,6 +1290,8 @@ devices is newer — and that guess is how people lose 200 hours.
   approval, and a confirmed answer on how you'll test natively from here on.
 
 ### Phase 1 — Vertical slice + dev menu + modifier stack
+
+**Status: CLOSED on the engine** (2026-08-12). Two gate items are not proven and are carried forward, not passed — see *Where we actually are*: "genuinely fun" (deferred to Phase 4 by your decision) and 800 enemies at 60fps rendered on the REVVL (unmeasured).
 - Player movement, 8-direction anim, camera follow, tiled scrolling background.
 - Enemy spawner + wave table, walk-at-player steering with separation.
 - 6 weapons covering every archetype: melee sweep, homing, directional volley, arcing physics,
@@ -1237,6 +1307,8 @@ devices is newer — and that guess is how people lose 200 hours.
   work **and stack together** with zero mode-specific sim code.
 
 ### Phase 2 — Co-op, proven on the small slice
+
+**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, and a real WebSocket relay process verified by a live socket test. Not started: the client's connection to that relay, host migration on the player's side, the co-op lobby screens, dev menu v2, and where the relay actually gets hosted.
 Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren't.
 - WebSocket relay, room codes, public matchmaking by party size, friends-first fill.
 - Host authority, authoritative event bus, **rolling correction sweep**, ~2-tick input delay with local
@@ -1367,6 +1439,8 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
   four-real-devices version of this gate still has to be run on hardware.
 
 ### Phase 3 — Progression spine
+
+**Status: NOT STARTED.**
 - Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
 - Character select; 8 characters with distinct stats, starting weapons, growth quirks.
 - Unlock system, save/load with migrations, account-backed sync.
@@ -1385,6 +1459,8 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
   builds to real testers.
 
 ### Phase 4 — Content, part 1 (this is the launch content set)
+
+**Status: NOT STARTED.**
 Sized to the launch-smaller recommendation. If you'd rather launch with everything, Phases 4 and 5
 simply merge and launch moves later.
 - **~15 weapons + their evolutions and unions** (weapon level 8 + maxed passive + chest).
@@ -1402,6 +1478,8 @@ simply merge and launch moves later.
   density; the Reaper can be killed and the White Hand ending fires correctly.
 
 ### Phase 5 — Content, part 2 (ships as post-launch updates)
+
+**Status: NOT STARTED.**
 Everything here is still in scope and still gets built — it just doesn't hold launch hostage. Because
 content is versioned data with a content-lint in CI, these ship as ordinary updates.
 - **Up to 40+ characters**, including secret unlocks with joke-tier abilities.
@@ -1413,6 +1491,8 @@ content is versioned data with a content-lint in CI, these ship as ordinary upda
   clean, and existing saves migrate without loss.
 
 ### Phase 6 — Endgame, modes, and meta
+
+**Status: NOT STARTED.**
 The Phase 1 modifier stack means this is mostly data records and UI.
 - **Limit Break** + the **stat hard-cap table** + **Golden Egg equivalents** with the float32 easter egg.
 - **Endless** with per-cycle Curse escalation, plus **Ascension tiers**.
@@ -1441,11 +1521,15 @@ The Phase 1 modifier stack means this is mostly data records and UI.
   another device. A deliberately cheated run gets caught and Reaped.
 
 ### Phase 7 — Polish
+
+**Status: NOT STARTED.**
 - Screen shake, hit flash, damage numbers, level-up flourish, death slow-mo, CRT/vignette shader.
 - Settings: damage numbers, flashing, joystick size/position, gamepad, language scaffold.
 - **Gate:** `bun run lint`, `bun run typecheck`, `bun run build` all clean.
 
 ### Phase 8 — Audio, monetization, compliance, and launch
+
+**Status: NOT STARTED.**
 - **Audio, all original:** stage music loops, ~40 SFX, ducking and mixing, audio settings, the 12-bell
   death knell. Generated in-sandbox; nothing sourced.
 - **Monetization live:** rewarded-ad integration (revive / bonus gold, player-initiated, disableable),

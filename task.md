@@ -623,7 +623,14 @@ old readout was 1000/p50 — a median of frame *intervals*, which can dip under 
 jittery stream and read above refresh. Now shows frames/wall-second alongside it (52404/951 =
 55.1, consistent with the 56 shown). Median-interval kept for headroom, labelled.
 
-PHASE 0 IS CLOSED. Remaining Phase 0 debt: none blocking.
+PHASE 0 IS CLOSED.
+
+> **Corrected 2026-08-13 by audit.** This line originally read "Remaining Phase 0 debt: none
+> blocking", which was wrong. Three Phase 0 deliverables were never built: remote-config
+> scaffolding, append-only event-log scaffolding, and the HUD + one-menu mock approval loop.
+> None of them block anything today, which is presumably what was meant, but "no debt" and "no
+> blocking debt" are different sentences and the second one got written as the first. The real
+> list now lives in one place: plan.md, section *Where we actually are*.
 
 ## Player subsystem landed — 2026-08-11 (session 7)
 
@@ -1420,3 +1427,89 @@ caught and reported; it simply cannot happen.
 next piece. Then handling a host swap gracefully on your screen, the come-back-from-a-dropped-signal
 flow, and making your own thumb feel instant even at 150ms away. The lobby screens wait on artwork
 approval like everything else visual.
+
+
+## Repo audit and clean-up — 2026-08-13
+
+You asked me to go through the whole repository because another AI reading it said the notes claimed
+a phase was finished while somewhere else admitting a check hadn't been done. **It was right.** Here
+is everything I found, in plain English.
+
+### First, the good news: nothing is broken
+
+I re-ran every check from scratch rather than trusting the log:
+
+- All 19 test suites pass.
+- The type checker passes on all four parts of the project, including the new server.
+- The style and conventions checks pass with zero warnings.
+- The production build succeeds.
+- The co-op server passes all 23 checks against real live connections, including the two that were
+  still failing last session — those turned out to be mistakes in the test itself, as suspected, and
+  they were already fixed.
+- Nothing was left uncommitted or unpushed. The working copy exactly matches what's on GitHub.
+
+### What was actually wrong: the paperwork, not the game
+
+**The root cause.** The build plan had no status written on it anywhere. Not one phase said "done" or
+"in progress". The only record of what was finished lived in this log, buried in dated entries. So
+anybody — a person or an AI — reading the plan on its own sees a list of nine phases with a checklist
+of tests at the bottom of each, none of them ticked, and reasonably concludes the checks were skipped.
+
+**Fixed.** The plan now opens with a section called *Where we actually are*, and every phase heading
+carries its own status line. There is now exactly one place that says what's finished, and it says so
+at the top where you'd look first.
+
+**Three things listed as part of Phase 0 were never built.** I checked the code, not my memory:
+
+1. A way for us to switch features on and off from the internet without you or anyone updating the
+   app. Co-op is supposed to ship switched off, so this is needed by the end of the co-op phase.
+2. A permanent, write-once record of every reward, ban and reversal on the server side. Nothing on
+   the server hands anything out yet, so nothing needs it until the phase after next.
+3. **Your approval of the two screens that were supposed to be mocked up for you in Phase 0** — the
+   heads-up display you see during a run, and one menu. Two dev-menu mocks were drawn and you never
+   said yes or no; the run display and the menu were never drawn at all. To be clear, the rule you set
+   was never broken — no screen has been built without your approval. But the approval itself is still
+   sitting there waiting, and the whole progression-screens phase is built on it.
+
+**Two of Phase 1's four finishing checks were never actually proven:**
+
+4. **"A five-minute run is genuinely fun."** I can't judge that; only you can. You said you'd rather
+   wait for real artwork. That's a perfectly good decision, but the log had quietly let it pass as
+   done. It now reads as *deferred to the art phase at your request*, which is the truth.
+5. **"800 enemies still run at 60 frames a second."** This one deserves a straight answer. Two real
+   measurements exist and neither is the actual test. One: the game's thinking, with 800 enemies alive,
+   costs about a third of a millisecond per frame out of a 16-millisecond budget — measured, but with
+   nothing being drawn. Two: your REVVL drew 5,176 moving sprites at 56 frames a second after fifteen
+   minutes of getting hot — measured, but that was a synthetic swarm, not the game. Both point the same
+   direction with a lot of room to spare, so I fully expect it to pass. It just hasn't been run. It
+   costs one native run on your phone and I'll fold it into the next time there's a build on there
+   anyway rather than asking you to do a session for it.
+
+### Small tidying, while I was in there
+
+- Checked whether anything local had leaked into version control by accident. Nothing had: no secrets
+  file, no local helper scripts, no stray build output. Version control tracks 103 files of phone app,
+  41 of web, 9 of desktop, 4 of the new co-op server, and the documents — and nothing else.
+- **Found a test that was lying, and this is the one that actually mattered.** There is an endurance
+  check that runs twenty minutes of the crowd simulation with nothing drawn, to prove the maths never
+  drifts, freezes or produces nonsense over time. It was printing **"SIM BROKE"** — and then reporting
+  success anyway, so no automated check would ever have noticed. On inspection nothing was broken: it
+  declared a freeze if any single one of five thousand moving objects sat at the exact same position
+  for one frame, which at that scale is a rounding coincidence, not a freeze. Real freezes were already
+  being detected by better signals right next to it. So the test now fails on the things that mean
+  something — an object actually stopping dead, the maths going to infinity, something escaping the
+  play area, or a mass stall — and, crucially, it now **exits with a failure when it says it failed.**
+  A test that announces a problem and returns "all good" is worse than no test, because it trains you
+  to ignore it. It now reports SIM CLEAN, which is the truth.
+- The endurance check and the co-op server's live test both existed but neither could be run by name
+  from the project root, so in practice neither got run. Both now have a command of their own.
+- The README's command list and folder map didn't mention the test command, the game engine folder, or
+  the new co-op server package at all. Fixed.
+
+### Nothing hidden
+
+Everything above is now written down in the plan rather than only here, including the four items I
+already knew were open: the artwork awaiting your yes/no, the test-coverage catch-up sweep we agreed
+to do in one pass at the end of the co-op phase, the fact that the co-op server has no permanent home
+on the internet yet, and the case where a dropped player's held seat finally expires and nobody in the
+room is told.

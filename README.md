@@ -10,9 +10,15 @@ A mobile-first survivors-style action roguelike. Original art, original names, 1
 | [task.md](./task.md) | The working log. What was built, what broke, what was measured on real phones. |
 | [design.md](./design.md) | The look. Colour palette, fonts, spacing, motion rules, screen list. |
 
+**Current status lives in [plan.md](./plan.md), in the section *Where we actually are*.** That is the
+one place a phase is declared open or closed. Do not infer status from anywhere else in the documents.
+
 Where things live: the game engine is `packages/mobile/game/` (all the maths and rules, no screen
 code). The screens are `packages/mobile/app/`. Nothing in the engine is allowed to know screens
-exist, which is what lets the same game run on Android, iPhone and a browser.
+exist, which is what lets the same game run on Android, iPhone and a browser. The co-op relay is a
+separate tiny server in `packages/relay/` — it forwards four header bytes between players and never
+reads a message body; the rules it enforces live in `packages/mobile/game/net/` so both sides share
+one tested copy.
 
 ---
 
@@ -34,6 +40,9 @@ call these named verbs. Never rename or remove them; their internals are free to
 | `bun run lint` | Releases + conventions + oxlint |
 | `bun run typecheck` | Typecheck all packages |
 | `bun run db:generate` / `db:migrate` / `db:push` | Database workflows |
+| `bun run test:game` | The engine test suite — 19 headless suites, no phone needed. Must be green before any deliver. |
+| `bun run test:relay` | Live socket test of the co-op relay. Needs the relay running (`bun run --cwd packages/relay dev`). |
+| `bun run test:soak` | 20 minutes of simulated quad-storm time, headless. Not the Endless soak (that arrives with Endless in Phase 6). Kept out of `test:game` for runtime. |
 
 Fixed conventions the contract relies on: server listens on `$PORT` (default `4200`), health
 endpoint at `/api/health`, secrets in the root `.env`, pm2 app name `web-app`.
@@ -45,6 +54,9 @@ Scripts prefixed `internal:` are template maintenance helpers, not part of the c
 ```
 .env                         Secrets (gitignored), loaded via Vite's loadEnv
 packages/
+  relay/                     Co-op WebSocket relay (own Bun process, port 4400)
+    src/server.ts            Admission, seats, header-only routing, /health
+    test/smoke.ts            Live socket test — bun run test:relay
   web/                       Unified server (API + web frontend via Vite)
     vite.config.ts           Vite 7 config — loads .env, sets port, registers plugins
     index.html               Frontend HTML entry
