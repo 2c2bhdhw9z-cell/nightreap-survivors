@@ -111,6 +111,30 @@ export class DevGate {
     return this.evaluate(id) === DENY.NONE;
   }
 
+  /**
+   * Why a panel would refuse, without opening it. Exists so the menu can *explain* a greyed row using
+   * the gate's own answer instead of re-deriving one from the channel and the flags. `reachable()` is
+   * defined as this returning NONE, so the two can never disagree.
+   */
+  probe(id: string): DenyReason {
+    return this.evaluate(id);
+  }
+
+  /**
+   * The taint bits opening this panel *would* apply, without opening it. The menu labels its rows from
+   * this rather than reading `panel.taint` itself, so "this row costs you the ladder" is the gate's own
+   * arithmetic — including the read-only zeroing and the channel and chaos bits. A menu that computed
+   * this from the spec would be a second opinion, and the two would eventually disagree.
+   */
+  wouldTaint(id: string): number {
+    const panel = findDevPanel(id);
+    if (!panel) return 0;
+    let bits = panel.readOnly ? 0 : panel.taint;
+    if (bits !== 0 && this.ctx.channel === "internal") bits |= TAINT.DEV_CHANNEL;
+    if (this.ctx.flags.chaosSandboxActive) bits |= TAINT.CHAOS_EVENT;
+    return bits;
+  }
+
   private evaluate(id: string): DenyReason {
     const panel = findDevPanel(id);
     if (!panel) return DENY.UNKNOWN_PANEL;
@@ -135,9 +159,8 @@ export class DevGate {
       return { granted: false, reason, panel, taintApplied: 0 };
     }
 
-    let bits = panel.readOnly ? 0 : panel.taint;
-    if (bits !== 0 && this.ctx.channel === "internal") bits |= TAINT.DEV_CHANNEL;
-    if (this.ctx.flags.chaosSandboxActive) bits |= TAINT.CHAOS_EVENT;
+    // Same arithmetic the menu labels its rows with, computed in exactly one place.
+    const bits = this.wouldTaint(id);
 
     let applied = 0;
     if (bits !== 0 && this.ctx.runActive && this.sink) {
@@ -181,6 +204,23 @@ export class DevGate {
 
   history(): readonly DevAuditEntry[] {
     return this.audit;
+  }
+
+  /** Whether there is a run to taint at all. */
+  get runInProgress(): boolean {
+    return this.ctx.runActive && this.sink !== undefined;
+  }
+
+  /**
+   * Taint bits the live run has actually accumulated, or 0 when there is no run.
+   *
+   * Exists so a status line can distinguish "no run", "clean run" and "tainted run" instead of
+   * collapsing them. The menu previously derived its badge from `publicLadderOpen()`, which is false on
+   * every internal build and so read "RUN TAINTED" permanently — a warning that is always on is a
+   * warning nobody reads, and the first genuinely spoiled run would have looked identical.
+   */
+  runTaint(): number {
+    return this.runInProgress ? (this.sink?.tainted ?? 0) : 0;
   }
 
   private record(entry: DevAuditEntry): void {

@@ -32,6 +32,15 @@ export default function Index() {
         <Text style={styles.ctaText}>PLAY</Text>
       </Link>
 
+      {/*
+        The dev menu. Now the front door to every instrument: the loose links below it are the two pages
+        that predate the shell and are kept only because muscle memory is worth more than tidiness while
+        we are still measuring things every day.
+      */}
+      <Link href="/dev/menu" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>DEV MENU</Text>
+      </Link>
+
       <Link href="/dev/bench" style={styles.ctaAlt}>
         <Text style={styles.ctaAltText}>GATE A BENCH</Text>
       </Link>

@@ -2513,3 +2513,58 @@ working it found a real gap in the new tests, which is now fixed.
 
 This is the second time a check has been caught passing because it could not fail. The rule holds: a check
 that cannot fail is not a check.
+
+## The dev menu is one screen now (13 Aug)
+
+Until today the tools were loose pages — you reached the performance bench by knowing its address. That
+is fine for two tools and useless for fifty-three, and it also meant the security check was done by
+whoever remembered to do it.
+
+Now there is one front door. It lists every tool, in ten tabs, with a search box.
+
+**What it refuses to make up.** Not one number on that screen is typed in. The picture you approved said
+"SEARCH ALL 41 PANELS"; there are 53 now, and the screen counts them when it draws. Same for the
+read-only figure in the footer. A number written down once is a number that is wrong later.
+
+**What a locked tab gives away.** On a public build, four tabs are locked. The tabs still show — the menu
+is the same shape everywhere, so nothing about a build is revealed by its layout — but their contents are
+never listed, counted, searchable, or reachable by pinning a favourite. That last bit matters: a search
+box is the easiest way to enumerate something you were not meant to see, and the tool names are the
+sensitive part. "Flag / ban / restore an account" describes our moderation surface to anyone reading it.
+
+**Greyed-out means the gate said no.** A row's greyed state is not this screen's opinion, it is the
+security gate's own answer, and so is the reason printed next to it. Any second calculation is a chance
+to be more generous than the gate, and only one of the two would be right.
+
+**Tools that will cost you a score say so before you tap.** Opening a tool taints the run on open, not on
+use, so the warning has to arrive first. That label is also the gate's arithmetic rather than a rule
+copied onto the screen — which turned out to matter, because during a chaos sandbox even a
+look-only tool taints, and a copied rule would have said otherwise.
+
+**Buttons that go nowhere.** 39 of the 53 tools are planned but not written. Tapping one says "page not
+built yet" instead of doing nothing, because a dead button in your own tools costs an hour of debugging
+the wrong thing. And the list of which pages exist now lives somewhere the tests can see it, so if a tool
+is ever renamed, the build fails instead of the menu growing a button to nowhere.
+
+**Two things I got wrong and fixed.**
+
+First, the status line said "RUN TAINTED" permanently on our own builds. It was reading "do these runs
+count for the public leaderboard", which is always no on an internal build. A warning that is always on
+is a warning nobody reads, and the first genuinely spoiled run would have looked identical. It now says
+one of four things: no run, clean run, tainted run, or dev ladder.
+
+Second, the leak-hunting tool has existed since the very first performance test and was never in the
+list — so the screen that is supposed to show every tool could not show it. Added.
+
+**Proof.** 77 checks. Twelve deliberate breakages tried. Ten were caught on the first attempt; two
+escaped, and both were real holes rather than false alarms:
+
+- One test assumed a tool could be switched off while its tab stayed open. No tool currently uses that
+  switch, so the case did not exist in real data and the test proved nothing. It now constructs the case
+  deliberately, and asserts that it found exactly one greyed row so it can never quietly go hollow again.
+- The other assumed a look-only tool might wrongly claim to cost you a score. No look-only tool has any
+  cost attached, so breaking that rule changed nothing. Rather than patch the test, I changed the design
+  so the screen asks the gate instead of working it out — now the mistake cannot be written.
+
+After both fixes: twelve breakages, twelve caught. I also found the shared pattern our test files use to
+report failure could silently pass if the host had no way to exit, and closed that.

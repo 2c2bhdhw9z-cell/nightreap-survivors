@@ -34,7 +34,7 @@ and anything further down disagree, this section wins and the other place is a b
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 2 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
 | **Phase 2** — co-op | **Closed on the build list.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, the lobby screen, the four-player HUD (rules and drawn), dev menu v2's co-op panels, remote config, and the dev menu wired to it are also done and tested. The networking test-ratio catch-up sweep is **done**, which was the last item on the Phase 2 build list. The only thing still outstanding is relay hosting, which is **decided but not built** (Cloudflare, built when four real phones need it). |
-| **Phase 3** — progression spine | **Started 2026-08-13.** Three items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. Nothing else in Phase 3 has begun. |
+| **Phase 3** — progression spine | **Started 2026-08-13.** Four items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. The dev-menu shell is built: one screen, ten tabs, search, and every count derived rather than written down. Nothing else in Phase 3 has begun. |
 | **Phases 4–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -1759,12 +1759,43 @@ it was proven alive by the same trick: the build fails on that error now. The mo
 immediately found a genuine gap in the new tests. This is the second time a check has been caught passing
 because it could not fail, so the standing rule stands: a check that cannot fail is not a check.
 
+**Fourth item done: the dev-menu shell.** Until now the panels were loose routes reached by knowing their
+address — workable at two tools, useless at fifty-three, and it left the gate being consulted by whoever
+remembered to consult it. There is now one screen: ten tabs, a search box, pinned favourites, and every
+panel opened through `devgate.ts` and nothing else.
+
+Three properties are worth stating because they are the ones a screen normally gets wrong. Every count is
+derived at draw time, so the mock's "41 panels" becoming 53 changed nothing and the next panel added will
+change nothing either. A locked tab is visible but never enumerable — no rows, no count, no search hit, no
+favourite — because the tab strip staying the same shape on every build reveals nothing while the panel
+labels reveal our whole moderation surface. And a row's greyed state and the reason beside it are the
+gate's own answers rather than a second calculation off the tier and the flags, which is the only way the
+greyed UI cannot drift from the real decision.
+
+Two mistakes found and fixed in the same session. The status badge read "RUN TAINTED" permanently on every
+internal build, because it was derived from public-ladder eligibility, which is always false there — a
+warning that is always on is a warning nobody reads, and a genuinely spoiled run would have looked
+identical. It now distinguishes no run, clean run, tainted run and dev ladder, and the four states are
+tested as all reachable. Separately, the leak isolation harness had existed since Gate A without ever being
+in the registry, so the one screen meant to list every tool could not list it; it is appended now, ids being
+append-only.
+
+77 checks against 348 lines of rules, which clears the 1:2 rule comfortably; the screen itself is a drawing
+file and holds no logic. Twelve deliberate breakages tried and **two escaped on the first attempt, both real
+holes rather than false alarms** — one test assumed a flag-gated panel inside an open tab, a state no panel
+in the registry actually produces, so it proved nothing and now constructs the case and asserts it found
+exactly one greyed row; the other assumed a read-only panel might wrongly claim to taint, which no data
+could produce, and rather than patch the test the row label was changed to ask the gate so the mistake
+becomes unwritable. Twelve of twelve caught afterwards. A related hole was closed in the shared test-failure
+pattern, which could exit silently if the host exposed no exit function.
+
 - Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
 - Character select; 8 characters with distinct stats, starting weapons, growth quirks.
 - Unlock system, save/load with migrations, account-backed sync.
 - Destructible props; pickups: floor chicken, bomb, magnet, coins.
 - Treasure chests with tiered rolls and the **evolution roll** rule.
 - **Anti-cheat v1:** run upload, server-side replay validation, heuristic flags.
+- ~~**Dev menu shell screen** — the tab strip from the approved mock.~~ **DONE 2026-08-13.**
 - **Web admin page v1 (break-glass):** account lookup, per-account and per-feature kill switches,
   flag/ban/shadow-segregate, revoke a run, restore an account from snapshot. Same actions mirrored into
   the private dev build. Every action written to the append-only log with actor and timestamp.

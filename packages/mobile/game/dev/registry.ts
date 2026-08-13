@@ -505,6 +505,25 @@ export const DEV_PANELS: readonly DevPanelSpec[] = [
     taint: 0,
     readOnly: true,
   }),
+
+  /* ---- appended: tools that already existed as loose routes ------------------------------------ */
+  /**
+   * The leak isolation harness. It has existed as a standalone page since Gate A and was never in the
+   * registry, which meant the one screen that is supposed to list every dev tool could not list it.
+   * Appended rather than slotted in beside the other perf panels because ids and order are append-only.
+   *
+   * Not read-only: it swaps rendering modes and multiplies per-frame work, so a run it touches is not a
+   * run anybody should score.
+   */
+  defineDevPanel({
+    id: "perf.leak",
+    label: "Leak isolation harness",
+    group: "perf",
+    tier: "self",
+    taint: TAINT.DEV_TOGGLE,
+    readOnly: false,
+    notes: "Strips GL work away mode by mode to find who is eating memory. Instrument, not a UI.",
+  }),
 ];
 
 const BY_ID = new Map<string, DevPanelSpec>();
