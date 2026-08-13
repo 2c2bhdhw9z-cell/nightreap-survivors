@@ -1,0 +1,337 @@
+{
+  "size": 32,
+  "icons": [
+    {
+      "name": "icon-01",
+      "row": 0,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 358,
+      "speckledPixelsFixed": 24,
+      "colours": [
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-02",
+      "row": 0,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 238,
+      "speckledPixelsFixed": 6,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-03",
+      "row": 0,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 401,
+      "speckledPixelsFixed": 11,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-04",
+      "row": 0,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 311,
+      "speckledPixelsFixed": 3,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline"
+      ]
+    },
+    {
+      "name": "icon-05",
+      "row": 0,
+      "col": 4,
+      "size": 32,
+      "drawnPixels": 355,
+      "speckledPixelsFixed": 12,
+      "colours": [
+        "bloodBright",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-06",
+      "row": 0,
+      "col": 5,
+      "size": 32,
+      "drawnPixels": 619,
+      "speckledPixelsFixed": 12,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-07",
+      "row": 1,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 268,
+      "speckledPixelsFixed": 1,
+      "colours": [
+        "bonePale",
+        "clothLight",
+        "cyan",
+        "gold",
+        "leather",
+        "outline"
+      ]
+    },
+    {
+      "name": "icon-08",
+      "row": 1,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 178,
+      "speckledPixelsFixed": 14,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-09",
+      "row": 1,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 248,
+      "speckledPixelsFixed": 15,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-10",
+      "row": 1,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 451,
+      "speckledPixelsFixed": 13,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-11",
+      "row": 1,
+      "col": 4,
+      "size": 32,
+      "drawnPixels": 540,
+      "speckledPixelsFixed": 24,
+      "colours": [
+        "clothDark",
+        "clothLight",
+        "cyan",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-12",
+      "row": 1,
+      "col": 5,
+      "size": 32,
+      "drawnPixels": 364,
+      "speckledPixelsFixed": 24,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-13",
+      "row": 2,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 413,
+      "speckledPixelsFixed": 23,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-14",
+      "row": 2,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 325,
+      "speckledPixelsFixed": 13,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothLight",
+        "cyan",
+        "gold",
+        "leather",
+        "outline",
+        "rot"
+      ]
+    },
+    {
+      "name": "icon-15",
+      "row": 2,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 335,
+      "speckledPixelsFixed": 13,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline"
+      ]
+    },
+    {
+      "name": "icon-16",
+      "row": 2,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 416,
+      "speckledPixelsFixed": 13,
+      "colours": [
+        "clothDark",
+        "clothLight",
+        "outline",
+        "rot"
+      ]
+    },
+    {
+      "name": "icon-17",
+      "row": 2,
+      "col": 4,
+      "size": 32,
+      "drawnPixels": 605,
+      "speckledPixelsFixed": 14,
+      "colours": [
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-18",
+      "row": 2,
+      "col": 5,
+      "size": 32,
+      "drawnPixels": 285,
+      "speckledPixelsFixed": 11,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    }
+  ]
+}

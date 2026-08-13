@@ -1,0 +1,288 @@
+{
+  "size": 32,
+  "icons": [
+    {
+      "name": "icon-01",
+      "row": 0,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 268,
+      "speckledPixelsFixed": 11,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-02",
+      "row": 0,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 376,
+      "speckledPixelsFixed": 15,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-03",
+      "row": 0,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 359,
+      "speckledPixelsFixed": 11,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bonePale",
+        "clothDark",
+        "gold",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-04",
+      "row": 0,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 408,
+      "speckledPixelsFixed": 2,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothLight",
+        "cyan",
+        "rot",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-05",
+      "row": 0,
+      "col": 4,
+      "size": 32,
+      "drawnPixels": 351,
+      "speckledPixelsFixed": 11,
+      "colours": [
+        "bloodBright",
+        "bone",
+        "bonePale",
+        "gold"
+      ]
+    },
+    {
+      "name": "icon-06",
+      "row": 0,
+      "col": 5,
+      "size": 32,
+      "drawnPixels": 410,
+      "speckledPixelsFixed": 3,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "outline",
+        "rot"
+      ]
+    },
+    {
+      "name": "icon-07",
+      "row": 1,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 357,
+      "speckledPixelsFixed": 0,
+      "colours": [
+        "bone",
+        "bonePale",
+        "gold",
+        "outline"
+      ]
+    },
+    {
+      "name": "icon-08",
+      "row": 1,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 328,
+      "speckledPixelsFixed": 10,
+      "colours": [
+        "bloodBright",
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot"
+      ]
+    },
+    {
+      "name": "icon-09",
+      "row": 1,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 216,
+      "speckledPixelsFixed": 13,
+      "colours": [
+        "bloodDark",
+        "clothDark",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-10",
+      "row": 1,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 183,
+      "speckledPixelsFixed": 3,
+      "colours": [
+        "bonePale",
+        "cyan",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-11",
+      "row": 1,
+      "col": 4,
+      "size": 32,
+      "drawnPixels": 312,
+      "speckledPixelsFixed": 4,
+      "colours": [
+        "clothDark",
+        "clothLight",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-12",
+      "row": 1,
+      "col": 5,
+      "size": 32,
+      "drawnPixels": 426,
+      "speckledPixelsFixed": 13,
+      "colours": [
+        "clothDark",
+        "clothLight",
+        "rot",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-13",
+      "row": 2,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 399,
+      "speckledPixelsFixed": 6,
+      "colours": [
+        "bonePale",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-14",
+      "row": 2,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 211,
+      "speckledPixelsFixed": 2,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "leather",
+        "outline"
+      ]
+    },
+    {
+      "name": "icon-15",
+      "row": 2,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 287,
+      "speckledPixelsFixed": 25,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-16",
+      "row": 2,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 193,
+      "speckledPixelsFixed": 17,
+      "colours": [
+        "bone",
+        "bonePale",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-17",
+      "row": 2,
+      "col": 4,
+      "size": 32,
+      "drawnPixels": 403,
+      "speckledPixelsFixed": 4,
+      "colours": [
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-18",
+      "row": 2,
+      "col": 5,
+      "size": 32,
+      "drawnPixels": 460,
+      "speckledPixelsFixed": 14,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bonePale",
+        "clothDark",
+        "gold",
+        "outline",
+        "slate"
+      ]
+    }
+  ]
+}

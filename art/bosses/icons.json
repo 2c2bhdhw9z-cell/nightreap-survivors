@@ -1,0 +1,151 @@
+{
+  "size": 32,
+  "icons": [
+    {
+      "name": "icon-01",
+      "row": 0,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 633,
+      "speckledPixelsFixed": 19,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "clothDark",
+        "clothLight",
+        "leather",
+        "outline"
+      ]
+    },
+    {
+      "name": "icon-02",
+      "row": 0,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 601,
+      "speckledPixelsFixed": 69,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-03",
+      "row": 0,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 767,
+      "speckledPixelsFixed": 53,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-04",
+      "row": 0,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 712,
+      "speckledPixelsFixed": 54,
+      "colours": [
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-05",
+      "row": 1,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 720,
+      "speckledPixelsFixed": 58,
+      "colours": [
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-06",
+      "row": 1,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 780,
+      "speckledPixelsFixed": 56,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-07",
+      "row": 1,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 651,
+      "speckledPixelsFixed": 54,
+      "colours": [
+        "bloodDark",
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate",
+        "violet"
+      ]
+    },
+    {
+      "name": "icon-08",
+      "row": 1,
+      "col": 3,
+      "size": 32,
+      "drawnPixels": 725,
+      "speckledPixelsFixed": 49,
+      "colours": [
+        "bone",
+        "clothDark",
+        "clothLight",
+        "cyan",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate",
+        "violet"
+      ]
+    }
+  ]
+}
