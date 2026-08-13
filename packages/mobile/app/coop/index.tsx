@@ -23,6 +23,8 @@ import { Chunk, Cobble, Header, Mortar, Pips, Slab, StoneText } from "@/componen
 import { CHAT_KIND, LOBBY_SEAT, MAX_NAME_CHARS, START_BLOCK, SYSTEM_LINE, type ChatLine, type LobbySeatRow } from "@/game/lobby/lobby";
 import { LOBBY_STATUS, LobbySession, createAdmission, type LobbyView } from "@/game/lobby/session";
 import { JOIN_MODE, isCompleteCode, normalizeCode, webSocketFactory, type JoinMode } from "@/game/net/transport";
+import { FLAG } from "@/game/config/remote-config";
+import { useFlag } from "@/hooks/use-flag";
 import { useSettings } from "@/hooks/use-settings";
 import { relayConfigured, relayUrl } from "@/lib/relay-url";
 import { useRouter } from "expo-router";
@@ -175,7 +177,12 @@ function PartyEntry({
 }): ReactNode {
   const [size, setSize] = useState(2);
   const [code, setCode] = useState("");
-  const configured = relayConfigured();
+  // Two separate reasons co-op can be unavailable, and the player is told which one it is.
+  // The relay address is a build-time fact; the flag is a live switch we can throw without a store update.
+  const hasRelay = relayConfigured();
+  const enabled = useFlag(FLAG.COOP);
+  const configured = hasRelay && enabled;
+  const unavailable = hasRelay ? (enabled ? "" : "Co-op is not switched on yet.") : "Co-op is unavailable in this build.";
   const tidy = normalizeCode(code);
 
   return (
@@ -193,7 +200,7 @@ function PartyEntry({
       {configured ? null : (
         <Slab style={styles.reasonSlab}>
           <StoneText tone="crimson" size={12} align="center">
-            Co-op is unavailable in this build.
+            {unavailable}
           </StoneText>
         </Slab>
       )}

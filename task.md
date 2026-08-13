@@ -2125,3 +2125,69 @@ two-players-over-a-real-connection test and the build are all green.
 
 Next on this: remote config, which co-op has to ship behind, and deciding where the relay is actually
 hosted.
+
+## Remote control over what the game does — done and tested
+
+The game can now be told what to switch on and off without shipping a new version to the store. That
+matters for three things already promised: multiplayer has to launch switched off and be turned on when
+it's ready, the developer menu has to be switchable off in case someone finds the way in, and Chaos
+Sandbox Day has to be turned on for a weekend and off again.
+
+How it behaves, in plain terms:
+
+The game ships with every one of these switches off except one - posting a score to a leaderboard, which
+is the only one whose absence would be a bug rather than a decision. That off-by-default state is exactly
+the shape the game is submitted to the store in, so a submission can never accidentally go out with
+unfinished features live.
+
+A set of instructions from us is taken all at once or not at all. Half-applied instructions would be a
+version of the game nobody ever tested.
+
+Instructions only ever move forward. Each set carries a number, and the game refuses anything that isn't
+newer than what it's already holding. Without that, an old copy sitting in an internet cache could turn a
+feature back on after we'd killed it.
+
+Turning something off always beats turning it on. If we kill a feature and some other part of the same
+instructions says a particular player should have it, the kill wins. Blocking a specific account beats
+everything.
+
+Instructions go out of date on purpose. After fifteen minutes the game wants to ask again. After a week
+without hearing from us at all, it stops obeying the old instructions entirely and goes back to how it
+shipped. That's a deliberate trade: a player who goes a week offline loses features rather than being
+stuck forever on a rule we've since changed.
+
+Switching a feature on gradually is stable, not a coin flip. Each player lands in a fixed slot from 0 to
+99 based on their account and which feature it is, and that slot never changes. So raising "give it to 10%
+of players" to 25% only ever *adds* players - nobody ever has a feature taken away by a number going up.
+Different features shuffle players differently, so the same unlucky group isn't the test audience for
+everything.
+
+A switch this build has never heard of is off. The game can't honour an instruction it has no code for.
+
+An old copy of the game can be stopped from turning something on, but never stopped from turning something
+off. If someone is on a version too old for a feature, the instruction to enable it is ignored - but a
+kill switch still reaches them.
+
+None of this is a security measure and it isn't pretended to be. Somebody who modifies the app can flip
+their own copy's switches. Everything that actually matters - whether a leaderboard score is real, whether
+you're allowed into a multiplayer room, whether you receive an item - is decided on our side, not theirs.
+If flipping a switch in a modified copy would win a cheater something, the feature is built wrong.
+
+Also built: the little server route that hands the instructions out (it sends the same thing to everybody
+and lets each phone work out what applies to it), the phone-side glue that remembers the last instructions
+it got so a fresh launch on a plane still behaves correctly, and the one-line way any screen asks whether
+a feature is on. Multiplayer's entry screen is now behind that switch, and it tells the player which of the
+two reasons applies rather than one vague message.
+
+158 checks in the new test file. Five deliberate breaks were tried against it - accepting an older set of
+instructions, letting a per-player allowance outrank a kill, ignoring the week-long expiry, changing the
+maths behind the gradual rollout, and inverting the account block. Four were caught immediately. The fifth
+was not: changing the rollout maths passed, which means the tests were checking that players were spread
+out but not that they'd land in the *same* places tomorrow. Those exact positions are now written into the
+test, so any change to that arithmetic breaks loudly instead of silently reshuffling everyone mid-rollout.
+
+Typecheck, lint, the whole game suite, the live server test, the two-players-over-a-real-connection test
+and the build are all green.
+
+Next on this: hooking the developer menu's own config page up to it, and deciding where the multiplayer
+server actually lives.

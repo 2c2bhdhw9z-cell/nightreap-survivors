@@ -9,6 +9,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { OneDollarStatsProvider } from "../lib/__analytics";
 import { isWeb, startWebSafeArea } from "../lib/__web-safe-area";
+import { startRemoteConfig } from "../lib/remote-config-host";
 import appJson from "../app.json";
 
 const queryClient = new QueryClient();
@@ -19,6 +20,9 @@ const hostname = applicationId ? `${applicationId}-mobile` : "localhost";
 export default function RootLayout() {
   useEffect(() => {
     if (isWeb) startWebSafeArea();
+    // The cached config, then the server's. Both are best-effort: with neither, every gate stays shut,
+    // which is the state this build was submitted to the store in.
+    void startRemoteConfig();
   }, []);
 
   return (
