@@ -148,7 +148,11 @@ export class FrameTimer {
     this.sorted.set(this.samples.subarray(0, this.count));
     const view = this.sorted.subarray(0, this.count);
     view.sort();
-    const i = Math.min(this.count - 1, Math.max(0, Math.round(p * (this.count - 1))));
+    // Nearest-rank, NOT Math.round(p * (count - 1)). The rounded form systematically
+    // under-reports the tail: with 60 samples, p99 rounds to index 58 and can miss the single
+    // worst frame at index 59 entirely — which is the one thing a p99 exists to show.
+    // ceil(p * count) - 1 guarantees at least p of the samples are at or below the result.
+    const i = Math.min(this.count - 1, Math.max(0, Math.ceil(p * this.count) - 1));
     return view[i];
   }
 

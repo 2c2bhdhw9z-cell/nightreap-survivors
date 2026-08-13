@@ -1278,3 +1278,54 @@ Typing and the moderation machine come in the final stage, alongside the cosmeti
 punishment has to attach to an account and accounts don't exist until then. It also ships behind the
 same remote switch as everything else, so if it goes badly it can be turned off worldwide in seconds
 without an app update.
+
+
+## The foundation finally got tested, and it was hiding two real bugs (2026-08-13)
+
+You told me to stick to the one-test-line-for-every-two-lines-of-game rule. So I measured the whole
+project, module by module, instead of guessing. Everything cleared the bar except one thing, and it
+was the worst possible thing to have missed: the foundation. The handful of tiny, boring pieces that
+every other part of the game sits on top of — the maths, the random-number generator, the pool that
+hands out slots for enemies and bullets, the grid that decides which things are near each other, and
+the clock that keeps the game running at a steady speed. Thousands of tests everywhere else, zero
+there. It was the only part of the project with nothing checking it.
+
+So I wrote the tests. About a thousand lines of them, in fifteen groups. And they immediately caught
+two genuine bugs that had been sitting in the game the whole time.
+
+**Bug one: recycled slots eventually went bad and the game quietly stopped being able to spawn
+things.** Every enemy, bullet and pickup lives in a numbered slot, and each slot gets reused
+thousands of times over a long run. To make sure a slot that has been reused isn't confused with its
+previous occupant, each one carries a little counter alongside its number — like a name plus a
+version. The space set aside for that counter was one digit too big, and once a slot had been reused
+about two thousand times the combined number overflowed into territory the game reads as "invalid".
+From that moment the game refused to believe that slot's own ID card. Worse, the routine that hands
+a slot back to the pool checks the ID card first — so it just silently did nothing, and the slot was
+gone for good. Slot by slot the pool would drain, and deep into a long session enemies and bullets
+would simply stop appearing, with no crash and no error to explain it. Fixed by giving the counter
+one digit less room, which is still far more headroom than any run needs.
+
+Why no soak test caught it: most of the game returns slots by number rather than by ID card, and
+that path never checks the ID. Only the paths that use the ID card were affected, so nothing broke
+loudly.
+
+**Bug two: the speed measurements were hiding the worst stutters.** When I report performance I
+don't report the average — an average will happily tell you everything is smooth while one frame in
+a hundred is a visible hitch. That's what "99th percentile" numbers are for: they show the bad
+frames, not the typical ones. The code picking which sample counts as the 99th was rounding in the
+wrong direction, so with sixty frames measured it would land one sample short and skip right over the
+single worst frame. The exact thing the number exists to expose was the thing it could miss. Now
+fixed to always round toward the bad end.
+
+**What this means for the numbers you've already seen.** The performance figures from the big device
+test — the ones that passed comfortably on your phone — were measured with the broken maths, so the
+worst-case column was slightly rosier than reality. The typical and mid-range figures are unaffected,
+and the test passed with plenty of room, so nothing about that decision changes. But I'll re-measure
+on the phone next time we run it so the tail numbers are honest.
+
+Neither bug would have shown up in a five-minute play session. One needs hours, the other only shows
+up in a measurement you'd have no reason to distrust. That's the argument for the ratio you set, and
+it just paid for itself twice.
+
+Ratio after this pass: the foundation went from nothing to slightly more test than code. The project
+overall sits at roughly one test line for every 1.7 lines of game — comfortably inside your rule.

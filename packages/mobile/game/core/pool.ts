@@ -24,7 +24,25 @@ export type Handle = number;
 
 const SLOT_BITS = 20;
 const SLOT_MASK = (1 << SLOT_BITS) - 1; // 1,048,575 slots max
-const GEN_MASK = 0xfff; // 4096 generations before wraparound
+
+/**
+ * 11 bits — 2048 generations before wraparound.
+ *
+ * WHY NOT 12, WHICH WOULD FIT THE WORD
+ * A handle is `slot | (generation << 20)`. Twelve generation bits reach bit 31, which is the sign
+ * bit, so every handle issued once a slot had been recycled 2048 times came out NEGATIVE. `isAlive`
+ * rejects anything negative on sight, so those handles were dead the moment they were created, and
+ * `free(handle)` — which checks `isAlive` first — silently did nothing and leaked the slot forever.
+ * Slots recycle constantly (a projectile lives about a second), so a long session would slowly
+ * starve its own pool, and the only symptom would be enemies quietly failing to spawn hours in.
+ * Caught by `core.test.ts` section 8, which churns one slot 20,000 times.
+ *
+ * Eleven bits keeps every handle a positive int32. 2048 generations is far more than enough: a
+ * handle is only held for the lifetime of the thing holding it — a projectile tracking a target for
+ * a second or two — and one specific slot cannot recycle 2048 times inside that window.
+ */
+const GEN_BITS = 11;
+const GEN_MASK = (1 << GEN_BITS) - 1;
 
 export function handleSlot(h: Handle): number {
   return h & SLOT_MASK;

@@ -1275,6 +1275,26 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
 - **Measured here:** hosting four players costs the host about 24KB a second up, each guest about 8KB a
   second down. Confirm redundancy was cut from a full second of history to 0.4s once the numbers were in
   front of us — it still sends every record eight times over, and it halved the host's upload.
+- ~~**The foundation gets its own tests**~~ — **DONE.** The test-to-code ratio was measured module by
+  module and everything cleared the bar except the one place it mattered most: the five small primitives
+  every other system stands on — fixed-point maths, the seeded RNG, the entity pool, the near-neighbour
+  grid, and the fixed-step clock — had thousands of tests around them and none inside them. Now ~1050
+  lines across fifteen groups, including a pinned fingerprint of the whole angle table (so nobody can
+  change the trig values two clients must agree on without the build saying so) and a run with every
+  unspecified `Math` function replaced by a throw, proving the simulation never touches one.
+- **Found and fixed here — two real bugs, neither findable by playing:**
+  - **Entity handles rotted after ~2048 recycles of a slot.** A handle packs the slot number with a
+    reuse counter; the counter was given one bit too many and overflowed into the sign bit, so every
+    handle for a heavily recycled slot came back reading as invalid. `free(handle)` checks validity
+    first, so it became a silent no-op and leaked the slot **permanently**. The pool would drain slot by
+    slot over hours until spawning quietly stopped — no crash, no error. Undetected because most callers
+    free by slot number, a path with no validity check.
+  - **`FrameTimer.percentile` under-reported the tail.** It used `round(p * (count - 1))`, which with 60
+    samples puts p99 at index 58 and can skip the single worst frame entirely — the one thing a p99
+    exists to expose. Now nearest-rank, `ceil(p * count) - 1`. **Consequence: the Gate A tail figures
+    (32.0ms p99 / 33.7ms worst) were measured with the broken maths and are slightly optimistic.** p50
+    and p95 are essentially unaffected and the gate passed with margin, so no decision changes — but
+    re-measure the tail on the REVVL the next time the phone is in hand.
 - Host migration, drop-out grace, rejoin.
 - **Still outstanding in this phase:** the real WebSocket relay and room codes, render-side prediction so
   a guest's own thumb feels instant, and host migration.
