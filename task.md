@@ -2568,3 +2568,49 @@ escaped, and both were real holes rather than false alarms:
 
 After both fixes: twelve breakages, twelve caught. I also found the shared pattern our test files use to
 report failure could silently pass if the host had no way to exit, and closed that.
+
+---
+
+## The break-glass page (2026-08-13)
+
+**What it is.** A private web page — one player at a time — that shows everything ever done to them and a
+fixed list of things you can do about it. It is the page you open at two in the morning when somebody has
+been wrongly banned, or somebody has been cheating and needs stopping.
+
+**The list of buttons is not written on the page.** The page asks the server what can be done, and the
+server answers with the fifteen actions, the boxes each one needs filling in, whether it can be undone, and
+the warning it carries. So adding a new action later shows up correctly with no work on the page, and an
+old page open in a browser cannot invent an action the server has never heard of. The page sends the *name*
+of a button — never a raw number — so it cannot express a line the record does not understand.
+
+**There is no un-ban button, and that is on purpose.** Lifting a punishment means undoing the line that
+made it. The ban stays on the record with whoever filed it, their reason and the date, greyed out and struck
+through, with the lift written underneath in its own line with its own reason. A cheerful "un-ban" row would
+let a ban quietly vanish from the story. A lift can itself be put back if the appeal turns out to be a lie.
+
+**Everything needs a real reason.** Eight characters and at least two different characters, so leaning on
+one key is refused. The box empties after each action, so the next thing you file cannot inherit the last
+excuse. The server stamps the time and records that it was an operator, so neither can be faked from the
+page.
+
+**The numbers are worked out, not stored.** Gold, marks, strikes, muted, banned, flagged — all added up from
+the player's own history the moment you look. If a stored total ever disagreed with that panel, the panel
+would be the one telling the truth.
+
+**The secret.** The page asks for the operator secret, keeps it in that one browser tab, and forgets it when
+you lock the page or close the tab. It is deliberately not a cookie, because a cookie is something the
+browser attaches to everything by itself — which would mean any page in the app could reach these endpoints.
+Tested: a request from that same tab that does not deliberately carry the secret is still refused.
+
+**One thing deliberately left out.** Switches to turn game features off. Those belong to a settings document
+rather than to anything about a person, and settings are still handed out from the server's own environment.
+A button that wrote "feature turned off" while the feature stayed on would be a record that lies. It lands
+with the stored settings document.
+
+**Proof.** 67 checks driving a real browser against a real server and a throwaway copy of the record: unlock
+with the wrong secret and be turned away, look a player up, fail to file a mute six different ways, file it,
+lift it, watch it grey out, put it back, file a note that cannot be undone, wipe a chat record clean, look up
+a player who does not exist. Then six deliberate breakages — hiding a lifted line, removing the reason rule,
+letting a blank form through, leaving the secret in long-term storage, serving the button list without the
+door, and letting one player's history leak another's — each one caught. Screenshot in
+`screens/admin-page-v1.png`.

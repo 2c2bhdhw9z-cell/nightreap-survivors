@@ -34,7 +34,7 @@ and anything further down disagree, this section wins and the other place is a b
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 2 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
 | **Phase 2** — co-op | **Closed on the build list.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, the lobby screen, the four-player HUD (rules and drawn), dev menu v2's co-op panels, remote config, and the dev menu wired to it are also done and tested. The networking test-ratio catch-up sweep is **done**, which was the last item on the Phase 2 build list. The only thing still outstanding is relay hosting, which is **decided but not built** (Cloudflare, built when four real phones need it). |
-| **Phase 3** — progression spine | **Started 2026-08-13.** Four items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. The dev-menu shell is built: one screen, ten tabs, search, and every count derived rather than written down. Nothing else in Phase 3 has begun. |
+| **Phase 3** — progression spine | **Started 2026-08-13.** Five items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. The dev-menu shell is built: one screen, ten tabs, search, and every count derived rather than written down. The break-glass admin page is built and driven end to end in a real browser: a fixed list of fifteen things an operator can do, a player's standing worked out from their history rather than read from a total, and lifting a punishment done by undoing the line that made it. Per-feature kill switches are deliberately still outstanding and travel with the stored settings document. Nothing else in Phase 3 has begun. |
 | **Phases 4–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -1796,9 +1796,25 @@ pattern, which could exit silently if the host exposed no exit function.
 - Treasure chests with tiered rolls and the **evolution roll** rule.
 - **Anti-cheat v1:** run upload, server-side replay validation, heuristic flags.
 - ~~**Dev menu shell screen** — the tab strip from the approved mock.~~ **DONE 2026-08-13.**
-- **Web admin page v1 (break-glass):** account lookup, per-account and per-feature kill switches,
-  flag/ban/shadow-segregate, revoke a run, restore an account from snapshot. Same actions mirrored into
-  the private dev build. Every action written to the append-only log with actor and timestamp.
+- ~~**Web admin page v1 (break-glass):** account lookup, flag/ban/shadow-segregate, revoke a run,
+  restore an account from snapshot, every action written to the append-only log with actor, reason and
+  timestamp.~~ **DONE 2026-08-13.** Built as a closed list of fifteen actions rather than a free-form
+  form, so the page cannot express a line the record does not understand — it sends the name of a button,
+  never a raw event number. The list, the inputs each action needs, whether it can be undone and the
+  warning it carries are all computed by the server, so a new action appears correctly without the page
+  changing, and the page cannot offer an action an older server has never heard of. There is **no un-ban,
+  un-flag or un-mute button**: lifting a punishment means undoing the line that made it, which leaves the
+  punishment on the record with its author, reason and date, greyed out with the lift underneath. A lift
+  can itself be put back. Every write needs a real sentence as its reason (eight characters, two distinct
+  characters, so a held-down key is refused) and the reason box is emptied after each write so nothing
+  inherits the last excuse. The server decides the time and the actor kind. Unexpected inputs are refused,
+  never quietly dropped. The operator secret lives in one browser tab and is never a cookie, so a request
+  that does not deliberately carry it is refused even from that tab. Verified by 67 checks driving a real
+  browser against a real server on a throwaway database, and six deliberate breakages, each caught.
+  **Still outstanding: per-feature kill switches.** Settings are still handed out from the server's own
+  environment, and a button that wrote "feature turned off" while the feature stayed on would be a record
+  that lies — so it lands with the stored settings document, and is called out again in Phase 6.
+  Screenshot: `screens/admin-page-v1.png`.
 - **Both test tracks go live here.** Internal TestFlight (no review needed) → external TestFlight
   (triggers Beta App Review — our early 4.1 read) → Play closed testing track, recruiting ~18–20 testers.
   The build only needs to be playable, not finished.

@@ -23,7 +23,7 @@ import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { buildAction, catalogueFaults, describeActions, REFUSE_NAMES } from "../events/actions";
 import { adminOnly, log } from "../events/door";
-import { ACTOR, BAD_NAMES, EVENT_NAMES } from "../events/log";
+import { ACTOR, BAD_NAMES, EVENT_NAMES, REVERSIBLE } from "../events/log";
 import { APPEND } from "../events/store";
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -84,6 +84,10 @@ const account = adminOnly
         restores: row.restores,
         groupId: row.groupId,
         undoneBySeq: undoneBy.get(row.seq) ?? 0,
+        // Answered here, from the log's own reversible set, so the screen never carries a second copy of
+        // the rule. A screen that decided this for itself would eventually offer to lift something the log
+        // will not lift, and the operator would learn that only after typing out a reason.
+        undoable: REVERSIBLE.has(row.kind),
       })),
     };
   });
