@@ -83,6 +83,8 @@ export const MODIFIER_SOURCE = {
   chaos: 6,
   /** One level of a passive item the player picked up in-run. */
   passive: 7,
+  /** Ranks bought in the PowerUps shop, carried into every run the account starts. */
+  powerUp: 8,
 } as const;
 
 export type ModifierSource = (typeof MODIFIER_SOURCE)[keyof typeof MODIFIER_SOURCE];

@@ -133,11 +133,30 @@ export function createPayoutReceipt(): PayoutReceipt {
   };
 }
 
-/** Reset a receipt to refuse, without having touched the save. */
+/**
+ * Reset a receipt to refuse, without having touched the save.
+ *
+ * Every figure is wiped, not just the flags. The results screen reads its numbers straight off the
+ * receipt, and receipts are reused between runs, so leaving a previous run's total behind would show the
+ * player gold that was never banked.
+ */
 function refuse(out: PayoutReceipt, code: PayoutCode, field: string): PayoutReceipt {
   out.code = code;
   out.badField = field;
   out.banked = false;
+  out.goldEarned = 0;
+  out.goldBefore = 0;
+  out.goldAfter = 0;
+  out.goldLifetimeAfter = 0;
+  out.goldCapped = false;
+  out.lifetimeCapped = false;
+  out.timeCapped = false;
+  out.newBestTime = false;
+  out.bestSecondsBefore = 0;
+  out.bestSecondsAfter = 0;
+  out.runsStartedAfter = 0;
+  out.runsCompletedAfter = 0;
+  out.secondsPlayedAfter = 0;
   return out;
 }
 

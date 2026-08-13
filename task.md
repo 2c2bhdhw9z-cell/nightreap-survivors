@@ -2647,3 +2647,50 @@ unlocks are later items on the list; an empty frame would be worse than the spac
 
 Correction to an earlier note: the web admin page **is** built and committed (`eee6b7d`). What is still
 outstanding there is pushing the database column and extending two test files.
+
+---
+
+## 2026-08-13 — art finished, payout hardened, shop finished
+
+**All the art is done.** Ten more sheets generated in one batch and cut into sprites: 12 playable
+characters, 18 more enemies, 8 bosses, 18 weapons, 18 hit-and-shot effects, 12 ground floors, 18 arcana
+symbols, 18 achievement badges, 12 scenery objects, 15 more menu parts. With the earlier six sets that is
+**238 sprites**, every one checked to sit on the locked colours, none blank. One sheet came back as five
+columns instead of six and was cut as five rather than regenerated. Nothing in the art list is waiting on
+anything now.
+
+**The payout maths had a real bug and it is fixed.** Receipts are reused between runs. When a payout was
+refused, the flags were reset but the *numbers* were not — so a refused payout still had the previous
+run's gold sitting on it, and the results screen reads its figures straight off that receipt. A player
+could have been shown a total that was never banked. Now every figure is wiped on refusal, and there is a
+check that proves it by banking a good run, then refusing a bad one on the same receipt and requiring
+every single field to be back to zero.
+
+Two other gaps in the payout checks were closed while proving the tests can fail: nothing tested the
+cheat-flag field, and nothing tested that a refusal cleared the numbers. Nine deliberate breaks were made
+to the payout code; nine were caught. One break was a no-op — it removed a wipe that happens anyway a few
+lines earlier — so it is not a hole.
+
+**The shop is finished.** 31 upgrades. Prices climb with each rank. Locked rows say what has to happen.
+A purchase is all or nothing — every refusal is proved to leave both the gold and the ranks exactly as
+they were. A refund returns every coin, proved by buying a long spread and requiring the balance back to
+the penny. A rank the game cannot explain is refused rather than clamped into something plausible.
+
+**How purchases reach a run, and why it matters.** The shop stores ranks; the simulation reads stats. The
+bridge between them was untested, so it now has its own check. It does not go straight into the stats: it
+goes through the same mechanism modes, stages and ascension tiers already use, because that mechanism is
+what gets written into a replay and into a co-op join message. If the shop wrote straight into the stats,
+then a snapshot restore, a guest joining your game, and our server checking a replay would all silently
+drop your purchases — and it would have surfaced months later as "co-op runs feel weaker".
+
+The bridge check proves: every upgrade's id names exactly one set of numbers and can't be confused with a
+mode's; folding five ranks into one record gives exactly the same result as five separate records, checked
+at every rank of every upgrade; a fully bought shop still fits in the run's record budget with eight slots
+spare; and starting a run reuses one array rather than allocating. Seven deliberate breaks, seven caught —
+two of them only visible when broken together, because they back each other up.
+
+Lint, typecheck and build all clean. All four self-checks pass.
+
+**Next:** character select (8 characters with their own stats, starting weapon and growth quirk), then
+unlocks and making progress persist and sync, then destructible props and floor pickups, then chests and
+the evolution roll, then the first anti-cheat pass.

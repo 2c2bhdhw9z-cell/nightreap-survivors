@@ -61,6 +61,14 @@ export default function Index() {
         <Text style={styles.ctaAltText}>HOW TO PLAY</Text>
       </Link>
 
+      {/*
+        Also player-facing. The shipped route into the shop is the title screen, which is not built yet, so
+        it sits here alongside How to play until the real menu lands.
+      */}
+      <Link href="/shop" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>POWERUPS</Text>
+      </Link>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>How to run the real test</Text>
         {STEPS.map((step, i) => (

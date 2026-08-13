@@ -37,7 +37,24 @@
  * minutes. The portable, archival, cross-machine format is the replay, and it already exists.
  */
 
-import { MODIFIERS_BY_WIRE_ID } from "../sim/modifiers";
+import { MODIFIERS_BY_WIRE_ID, type RunModifier } from "../sim/modifiers";
+import { POWERUP_MODIFIERS_BY_WIRE_ID } from "../shop/loadout";
+
+/**
+ * Every modifier a wire id can name: the hand-written mode catalogue plus the generated shop records.
+ *
+ * Merged here rather than in either source, so neither list has to know the other exists. The two id
+ * ranges cannot overlap by construction — modes are under a hundred, shop records start at 200,000 — and
+ * the size check below is what proves that claim rather than assuming it.
+ */
+const ALL_MODIFIERS_BY_WIRE_ID: ReadonlyMap<number, RunModifier> = (() => {
+  const map = new Map<number, RunModifier>(MODIFIERS_BY_WIRE_ID);
+  for (const [id, mod] of POWERUP_MODIFIERS_BY_WIRE_ID) map.set(id, mod);
+  if (map.size !== MODIFIERS_BY_WIRE_ID.size + POWERUP_MODIFIERS_BY_WIRE_ID.size) {
+    throw new Error("a shop wire id collides with a mode wire id");
+  }
+  return map;
+})();
 import type { Run } from "../run/run";
 
 /** "NRSS" — Nightreap Survivors, snapshot. */
@@ -622,7 +639,7 @@ export function restoreRun(run: Run, bytes: Uint8Array): SnapshotError {
   // Everything above restored the *numbers*. This rebuilds the handful of things that are object
   // references rather than numbers — which modifier records are folded in, and the text on any card
   // screen that was open — from those numbers.
-  run.rehydrate(MODIFIERS_BY_WIRE_ID);
+  run.rehydrate(ALL_MODIFIERS_BY_WIRE_ID);
 
   return SNAPSHOT_ERROR.NONE;
 }

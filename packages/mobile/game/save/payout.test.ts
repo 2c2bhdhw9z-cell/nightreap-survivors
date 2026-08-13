@@ -170,6 +170,41 @@ section("a profile already holding nonsense is refused");
   check("and the run's gold is not added to it", !receipt.banked);
 }
 
+section("a refused receipt carries no numbers for a screen to show");
+{
+  // The results screen reads every figure straight off the receipt. If a refusal leaves stale or invented
+  // numbers behind, the player is shown a gold total that was never banked.
+  const reused = createPayoutReceipt();
+  const good = profile();
+  bankRun(good, run(), reused);
+  check("the receipt was filled by the good run", reused.banked === true);
+  check("  with a real total", reused.goldAfter > 0, `${reused.goldAfter}`);
+
+  const broken = profile();
+  broken.gold = -1;
+  bankRun(broken, run(), reused);
+
+  const NUMERIC = [
+    "goldEarned",
+    "goldBefore",
+    "goldAfter",
+    "goldLifetimeAfter",
+    "bestSecondsBefore",
+    "bestSecondsAfter",
+    "runsStartedAfter",
+    "runsCompletedAfter",
+    "secondsPlayedAfter",
+  ] as const;
+  for (const key of NUMERIC) {
+    check(`  ${key} is wiped back to zero`, reused[key] === 0, `${reused[key]}`);
+  }
+  const FLAGS = ["banked", "goldCapped", "lifetimeCapped", "timeCapped", "newBestTime"] as const;
+  for (const key of FLAGS) {
+    check(`  ${key} is wiped back to false`, reused[key] === false, `${reused[key]}`);
+  }
+  check("  and the refusal code survives", reused.code === PAYOUT.BAD_PROFILE, describePayout(reused.code));
+}
+
 section("a refusal leaves the profile byte-identical");
 {
   const save = profile();
@@ -261,6 +296,32 @@ section("taint accumulates and never clears");
   noTaint.everTainted = 0;
   bankRun(clean, noTaint, createPayoutReceipt());
   check("a clean run does not clear history", clean.everTainted === 0b0010, clean.everTainted.toString(2));
+
+  // The taint field is a bitfield, so it is checked separately from the totals. If that check is missing,
+  // rubbish ORs straight into the profile's permanent history and can never be cleared again.
+  const rotten = profile();
+  rotten.everTainted = Number.NaN;
+  const receiptA = bankRun(rotten, run(), createPayoutReceipt());
+  check("nonsense already in the profile's taint refuses", receiptA.code === PAYOUT.BAD_PROFILE, describePayout(receiptA.code));
+  check("  and nothing was banked", receiptA.banked === false);
+  check("  and the field is named", receiptA.badField === "everTainted", receiptA.badField);
+
+  const negative = profile();
+  negative.everTainted = -1;
+  const receiptB = bankRun(negative, run(), createPayoutReceipt());
+  check("a negative taint refuses", receiptB.code === PAYOUT.BAD_PROFILE, describePayout(receiptB.code));
+
+  const huge = profile();
+  huge.everTainted = U32_MAX + 1;
+  const receiptC = bankRun(huge, run(), createPayoutReceipt());
+  check("a taint past the ceiling refuses", receiptC.code === PAYOUT.BAD_PROFILE, describePayout(receiptC.code));
+
+  const dirtyRun = profile();
+  const badDelta = run();
+  badDelta.everTainted = Number.NaN;
+  const receiptD = bankRun(dirtyRun, badDelta, createPayoutReceipt());
+  check("nonsense taint on the run refuses too", receiptD.code !== PAYOUT.OK, describePayout(receiptD.code));
+  check("  and the profile is untouched", dirtyRun.everTainted === 0b0010, dirtyRun.everTainted.toString(2));
 }
 
 // -------------------------------------------------------- banking twice pays twice

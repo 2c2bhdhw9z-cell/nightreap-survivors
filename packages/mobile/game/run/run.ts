@@ -98,6 +98,20 @@ export interface RunConfig {
   contentVersion: number;
   /** Taint bits carried in from the dev menu before the run even starts. */
   tainted: number;
+  /**
+   * Ranks bought in the PowerUps shop, already turned into modifier records by the shop layer.
+   *
+   * Separate from `modifiers` even though both end up in the same stack, because they come from different
+   * places and mean different things: `modifiers` is what this run *is* (mode, stage, ascension), and this
+   * is what the account has permanently bought. Keeping them apart means a screen can say "your purchases
+   * are worth this much" without unpicking the mode out of the same list, and means a future rule like
+   * "this event ignores shop upgrades" is one line rather than a filter over a mixed array.
+   *
+   * They are records rather than a save file on purpose: `run.ts` knows nothing about saves, and the
+   * records carry wire ids, so the run's purchases travel into replay headers and co-op joins with
+   * everything else instead of being silently dropped there.
+   */
+  powerUps: readonly RunModifier[];
 }
 
 export const DEFAULT_RUN_CONFIG: RunConfig = {
@@ -113,6 +127,7 @@ export const DEFAULT_RUN_CONFIG: RunConfig = {
   buildId: 1,
   contentVersion: 1,
   tainted: 0,
+  powerUps: [],
 };
 
 export class Run {
@@ -258,6 +273,10 @@ export class Run {
     this.stack.clear();
     this.stack.clearLoadout();
     for (let i = 0; i < c.modifiers.length; i++) this.stack.add(c.modifiers[i]);
+    // Shop purchases join the same stack, deliberately after the run's own modifiers. Resolution is
+    // order-independent by design, so this is only about which records get dropped first if a stack ever
+    // overflows: a mode the player chose for this run matters more than a rank they bought last week.
+    for (let i = 0; i < c.powerUps.length; i++) this.stack.add(c.powerUps[i]);
     const resolved = this.stack.resolve(this.stats);
     this.flags = resolved.flags;
     if (resolved.tainted) this.tainted |= 1;
@@ -289,9 +308,16 @@ export class Run {
       for (let p = 0; p < playerCount; p++) this.weapons.grant(p, starting);
     }
 
+    // Both lists go on the wire, and the shop's records go on it for the same reason the mode's do: a
+    // snapshot restore, a joining guest and a server revalidating a replay all rebuild the stack from
+    // these numbers and nothing else. A purchase left off the wire is a purchase that quietly stops
+    // applying the moment anybody resyncs.
     let count = 0;
     for (let i = 0; i < c.modifiers.length && count < this.modifierWire.length; i++) {
       this.modifierWire[count++] = c.modifiers[i].wireId;
+    }
+    for (let i = 0; i < c.powerUps.length && count < this.modifierWire.length; i++) {
+      this.modifierWire[count++] = c.powerUps[i].wireId;
     }
     this.modifierCount = count;
 

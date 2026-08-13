@@ -59,6 +59,8 @@ import { MAX_WEAPONS, WEAPON_TYPES } from "@/game/sim/weapons";
 import { PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
 import { describeHandoff, runHandoff, runIdOf } from "@/game/save/handoff";
+import { powerUpLoadout } from "@/game/shop/loadout";
+import type { RunModifier } from "@/game/sim/modifiers";
 import { OFFERS_PER_SCREEN } from "@/game/sim/cards";
 import { MAX_PLAYERS } from "@/game/sim/player";
 import { REAPER_SECOND, TICKS_PER_SECOND } from "@/game/sim/waves";
@@ -238,6 +240,17 @@ export default function PlayScreen() {
     },
     [router, settings.save],
   );
+  /**
+   * The save and the run's shop records, held in refs for the same reason the callback above is: the render
+   * loop is built once and must always read the current save, not the one that existed when it started.
+   * The record array is reused so starting a run allocates nothing.
+   */
+  const saveRef = useRef(settings.save);
+  const powerUpsRef = useRef<RunModifier[]>([]);
+  useEffect(() => {
+    saveRef.current = settings.save;
+  }, [settings.save]);
+
   const showResultsRef = useRef(showResults);
   useEffect(() => {
     showResultsRef.current = showResults;
@@ -796,10 +809,15 @@ export default function PlayScreen() {
     const mods = [];
     if (hurryRef.current) mods.push(MOD_HURRY);
     if (hyperRef.current) mods.push(MOD_HYPER);
+    // Everything bought in the shop, read from the save and handed to the run as records. Read here, at
+    // the start of a run, rather than held somewhere: the shop can be visited between two runs, and a run
+    // that used a stale copy would be the shop appearing not to work.
+    powerUpLoadout(saveRef.current, powerUpsRef.current);
     run.begin({
       seed: seedRef.current,
       playerCount: partyRef.current,
       modifiers: mods,
+      powerUps: powerUpsRef.current,
       record: false,
     });
     stickRef.current.x = 0;
