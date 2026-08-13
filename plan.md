@@ -1405,8 +1405,24 @@ devices is newer — and that guess is how people lose 200 hours.
 
 ### Phase 2 — Co-op, proven on the small slice
 
-**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask). Not started: the co-op lobby screens, the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
+**Status: IN PROGRESS.** Done and tested: run snapshot/restore, autosave, host-confirmed lockstep, chunked resync, room codes, seats and host migration, party-size matchmaking, header-only relay routing, a real WebSocket relay process verified by a live socket test, and the client transport — reconnect policy, seat tokens, forgiving room codes, readable refusals — verified both against a fake socket with a clock we own and end to end against the real relay. Also done and tested: host migration on the player's side (promotion, demotion, drop and rejoin, seat expiry announced), render-side local movement prediction so a guest's own thumb feels instant, and the settings layer the HUD and lobby are built on — save format bumped to v2 with v1 migrated forward rather than refused, the three comfort booleans widened into 0..100 sliders, and one resolved-settings module that answers what actually happens (latin-language keyboard gate, stranger-chat ANDed with chat, battery saver that only ever trims, clamped scales, docked/undocked badge geometry, layout reset, day-two reminder ask), and the lobby rules themselves — a roster only the host may change, chat that routes guest to host to everyone so a name cannot be faked, presets that travel as ids, a bursty token-bucket rate limit, every refusal distinguishable, and a start button that refuses while a held seat is still reconnecting. Not started: the co-op lobby screens, the four-player HUD, dev menu v2's co-op panels, remote-config scaffolding, and where the relay actually gets hosted.
 
+- ~~**The lobby rules**~~ — **DONE.** The party room as a tested module, before any screen exists.
+  The host owns the roster and it is always sent whole, never as a difference — a missed difference means
+  a permanently wrong party list. A guest's ready button is a request, not an edit: it asks and waits for
+  the host's answer, which costs about fifty milliseconds and buys all four screens agreeing. Chat goes
+  guest to host to everyone, and the host throws away the sender name in the message and stamps the seat
+  the server reported, so nobody can put words in another player's mouth. There is no guest-to-guest
+  path at all. The rate limit is a bucket of five with one refilling every one and a half seconds,
+  because real conversation is bursty; presets skip the word filter but not the bucket, and a clock that
+  jumps backwards hands out nothing. Every refusal has its own answer — empty, too long, chat off,
+  blocked, too fast, not seated, bad preset — because "nothing happened when I pressed send" is the
+  classic unfixable chat bug report. Incoming text is cleaned again on arrival rather than trusted, and
+  lines are dropped as they arrive rather than at draw time, so turning chat back on reveals no backlog.
+  A seat someone is still reconnecting into blocks the start deliberately: nobody gets stranded thirty
+  seconds from returning, and giving up on them is a kick, not an accident. The host never presses
+  ready — pressing start is the readiness. The seed is drawn once on the host and sent, so there is
+  exactly one answer to which run this is.
 - ~~**The client transport**~~ — **DONE.** One connection to one relay, with the reconnect behaviour a
   phone actually needs. A quit says goodbye and frees the seat at once; a drop says nothing, holds the
   seat for the 45-second grace window, and retries with growing, jittered backoff so four phones on one

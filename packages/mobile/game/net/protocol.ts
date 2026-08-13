@@ -25,7 +25,7 @@
  * than desync in a way that looks like a bug. Bump it on ANY layout change below.
  */
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Hard ceiling on party size. Sized so per-player arrays can be flat and preallocated. */
 export const MAX_PLAYERS = 4;
@@ -103,6 +103,24 @@ export const MSG = {
    * timeout would, at that loss rate, essentially never complete.
    */
   RESYNC_NACK: 15,
+  /**
+   * guest -> host: my lobby seat, as I would like it to read — name, character, ready flag.
+   *
+   * A request, never a fact. The host owns the roster, so a guest claiming to be ready is exactly as
+   * authoritative as a guest claiming to have killed a boss: it is an opinion that the host either
+   * folds into the roster it publishes, or does not.
+   */
+  LOBBY_SEAT: 16,
+  /** host -> guests: the whole lobby roster. Small, rare, and always complete rather than a diff. */
+  LOBBY_ROSTER: 17,
+  /**
+   * chat, both directions. A guest sends one to the host; the host stamps the true seat and
+   * broadcasts it. There is no path for one guest to reach another directly, so there is no path for
+   * one player to spoof another's name.
+   */
+  LOBBY_CHAT: 18,
+  /** host -> guests: we are going. Carries the seed and stage everyone must begin from. */
+  LOBBY_LAUNCH: 19,
 } as const;
 
 export type MsgType = (typeof MSG)[keyof typeof MSG];

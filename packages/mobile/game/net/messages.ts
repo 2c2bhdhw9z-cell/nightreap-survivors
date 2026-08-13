@@ -536,6 +536,171 @@ export function encodeCardRequest(w: Writer, slot: number, action: number): Uint
   return w.finish();
 }
 
+/* ---------------------------------------------------------------------------------------------- */
+/* Lobby — the only messages sent while nobody is playing                                          */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * Why the lobby is on the binary channel with everything else.
+ *
+ * The relay's text channel is relay-authored only: client text frames are ignored, deliberately, so
+ * that nothing a player types can ever be mistaken for something the server said. That leaves the
+ * binary channel, which is no hardship — the lobby sends a handful of messages per player per session,
+ * and it gets the role table for free. A guest that tries to publish a roster is dropped by the same
+ * rule that stops a guest publishing a tick confirm.
+ */
+
+/** Longest display name on the wire. Names are user content and are filtered before they get here. */
+export const MAX_NAME_BYTES = 24;
+
+/** Longest chat line on the wire. */
+export const MAX_CHAT_BYTES = 160;
+
+/** guest -> host: `u8 characterId, u8 ready, str name`. */
+export function encodeLobbySeat(
+  w: Writer,
+  slot: number,
+  characterId: number,
+  ready: boolean,
+  name: string,
+): Uint8Array {
+  w.begin(MSG.LOBBY_SEAT, slot).u8(characterId).u8(ready ? 1 : 0).str(name);
+  return w.finish();
+}
+
+export interface LobbySeatWire {
+  characterId: number;
+  ready: boolean;
+  name: string;
+}
+
+export function decodeLobbySeat(r: Reader, out: LobbySeatWire): LobbySeatWire {
+  out.characterId = r.u8();
+  out.ready = r.u8() === 1;
+  out.name = r.str();
+  return out;
+}
+
+/**
+ * host -> guests: `u8 count, u8 hostSlot`, then per seat `u8 state, u8 characterId, u8 ready, str name`.
+ *
+ * Always the complete roster. A diff would be smaller and would also mean that a guest which missed one
+ * message shows a stale party for the rest of the lobby, which is precisely the kind of bug nobody can
+ * reproduce. At four players this is under 150 bytes and it is sent when something changes, not per tick.
+ */
+export function encodeLobbyRoster(
+  w: Writer,
+  slot: number,
+  hostSlot: number,
+  count: number,
+  states: Uint8Array,
+  characters: Uint8Array,
+  ready: Uint8Array,
+  names: string[],
+): Uint8Array {
+  const n = count > MAX_PLAYERS ? MAX_PLAYERS : count;
+  w.begin(MSG.LOBBY_ROSTER, slot).u8(n).u8(hostSlot);
+  for (let i = 0; i < n; i++) {
+    w.u8(states[i] as number)
+      .u8(characters[i] as number)
+      .u8(ready[i] as number)
+      .str(names[i] ?? "");
+  }
+  return w.finish();
+}
+
+export interface LobbyRosterWire {
+  hostSlot: number;
+  count: number;
+  states: Uint8Array;
+  characters: Uint8Array;
+  ready: Uint8Array;
+  names: string[];
+}
+
+export function createLobbyRosterWire(): LobbyRosterWire {
+  return {
+    hostSlot: 0,
+    count: 0,
+    states: new Uint8Array(MAX_PLAYERS),
+    characters: new Uint8Array(MAX_PLAYERS),
+    ready: new Uint8Array(MAX_PLAYERS),
+    names: ["", "", "", ""],
+  };
+}
+
+export function decodeLobbyRoster(r: Reader, out: LobbyRosterWire): LobbyRosterWire {
+  const n = r.u8();
+  out.count = n > MAX_PLAYERS ? MAX_PLAYERS : n;
+  out.hostSlot = r.u8();
+  for (let i = 0; i < out.count; i++) {
+    out.states[i] = r.u8();
+    out.characters[i] = r.u8();
+    out.ready[i] = r.u8();
+    out.names[i] = r.str();
+  }
+  return out;
+}
+
+/**
+ * chat: `u8 kind, u8 presetId, u8 fromSlot, str text`.
+ *
+ * `fromSlot` is in the body as well as the header because the host rebroadcasts a guest's line under
+ * its own header — the header seat says who relayed it, the body says who wrote it, and only the host
+ * is ever allowed to write the body's value.
+ */
+export function encodeLobbyChat(
+  w: Writer,
+  slot: number,
+  kind: number,
+  presetId: number,
+  fromSlot: number,
+  text: string,
+): Uint8Array {
+  w.begin(MSG.LOBBY_CHAT, slot).u8(kind).u8(presetId).u8(fromSlot).str(text);
+  return w.finish();
+}
+
+export interface LobbyChatWire {
+  kind: number;
+  presetId: number;
+  fromSlot: number;
+  text: string;
+}
+
+export function decodeLobbyChat(r: Reader, out: LobbyChatWire): LobbyChatWire {
+  out.kind = r.u8();
+  out.presetId = r.u8();
+  out.fromSlot = r.u8();
+  out.text = r.str();
+  return out;
+}
+
+/** host -> guests: `u32 seed, u16 stageId, u8 playerCount`. The run begins from exactly this. */
+export function encodeLobbyLaunch(
+  w: Writer,
+  slot: number,
+  seed: number,
+  stageId: number,
+  playerCount: number,
+): Uint8Array {
+  w.begin(MSG.LOBBY_LAUNCH, slot).u32(seed).u16(stageId).u8(playerCount);
+  return w.finish();
+}
+
+export interface LobbyLaunchWire {
+  seed: number;
+  stageId: number;
+  playerCount: number;
+}
+
+export function decodeLobbyLaunch(r: Reader, out: LobbyLaunchWire): LobbyLaunchWire {
+  out.seed = r.u32();
+  out.stageId = r.u16();
+  out.playerCount = r.u8();
+  return out;
+}
+
 /** Bytes needed for the largest fixed-size message, used to size the shared writer. */
 export const LARGEST_FIXED_MESSAGE_BYTES =
   4 + Math.max(INPUT_FRAME_BYTES * MAX_PLAYERS, RESYNC_CHUNK_HEADER_BYTES, CORRECTION_HEADER_BYTES);

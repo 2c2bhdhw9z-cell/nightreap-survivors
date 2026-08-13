@@ -1840,3 +1840,52 @@ connection test, typecheck, lint and build.
 
 Left in this phase: the lobby screen, the four-player heads-up display, the co-op tools in the dev
 menu, the switch that keeps co-op turned off until it is ready, and deciding where the server lives.
+
+## The party room has rules now - 2026-08-13
+
+Before a single lobby screen gets drawn, the rules of the party room exist and are tested. Screens are
+easy to change; rules are what break parties at two in the morning.
+
+What it does:
+
+- Only the host keeps the party list, and it is always sent complete rather than as a change. If one
+  change went missing, somebody's list would be wrong forever with no way to notice.
+- When you press ready as a guest, your row does not tick instantly. It asks the host and waits for the
+  answer to come back - about a fiftieth of a second - and in exchange all four phones show the same
+  list at the same time.
+- Chat goes from you, to the host, to everyone. The host throws away whatever name your phone claimed
+  and stamps the seat the server says you are sitting in, so nobody can send a message that looks like
+  it came from someone else. There is no path from one guest straight to another, so there is nothing to
+  fake.
+- Typing fast is allowed. The limit is five messages in a burst, with one more becoming available every
+  one and a half seconds, because that is how people actually talk. The six preset shouts skip the word
+  filter but not the limit. If your phone's clock jumps backwards, it hands out nothing.
+- Every refusal is its own answer: empty, too long, chat turned off, blocked word, too fast, not sitting
+  in a seat, unknown preset. "I pressed send and nothing happened" is the chat bug nobody can ever fix,
+  so that message does not exist here.
+- Messages are cleaned again when they arrive, not just when they are sent - your phone never trusts
+  what came off the wire. And messages that arrive while your chat is off are thrown away on arrival, so
+  switching chat back on does not dump a backlog on you.
+- If someone dropped and their seat is being held, the start button refuses on purpose. Nobody gets
+  left behind thirty seconds from walking back in. Giving up on them has to be a deliberate kick.
+- The host never presses ready. Pressing start is the readiness.
+- The random seed for the run is drawn once, on the host, and sent to everyone - so there is exactly one
+  answer to the question of which run this is.
+
+The word filter itself is only structural right now: it strips invisible characters and collapses runs
+of spaces, and judges nothing. The real word lists are a later phase, and the lobby deliberately does
+not grow its own smaller, worse copy in the meantime.
+
+Tested to the usual ratio: 741 lines of code, 502 lines of tests, seventeen areas, 129 checks. I broke
+two things deliberately - the start button's reconnect rule, and the burst size - and the tests caught
+both. The burst size one is worth mentioning: the first version of that test read the limit from the
+code itself, so changing the limit from five to six changed the test with it and nothing failed. A test
+that agrees with whatever the code says is not a test. It now checks the number five out loud.
+
+Everything else still passes: 24 test files, the live server test, the two-phones-over-a-real-connection
+test, typecheck, lint and build. The message format version went from 3 to 4 for the four new lobby
+messages, and both server tests confirm nothing was pinned to the old number.
+
+Left in this phase: the lobby screens, the four-player heads-up display, the co-op tools in the dev
+menu, the switch that keeps co-op off until it is ready, where the server lives, and one catch-up pass
+on tests for the older networking files.
