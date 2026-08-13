@@ -737,6 +737,48 @@ section("the story walk on its own");
   check("a story about a row that is not there is empty", storyOf([], 5).length === 0);
 }
 
+section("the store: lifting one punishment, and reading one account back");
+{
+  const backend = new MemoryEventBackend();
+  const log = new EventLog(backend);
+
+  const ban = await log.append(draftOf({ subjectId: "acct-a", kind: EVENT.CHAT_BANNED, payload: { forever: true } }));
+  const banSeq = ban.row?.seq ?? 0;
+  check("the ban landed", ban.status === APPEND.OK && (await log.accountView("acct-a")).chatBanned);
+
+  const lift = await log.reverse(banSeq, ACTOR.ADMIN, "admin-1", T0 + 10, "appeal upheld");
+  check("one row can be lifted without inventing a group", lift.status === APPEND.OK, BAD_NAMES[lift.reason] ?? "");
+  check("the lift is an undo naming the ban", lift.row?.kind === EVENT.REVERSAL && lift.row?.reverses === banSeq);
+  check("the lift says why", lift.row?.payload.reason === "appeal upheld");
+  check("the lift is about the same account as the ban", lift.row?.subjectId === "acct-a", "a lift pinned on the wrong id reads forever as the wrong player");
+  check("the lift is credited to whoever asked for it", lift.row?.actorId === "admin-1" && lift.row?.actorKind === ACTOR.ADMIN);
+  check("the player is no longer banned", (await log.accountView("acct-a")).chatBanned === false);
+  check("but the ban row is still there", backend.all().length === 2, "the punishment keeps its author, reason and date");
+
+  const again = await log.reverse(banSeq, ACTOR.ADMIN, "admin-2", T0 + 11, "appeal upheld twice");
+  check("lifting the same punishment twice is refused", again.status === APPEND.REFUSED && again.reason === BAD.ALREADY_REVERSED);
+
+  const liftTheLift = await log.reverse(lift.row?.seq ?? 0, ACTOR.ADMIN, "admin-1", T0 + 12, "no, the ban was right");
+  check("a lift cannot itself be lifted", liftTheLift.status === APPEND.REFUSED && liftTheLift.reason === BAD.NOT_REVERSIBLE, "putting a punishment back is a redo, not a second undo");
+
+  const nowhere = await log.reverse(9_999, ACTOR.ADMIN, "admin-1", T0 + 13, "nothing there");
+  check("lifting a row that is not there is refused", nowhere.status === APPEND.REFUSED && nowhere.reason === BAD.NO_SUCH_TARGET);
+  check("and nothing was written by trying", backend.all().length === 2);
+
+  const back = await log.restore(lift.row?.seq ?? 0, ACTOR.ADMIN, "admin-1", T0 + 14, "the appeal was a lie");
+  check("the ban can be put back after being lifted", back.status === APPEND.OK, BAD_NAMES[back.reason] ?? "");
+  check("and the player is banned again", (await log.accountView("acct-a")).chatBanned);
+  check("the whole history still verifies", (await log.verify(1, 100)).ok);
+
+  await log.append(draftOf({ subjectId: "acct-b", kind: EVENT.CHAT_BANNED, payload: { forever: true }, at: T0 + 15 }));
+  const mine = await log.subjectRows("acct-a");
+  check("one account's rows come back", mine.length === 3, `read ${mine.length}`);
+  check("and only that account's rows", mine.every((r) => r.subjectId === "acct-a"), "another player's punishment must never show on this page");
+  check("oldest first, so the page can read forward", mine.every((r, i) => i === 0 || r.seq > (mine[i - 1] as EventRow).seq));
+  check("an account nobody has touched reads back empty", (await log.subjectRows("acct-nobody")).length === 0);
+  check("the other account is unaffected by any of it", (await log.accountView("acct-b")).chatBanned);
+}
+
 /* ---- how it reads to a human ------------------------------------------------------------------- */
 
 section("how it reads to a human");
@@ -754,6 +796,7 @@ if (failures > 0) {
   console.log(`FAIL — ${failures} problem(s) in the event log`);
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };
   host.process?.exit?.(1);
+  throw new Error(`the event log: ${failures} check${failures === 1 ? "" : "s"} failed`);
 } else {
   console.log("PASS — the event log");
 }

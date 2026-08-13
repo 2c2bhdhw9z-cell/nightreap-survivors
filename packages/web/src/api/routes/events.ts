@@ -21,65 +21,17 @@
  */
 
 import { ORPCError } from "@orpc/server";
-import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { base } from "../__core/app";
+import { adminOnly, log } from "../events/door";
 import { ACTOR, BAD_NAMES, CHAIN_NAMES, EVENT_NAMES } from "../events/log";
-import { APPEND, EventLog } from "../events/store";
+import { APPEND } from "../events/store";
 
 /* ---------------------------------------------------------------------------------------------- */
-/* Access                                                                                          */
+/* Access and the log instance                                                                     */
 /* ---------------------------------------------------------------------------------------------- */
 
-/** Constant-time string compare, so a wrong token cannot be guessed a character at a time. */
-function sameSecret(a: string, b: string): boolean {
-  const left = Buffer.from(a, "utf8");
-  const right = Buffer.from(b, "utf8");
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
-}
-
-/**
- * Every procedure below sits behind this.
- *
- * The refusal is the same message whether the token is missing, wrong, or not configured at all. Telling a
- * caller *which* is how they learn whether there is anything to attack.
- */
-const admin = base.use(({ context, next }) => {
-  const expected = process.env.EVENT_LOG_ADMIN_TOKEN ?? "";
-  if (expected.length < 16) {
-    console.warn("[events] EVENT_LOG_ADMIN_TOKEN is not set — refusing every event-log call");
-    throw new ORPCError("FORBIDDEN", { message: "The event log is not available." });
-  }
-
-  const header = context.headers.get("authorization") ?? "";
-  const offered = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (offered === "" || !sameSecret(offered, expected)) {
-    throw new ORPCError("FORBIDDEN", { message: "The event log is not available." });
-  }
-
-  return next();
-});
-
-/* ---------------------------------------------------------------------------------------------- */
-/* The log instance                                                                                */
-/* ---------------------------------------------------------------------------------------------- */
-
-let instance: EventLog | null = null;
-
-/**
- * Built on first use, not at import.
- *
- * The database client connects when it is imported, and the rules half of the log is deliberately usable
- * with no database at all. Loading it lazily keeps a server with no database configured able to start,
- * serve config, and say a clear no here.
- */
-async function log(): Promise<EventLog> {
-  if (instance !== null) return instance;
-  const { DbEventBackend } = await import("../events/backend-db");
-  instance = new EventLog(new DbEventBackend());
-  return instance;
-}
+// Both live in ../events/door.ts, shared with the other admin route files. One access check, one instance.
+const admin = adminOnly;
 
 /* ---------------------------------------------------------------------------------------------- */
 /* Shapes                                                                                          */

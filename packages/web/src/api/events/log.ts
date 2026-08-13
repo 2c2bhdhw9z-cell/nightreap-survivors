@@ -678,23 +678,45 @@ export function planGroupReversal(
       plan.skipped.push({ seq: target.seq, reason: BAD.ALREADY_REVERSED });
       continue;
     }
-    plan.drafts.push({
-      kind: EVENT.REVERSAL,
-      actorKind,
-      actorId,
-      subjectId: target.subjectId,
-      buildId: 0,
-      at,
-      // The payload carries the *why* and enough of the *what* to read the reversal without fetching its
-      // target. An undo nobody can explain is an undo nobody will trust enough to run.
-      payload: { reason, ofKind: target.kind, ofGroup: groupId },
-      reverses: target.seq,
-      restores: 0,
-      groupId: newGroupId,
-    });
+    plan.drafts.push(reversalDraftFor(target, actorKind, actorId, at, reason, newGroupId));
   }
 
   return plan;
+}
+
+/**
+ * Build the row that undoes one row.
+ *
+ * The single-row undo and the bulk undo produce the identical shape, because they are the same fact and a
+ * reader during an incident should not have to know which screen produced it. The bulk planner calls this
+ * too — one shape, one place, no drift.
+ *
+ * Nothing is checked here. Whether this target may be undone at all is decided by `validateReversal` on
+ * append, with the log's own view of the target in hand; checking it twice in two places is how the two
+ * answers eventually differ.
+ */
+export function reversalDraftFor(
+  target: EventRow,
+  actorKind: number,
+  actorId: string,
+  at: number,
+  reason: string,
+  groupId = "",
+): EventDraft {
+  return {
+    kind: EVENT.REVERSAL,
+    actorKind,
+    actorId,
+    subjectId: target.subjectId,
+    buildId: 0,
+    at,
+    // The payload carries the *why* and enough of the *what* to read the reversal without fetching its
+    // target. An undo nobody can explain is an undo nobody will trust enough to run.
+    payload: { reason, ofKind: target.kind, ofGroup: target.groupId },
+    reverses: target.seq,
+    restores: 0,
+    groupId,
+  };
 }
 
 /**

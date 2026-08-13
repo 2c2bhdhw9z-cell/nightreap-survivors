@@ -45,6 +45,7 @@ import {
   type ChainReport,
   planGroupReversal,
   restoreDraftFor,
+  reversalDraftFor,
   type RestoreFacts,
   seal,
   storyOf,
@@ -206,6 +207,31 @@ export class EventLog {
       reversedSubjectId: original.subjectId,
       alreadyRestored: restored.length > 0,
     };
+  }
+
+  /**
+   * Undo one row.
+   *
+   * The common case at the admin page: an operator lifts one ban. It goes through the ordinary `append`, so
+   * every rule about what may be undone — reversible kind, not already undone, same account, target must be
+   * older — is enforced in exactly one place and cannot be skipped by coming in this way.
+   */
+  async reverse(
+    seq: number,
+    actorKind: number,
+    actorId: string,
+    at: number,
+    reason: string,
+    groupId = "",
+  ): Promise<AppendResult> {
+    const target = await this.backend.byId(seq);
+    if (target === null) return { status: APPEND.REFUSED, reason: BAD.NO_SUCH_TARGET, row: null };
+    return this.append(reversalDraftFor(target, actorKind, actorId, at, reason, groupId));
+  }
+
+  /** Every row about one account, oldest first. The admin page's account view is built from this. */
+  subjectRows(subjectId: string): Promise<EventRow[]> {
+    return this.backend.bySubject(subjectId);
   }
 
   /**
