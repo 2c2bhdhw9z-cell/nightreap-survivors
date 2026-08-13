@@ -1690,3 +1690,27 @@ take the seat immediately. All green.
 Still to do in this phase: the party lobby screen itself, what the screen shows while someone is
 reconnecting, the extra developer tools for testing co-op, and smoothing out your own character's
 movement so it never feels like it's waiting on the network.
+
+## The eight screens are approved, and five things I fixed in them - 2026-08-13
+
+You said build them, so they are the reference now. I redid the level-up screen because its
+top bar had hearts and a "FLOOR 7" on it and we have neither - health is a number plus a bar,
+and there are no floors. The new one has the exact bar we settled on.
+
+While I was in there I found five more things that were wrong. None of them needed a new
+picture - they are wrong words and wrong defaults, so I wrote the correct rule down instead
+and the code will follow the rule:
+
+- Stage select said "TIME LIMIT 30:00" on every stage. Wrong. That number is when the Reaper
+  comes for you, it is 15:00 on some stages, and Endless has no end at all. It will say
+  "REAPER 30:00" and read the real number per stage.
+- The insect-free sprite option was switched on in the picture. It should be off by default -
+  it is there for people who want it, not the standard look.
+- Settings was missing four switches we already agreed on: battery saver, chat on/off,
+  chat-from-strangers on/off, and the daily reminder ask.
+- The leaderboard's "TOP 1%" style tags did not add up - it showed three people tied at top 1%
+  on a board of four thousand. Those tags will be worked out from the real board size and only
+  shown at the levels that actually pay: 0.1%, 1%, 5%, 10%, 25%, 50%.
+- The leaderboard has no way to pick a stage. If we ship it like that, whichever stage is
+  easiest takes every top spot and nobody ever looks at the other four. Each stage gets its
+  own board.

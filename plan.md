@@ -2272,3 +2272,37 @@ mass-punishes innocent players, every action must be revertable in one operation
 - **Phase 8:** moderation engine, free-text chat, account-bound enforcement, admin queues. Age
   rating questionnaires updated to declare communication; **13+ accepted**. Ships behind the
   existing remote-config flag so it can be switched off globally in seconds if it goes wrong.
+
+### Screen mocks approved for build — DECIDED 2026-08-13
+
+All eight out-of-run screen mocks (stage select, powerups shop, collection, settings,
+achievements, daily run, leaderboard, resume prompt v2) are **approved as the build
+reference**. The level-up screen was regenerated as `mocks/screen-levelup-v2` because v1
+drew heart pips and a "FLOOR 7" label; v2 carries the settled in-run top bar (cyan XP bar,
+one slate strip with level / health number + bar / clock / gold / kills / pause at far
+right, then the twelve-slot strip of six weapons and six passives).
+
+Four corrections found while reviewing the mocks. The mocks stay as-is; the **code must
+follow these rules, not the picture**:
+
+1. **Stage select must not label the reaper clock "TIME LIMIT" on every stage.** The mock
+   shows a flat `TIME LIMIT 30:00` on all five. In reality the Red Reaper arrives at 30:00
+   on most stages and 15:00 on some, and Endless has no limit at all. The row reads
+   `REAPER 30:00` / `REAPER 15:00`, taken from the stage's own data row, and Endless-capable
+   stages show no clock.
+
+2. **`INSECT-FREE SPRITES` defaults OFF, not ON.** The mock drew it enabled. It is an
+   accommodation the player opts into; the normal sprite set is the default.
+
+3. **Settings is missing four settled switches** and they must exist when it is built:
+   battery-saver mode, the chat comfort on/off switch, the separate switch for non-friend
+   chat, and the daily-reminder opt-in (asked on day two, never again).
+
+4. **Leaderboard percentile tags in the mock are arithmetically wrong** (ranks 1-3 all
+   "TOP 1%", then 2/3/4/5/6% for ranks 4-8, against a 4,182-player board). Percentile is
+   computed from the real board size and only ever displayed in the payout buckets:
+   0.1 / 1 / 5 / 10 / 25 / 50%. Rank 1 on a board that size is TOP 0.1%.
+
+5. **The survival board needs a stage filter.** Without one, whichever stage has the softest
+   wave table owns every top slot and the other stages are dead. Board identity is
+   (mode, stage, party size, season).
