@@ -1789,7 +1789,53 @@ could produce, and rather than patch the test the row label was changed to ask t
 becomes unwritable. Twelve of twelve caught afterwards. A related hole was closed in the shared test-failure
 pattern, which could exit silently if the host exposed no exit function.
 
-- Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
+**Fifth item done: gold is real, and the run tells you what it paid.** Until now a run ended, printed a
+line of debug text, and threw everything away. The gold you picked up for thirty minutes went nowhere. Now
+a finished run is banked into your profile and you get the results screen from the approved mock: how long
+you lasted, what you killed, what level you reached, and the gold total counting up from what you had to
+what you now have, with the damage breakdown per weapon underneath it.
+
+The part worth explaining is the part nobody sees. There is exactly **one** place a run's gold is added up,
+**one** place it is added to your profile, and **one** receipt written down saying what happened — and the
+screen reads that receipt instead of working any of it out for itself. That kills a whole family of bugs
+that players never forgive: the results screen saying 6,730 gold and the shop having 6,728. It cannot
+happen, because the screen is not allowed to do arithmetic.
+
+**A run is paid exactly once, and that is enforced rather than intended.** Every run carries an id; the
+hand-off between the run and the screen refuses an id it has already paid, refuses to overwrite a result
+you have not looked at yet, and reports the refusal instead of crashing on the screen you are standing on.
+The screen itself never banks anything, so the usual ways a phone screen gets built twice — a fast
+back-and-forward, a rotation, a reload — cannot pay you twice.
+
+**Your existing money cannot be damaged by a bad run.** Anything impossible in a finished run — negative
+gold, a fraction of a coin, a number that is not a number, a total larger than the save format can hold —
+is refused by name *before* anything is written, so the profile is either fully paid or untouched, never
+half-paid. The same check runs over the profile itself: if a save already holds something impossible, the
+run refuses to extend it rather than turning one corrupt number into a corrupt total. A run you abandoned
+still keeps its gold and its time played, because you still played it; only a real ending counts as a run
+finished. Your best time only moves when a run genuinely beats it, so replaying the same length does not
+announce a fake record. Gold has a real ceiling in the save format, and hitting it says so on screen
+instead of silently swallowing the difference.
+
+The counting-up number is its own small module rather than six lines inside the screen, because a number
+that animates has four ways to lie — overshooting past what you own, settling one coin short, running
+backwards, or dividing by a zero-length clock on a slow phone — and none of them are testable while the
+arithmetic lives inside a drawing file. It now opens on exactly the balance you already knew and lands on
+exactly the balance you now have.
+
+583 lines of rules against 943 lines of test, which clears the 1:2 rule. **Twenty-seven deliberate
+breakages tried in total.** Nine against the banking and nine against the hand-off were caught first time.
+Three of ten against the counting escaped on the first attempt, and none of the three were false alarms:
+two were guards that could never fire because something else already decided the same thing (removed — a
+second place that decides the same thing is a second place that can disagree, and one of them had already
+been written wrong once), and the third was a real hole, an off-by-one mid-animation that every test
+happened to look past. Every frame of the animation is now pinned to the curve to the exact coin, and all
+ten breakages are caught. Verified on screen, not by eye alone: the screen was driven in a real browser
+with a real finished run behind it and every figure reconciled against the profile it came from — 500 gold
+plus 6,730 earned reading 7,230, lifetime and runs-finished both moving by exactly the right amount, and
+the previous best time shown next to the new one.
+
+- ~~Gold, results payout~~ **DONE 2026-08-13**, **PowerUps shop** (24+ powerups, escalating cost curve).
 - Character select; 8 characters with distinct stats, starting weapons, growth quirks.
 - Unlock system, save/load with migrations, account-backed sync.
 - Destructible props; pickups: floor chicken, bomb, magnet, coins.

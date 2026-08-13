@@ -2614,3 +2614,36 @@ a player who does not exist. Then six deliberate breakages — hiding a lifted l
 letting a blank form through, leaving the secret in long-term storage, serving the button list without the
 door, and letting one player's history leak another's — each one caught. Screenshot in
 `screens/admin-page-v1.png`.
+
+---
+
+## Gold + results payout screen — DONE (2026-08-13)
+
+What changed, in plain English: a run that ends now pays you. Before this, the gold you collected during a
+run was thrown away when the run ended.
+
+Three new pieces of machinery and one new screen:
+
+1. **The banking.** Takes a finished run and adds its gold, its time and its run count to your profile,
+   and writes a receipt saying exactly what it did. Refuses anything impossible by name before touching
+   anything, so your profile is either fully paid or completely untouched. Quit runs keep their gold.
+   Best time only moves on a genuine improvement. The save format's gold ceiling is real and says so on
+   screen if you ever hit it.
+2. **The hand-off.** The one thing that stands between a run and the screen. It is what guarantees a run is
+   paid exactly once — it remembers every run it has paid and refuses a repeat, and it refuses to
+   overwrite a result you have not seen yet. It hands the screen a copy of the numbers, not a window onto
+   the live game, because the game reuses the same object for the next run.
+3. **The counting-up number.** Pure arithmetic, separate from the screen, so it can be tested. Opens on
+   the balance you knew, lands on the balance you have, never overshoots, never goes backwards.
+4. **The screen.** Built from the approved mock. Does no arithmetic at all — every figure is read off the
+   receipt. The dev play screen now goes to it when a run ends.
+
+Checked: 583 lines of rules, 943 lines of test, 276 checks, all passing. 27 deliberate breakages tried,
+27 caught (three needed the tests tightened first — one was a real off-by-one). Lint, typecheck and build
+all clean. Screenshot in `screens/results-screen-v1.png`.
+
+Not in it yet, on purpose: the character portrait and the UNLOCKED row from the mock. Characters and
+unlocks are later items on the list; an empty frame would be worse than the space.
+
+Correction to an earlier note: the web admin page **is** built and committed (`eee6b7d`). What is still
+outstanding there is pushing the database column and extending two test files.

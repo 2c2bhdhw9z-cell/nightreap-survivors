@@ -37,7 +37,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 
 import { useScreenAwake } from "@/hooks/use-screen-awake";
 import { useSettings } from "@/hooks/use-settings";
@@ -58,6 +58,7 @@ import { ENEMY_FLAG } from "@/game/sim/enemies";
 import { MAX_WEAPONS, WEAPON_TYPES } from "@/game/sim/weapons";
 import { PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
+import { describeHandoff, runHandoff, runIdOf } from "@/game/save/handoff";
 import { OFFERS_PER_SCREEN } from "@/game/sim/cards";
 import { MAX_PLAYERS } from "@/game/sim/player";
 import { REAPER_SECOND, TICKS_PER_SECOND } from "@/game/sim/waves";
@@ -182,6 +183,13 @@ export default function PlayScreen() {
   const [readout, setReadout] = useState<Readout>(EMPTY_READOUT);
   const [cards, setCards] = useState<CardView>(CLOSED_CARDS);
   const [ended, setEnded] = useState<string | null>(null);
+  /**
+   * Why the finished run could not be banked, if it could not.
+   *
+   * Shown on the old dev overlay rather than swallowed. A run that ends and goes nowhere is the single
+   * most confusing thing this screen could do, so if the hand-off refuses, it says which refusal it was.
+   */
+  const [bankFault, setBankFault] = useState<string | null>(null);
   const [seed, setSeed] = useState<number>(SEEDS[0]);
   const [hurry, setHurry] = useState(false);
   const [hyper, setHyper] = useState(false);
@@ -200,6 +208,40 @@ export default function PlayScreen() {
   // The HUD draws itself from resolved settings and from nothing else, so the screen reads them the
   // same way every other screen does. Party size is passed in because it decides whether badges exist.
   const settings = useSettings(partySize);
+
+  const router = useRouter();
+
+  /**
+   * Bank the finished run and go to the results screen.
+   *
+   * Held in a ref because the render loop is set up once, inside an effect, and a callback captured there
+   * would go stale the moment settings reloaded — banking into a stale copy of the save is how gold
+   * disappears. The ref is repointed every render; the loop always calls the current one.
+   *
+   * Two things happen here and their order matters. The hand-off banks into the save in memory and hands
+   * the result over; only then is the save written to storage. If the write fails the player still sees
+   * the correct figures, because the figures are what their profile says right now — and the run is not
+   * re-banked on the next launch, because nothing re-reads a run that already went through the hand-off.
+   */
+  const showResults = useCallback(
+    (run: Run) => {
+      const summary = run.summary;
+      const outcome = runHandoff.stage(runIdOf(summary), summary, settings.save);
+      if (!outcome.staged) {
+        const field = outcome.receipt.badField;
+        setBankFault(`not banked: ${describeHandoff(outcome.code)}${field ? ` (${field})` : ""}`);
+        return;
+      }
+      setBankFault(null);
+      void saveStore().save(settings.save);
+      router.push("/results");
+    },
+    [router, settings.save],
+  );
+  const showResultsRef = useRef(showResults);
+  useEffect(() => {
+    showResultsRef.current = showResults;
+  }, [showResults]);
 
   // Live handles the render loop reads without being torn down and rebuilt by a re-render.
   const runRef = useRef<Run | null>(null);
@@ -518,7 +560,15 @@ export default function PlayScreen() {
         }
         if (run.end !== reportedEnd) {
           reportedEnd = run.end;
-          setEnded(reportedEnd === RUN_END.running ? null : describeEnd(run));
+          if (reportedEnd === RUN_END.running) {
+            setEnded(null);
+            setBankFault(null);
+          } else {
+            // The simulation has already written its own summary by this point — `finish()` does that,
+            // once, and refuses to do it twice. All this does is hand that summary over and change screen.
+            setEnded(describeEnd(run));
+            showResultsRef.current(run);
+          }
         }
 
         if (now - lastReport >= 250) {
@@ -682,6 +732,7 @@ export default function PlayScreen() {
         {ended ? (
           <View style={styles.overlay}>
             <Text style={styles.title}>{ended}</Text>
+            {bankFault ? <Text style={styles.title}>{bankFault}</Text> : null}
             <View style={styles.controls}>
               <Pressable style={styles.btn} onPress={restart}>
                 <Text style={styles.btnText}>run it again</Text>
