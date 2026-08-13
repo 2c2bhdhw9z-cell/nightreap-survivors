@@ -112,6 +112,29 @@ export interface RunConfig {
    * everything else instead of being silently dropped there.
    */
   powerUps: readonly RunModifier[];
+  /**
+   * The chosen characters' own starting shifts, already turned into modifier records by the character layer.
+   *
+   * Records rather than character ids because `run.ts` knows nothing about the roster, and because a record
+   * carries a wire id — so the character's numbers travel into the replay header, a co-op join message and a
+   * snapshot restore with every other rule. `characterIds` above is what the *screens* and the replay header
+   * call the choice; this is what the simulation resolves.
+   */
+  characters: readonly RunModifier[];
+  /**
+   * The chosen character's growth quirk as a ladder of records, indexed by how many steps have landed.
+   *
+   * Entry 0 is one step, entry 1 is two, and so on, each carrying every step folded together. The run picks
+   * the right rung as the player levels; it never adds rungs together.
+   *
+   * These are deliberately NOT on the wire. The wire list is written once, at level one, when no step has
+   * landed — so a record added at level twenty would be missing from it, and a header that changed as a run
+   * played would put a co-op host and guest into disagreement mid-run. Instead the rung is derived from the
+   * character and the level, both of which any resync restores, so the other side recomputes it.
+   */
+  characterGrowth: readonly RunModifier[];
+  /** Levels between growth steps for the chosen character. Must be at least 1. */
+  characterGrowthEvery: number;
 }
 
 export const DEFAULT_RUN_CONFIG: RunConfig = {
@@ -128,6 +151,9 @@ export const DEFAULT_RUN_CONFIG: RunConfig = {
   contentVersion: 1,
   tainted: 0,
   powerUps: [],
+  characters: [],
+  characterGrowth: [],
+  characterGrowthEvery: 1,
 };
 
 export class Run {
@@ -211,6 +237,17 @@ export class Run {
    */
   private readonly modifierWire = new Int32Array(64);
   private modifierCount = 0;
+  /**
+   * The chosen character's growth ladder, and how far apart its steps are.
+   *
+   * Held on the run rather than looked up, because `run.ts` has no dependency on the character layer, and
+   * because it survives a snapshot restore for free: the run object is reused, so the ladder is still here
+   * when the stack is rebuilt from wire ids.
+   */
+  private growthLadder: readonly RunModifier[] = [];
+  private growthEvery = 1;
+  /** How many growth steps are currently folded into the loadout. `-1` means "not established yet". */
+  private growthTier = -1;
   private readonly bombScratch = new Int32Array(1024);
 
   private spawnRng: Rng;
@@ -277,6 +314,12 @@ export class Run {
     // order-independent by design, so this is only about which records get dropped first if a stack ever
     // overflows: a mode the player chose for this run matters more than a rank they bought last week.
     for (let i = 0; i < c.powerUps.length; i++) this.stack.add(c.powerUps[i]);
+    // The character joins the same stack, ahead of the shop for the same overflow reason: who the player
+    // picked for this run matters more than a rank they bought last week.
+    for (let i = 0; i < c.characters.length; i++) this.stack.add(c.characters[i]);
+    this.growthLadder = c.characterGrowth;
+    this.growthEvery = Math.max(1, c.characterGrowthEvery | 0);
+    this.growthTier = 0;
     const resolved = this.stack.resolve(this.stats);
     this.flags = resolved.flags;
     if (resolved.tainted) this.tainted |= 1;
@@ -318,6 +361,9 @@ export class Run {
     }
     for (let i = 0; i < c.powerUps.length && count < this.modifierWire.length; i++) {
       this.modifierWire[count++] = c.powerUps[i].wireId;
+    }
+    for (let i = 0; i < c.characters.length && count < this.modifierWire.length; i++) {
+      this.modifierWire[count++] = c.characters[i].wireId;
     }
     this.modifierCount = count;
 
@@ -363,7 +409,7 @@ export class Run {
       const mod = byWireId.get(this.modifierWire[i]);
       if (mod !== undefined) this.stack.add(mod);
     }
-    for (let p = 0; p < this.players.count; p++) this.passives.applyTo(this.stack, p);
+    this.rebuildLoadout();
     if (this.cards.open) this.cards.relabel(this.weapons, this.passives, 0);
   }
 
@@ -512,6 +558,12 @@ export class Run {
         this.cues.emit(CUE.levelUp, players.x[0], players.y[0], l);
       }
       this.prevLevel = this.prog.level;
+      // A level can earn the character's next growth step. Only rebuild when the step count actually
+      // changed, so an ordinary level-up costs one integer division rather than a full resolve.
+      if (this.growthTierAt(this.prog.level) !== this.growthTier) {
+        this.rebuildLoadout();
+        this.stack.resolve(this.stats);
+      }
     }
 
     if (this.prog.owesCards) {
@@ -700,7 +752,7 @@ export class Run {
   // --- Card screen -------------------------------------------------------------------------
 
   pickCard(index: number): boolean {
-    return this.cards.pick(
+    const took = this.cards.pick(
       index,
       0,
       this.weapons,
@@ -710,6 +762,46 @@ export class Run {
       this.stack,
       this.cardRng,
     );
+    // A passive pick rebuilds the loadout from scratch, which throws the character's growth record away with
+    // everything else in it. Putting it back here — rather than trusting the card layer to know about
+    // characters — means there is one place that owns what the loadout contains.
+    if (took) this.restoreGrowthAfterPick();
+    return took;
+  }
+
+  /**
+   * Put the growth record back into the loadout and re-resolve, if a card pick cleared it.
+   *
+   * Cheap when there is nothing to do: no ladder, or no step earned yet, and this returns without touching
+   * the stats table. When there is, it rebuilds rather than patches, for the same reason a snapshot restore
+   * rebuilds the loadout: a patched list can disagree with what a fresh rebuild would produce, and that
+   * disagreement is invisible until two devices compare state hashes.
+   */
+  private restoreGrowthAfterPick(): void {
+    if (this.growthTier <= 0) return;
+    this.rebuildLoadout();
+    this.stack.resolve(this.stats);
+  }
+
+  /**
+   * Rebuild the loadout list: every player's passives, then the character's growth step.
+   *
+   * Order inside the list does not matter — resolution is order-independent by design — but rebuilding in one
+   * place does, because `passives.applyTo` clears the whole list on every call. Anything that lives in the
+   * loadout has to be re-added by whoever calls it, and this is that whoever.
+   */
+  private rebuildLoadout(): void {
+    for (let p = 0; p < this.players.count; p++) this.passives.applyTo(this.stack, p);
+    const tier = this.growthTierAt(this.prog.level);
+    this.growthTier = tier;
+    if (tier > 0) this.stack.addLoadout(this.growthLadder[tier - 1]);
+  }
+
+  /** How many growth steps a level has earned, clamped to the ladder the character actually has. */
+  private growthTierAt(level: number): number {
+    if (this.growthLadder.length === 0) return 0;
+    const steps = Math.floor((Math.max(1, level | 0) - 1) / this.growthEvery);
+    return Math.min(steps, this.growthLadder.length);
   }
 
   rerollCards(): boolean {

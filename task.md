@@ -2694,3 +2694,50 @@ Lint, typecheck and build all clean. All four self-checks pass.
 **Next:** character select (8 characters with their own stats, starting weapon and growth quirk), then
 unlocks and making progress persist and sync, then destructible props and floor pickups, then chests and
 the evolution roll, then the first anti-cheat pass.
+
+## 2026-08-13 — character select
+
+Eight characters exist now, and picking one actually changes the run.
+
+Each one has its own starting weapon (out of the six weapons that exist), its own set of stat changes, and
+one thing that gets stronger the longer the run goes on:
+
+- Vesna Thorne — the plain starter. More damage, faster weapons, no downside.
+- Odrick Pale — throws one extra of everything, hits softer for it.
+- Maren Vole — huge effects, slow legs.
+- Grust Kalder — more health and real armour, slower. Unlocks after one finished run.
+- Ysolde Quill — levels much faster, dies to a second hit. Unlocks at 2,000 gold earned.
+- Bram Ossuary — everything he leaves on the floor lasts longer. Unlocks at 8,000 gold earned.
+- Nyx Carrow — fast and hoovers up pickups, made of paper. Unlocks at a ten-minute run.
+- Sable Grynn — rarely hits, ruinous when it does. Unlocks at a fifteen-minute run.
+
+Things worth knowing about how it was built, in plain terms:
+
+1. A character does not carry its own copy of the stats — it carries *changes* to the shared baseline. So
+   when a balance pass changes the baseline later, all eight move with it. The alternative would have left
+   seven characters quietly on the old numbers, and nothing would have looked broken.
+
+2. The growth quirk is not stored anywhere. It is worked out from "who you picked" and "what level you are",
+   both of which the game already knows after a resume or a co-op reconnect. That is why it comes back by
+   itself instead of quietly disappearing the first time somebody's connection drops.
+
+3. Taking a level-up card rebuilds the whole list of bonuses you are carrying from scratch. That is exactly
+   the moment a character's growth bonus would get thrown away, so it is put back in one place that owns the
+   list, and a test drives a real run through 130 card picks and then checks the number is still exactly
+   right — not roughly right, exactly right.
+
+4. The character travels with the run the same way modes and shop purchases do, so a replay our server
+   checks, and a friend joining your run, both see the same character you picked. If it had been bolted
+   straight onto the stats instead, all three of those would have silently dropped it.
+
+5. Locked characters stay on screen with the reason they are locked, and if a save somehow asks to play
+   somebody it does not own, the game falls back to somebody it does rather than refusing to start.
+
+Checking: 143 checks on the roster, a full check on the records built from it, and a third set that drives a
+real run. Then the code was deliberately broken 25 different ways — 15 breaks in the roster and the records,
+10 in the run itself — and every single one was caught by the tests. All the older tests still pass, and
+lint, typecheck and build are all clean.
+
+Screenshot of the screen: `screens/character-select-v1.png`.
+
+Next: unlocks that persist, save migrations, and account-backed sync.

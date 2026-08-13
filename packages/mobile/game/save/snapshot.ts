@@ -39,19 +39,24 @@
 
 import { MODIFIERS_BY_WIRE_ID, type RunModifier } from "../sim/modifiers";
 import { POWERUP_MODIFIERS_BY_WIRE_ID } from "../shop/loadout";
+import { CHARACTER_MODIFIERS_BY_WIRE_ID } from "../characters/loadout";
 
 /**
- * Every modifier a wire id can name: the hand-written mode catalogue plus the generated shop records.
+ * Every modifier a wire id can name: the mode catalogue plus the generated shop and character records.
  *
  * Merged here rather than in either source, so neither list has to know the other exists. The two id
- * ranges cannot overlap by construction — modes are under a hundred, shop records start at 200,000 — and
+ * ranges cannot overlap by construction — modes are under a hundred, shop records start at 200,000, and
+ * characters start at 300,000 — and
  * the size check below is what proves that claim rather than assuming it.
  */
 const ALL_MODIFIERS_BY_WIRE_ID: ReadonlyMap<number, RunModifier> = (() => {
   const map = new Map<number, RunModifier>(MODIFIERS_BY_WIRE_ID);
   for (const [id, mod] of POWERUP_MODIFIERS_BY_WIRE_ID) map.set(id, mod);
-  if (map.size !== MODIFIERS_BY_WIRE_ID.size + POWERUP_MODIFIERS_BY_WIRE_ID.size) {
-    throw new Error("a shop wire id collides with a mode wire id");
+  for (const [id, mod] of CHARACTER_MODIFIERS_BY_WIRE_ID) map.set(id, mod);
+  const expected =
+    MODIFIERS_BY_WIRE_ID.size + POWERUP_MODIFIERS_BY_WIRE_ID.size + CHARACTER_MODIFIERS_BY_WIRE_ID.size;
+  if (map.size !== expected) {
+    throw new Error("a wire id collides across the mode, shop and character ranges");
   }
   return map;
 })();

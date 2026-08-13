@@ -69,6 +69,11 @@ export default function Index() {
         <Text style={styles.ctaAltText}>POWERUPS</Text>
       </Link>
 
+      {/* Same stopgap: character select has nowhere to be linked from until the title screen exists. */}
+      <Link href="/characters" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>CHARACTERS</Text>
+      </Link>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>How to run the real test</Text>
         {STEPS.map((step, i) => (

@@ -37,7 +37,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
-import { Link, useRouter } from "expo-router";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
 
 import { useScreenAwake } from "@/hooks/use-screen-awake";
 import { useSettings } from "@/hooks/use-settings";
@@ -60,6 +60,12 @@ import { PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
 import { describeHandoff, runHandoff, runIdOf } from "@/game/save/handoff";
 import { powerUpLoadout } from "@/game/shop/loadout";
+import {
+  CHARACTER_GROWTH_MODIFIERS,
+  characterLoadout,
+  characterStartingWeaponId,
+} from "@/game/characters/loadout";
+import { CHARACTERS, firstPlayable } from "@/game/characters/roster";
 import type { RunModifier } from "@/game/sim/modifiers";
 import { OFFERS_PER_SCREEN } from "@/game/sim/cards";
 import { MAX_PLAYERS } from "@/game/sim/player";
@@ -247,6 +253,14 @@ export default function PlayScreen() {
    */
   const saveRef = useRef(settings.save);
   const powerUpsRef = useRef<RunModifier[]>([]);
+  // Who the player picked on the character screen. A route parameter rather than a saved field, because
+  // "the character you last played" is a save migration and this is not it: an unreadable or locked choice
+  // falls back to somebody the profile definitely owns rather than refusing to start.
+  const params = useLocalSearchParams<{ character?: string }>();
+  const wanted = Number.parseInt(params.character ?? "", 10);
+  const characterRef = useRef(0);
+  characterRef.current = firstPlayable(settings.save, Number.isSafeInteger(wanted) ? wanted : 0);
+  const characterModsRef = useRef<RunModifier[]>([]);
   useEffect(() => {
     saveRef.current = settings.save;
   }, [settings.save]);
@@ -392,7 +406,7 @@ export default function PlayScreen() {
       // Who is on the network and what they are playing is the party layer's business, not the run's.
       // There is no party on this screen, so everybody is present and everybody is character zero.
       const connected = new Uint8Array(MAX_PLAYERS).fill(1);
-      const characterIds = new Uint8Array(MAX_PLAYERS);
+      const characterIds = new Uint8Array(MAX_PLAYERS).fill(characterRef.current);
       const reaperAtTicks = REAPER_SECOND * TICKS_PER_SECOND;
 
       const run = new Run(seedRef.current);
@@ -813,11 +827,22 @@ export default function PlayScreen() {
     // the start of a run, rather than held somewhere: the shop can be visited between two runs, and a run
     // that used a stale copy would be the shop appearing not to work.
     powerUpLoadout(saveRef.current, powerUpsRef.current);
+    // The character's own shifts go on the wire with everything else; its growth quirk is handed over as a
+    // ladder the run climbs as the player levels, because how far along it is depends on the level rather
+    // than on anything decided here.
+    const pick = Math.max(0, characterRef.current);
+    characterLoadout(pick, 1, characterModsRef.current);
+    const growth = CHARACTER_GROWTH_MODIFIERS[pick] ?? [];
     run.begin({
       seed: seedRef.current,
       playerCount: partyRef.current,
       modifiers: mods,
       powerUps: powerUpsRef.current,
+      characters: characterModsRef.current,
+      characterGrowth: growth,
+      characterGrowthEvery: CHARACTERS[pick]?.growth.everyLevels ?? 1,
+      characterIds: [pick, pick, pick, pick],
+      startingWeaponId: characterStartingWeaponId(pick, "reapersLash"),
       record: false,
     });
     stickRef.current.x = 0;
