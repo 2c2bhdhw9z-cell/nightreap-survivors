@@ -1538,10 +1538,10 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
   no longer tell who sent what from the connection alone. The relay therefore overwrites the sender byte
   with the true seat on every message it forwards. Impersonation is erased rather than detected.
 - Host migration client-side, drop-out grace, rejoin.
-- **Still outstanding in this phase:** the client's own link to the relay so the session code can run over
-  a real socket, host-migration handling on the client, the rejoin flow, render-side prediction so a
-  guest's own thumb feels instant, where the relay is actually hosted in production, and telling the
-  remaining players when a held seat finally expires (today the server just quietly frees it).
+- **Done since:** the client's own link to the relay, host-migration handling on the client, the rejoin
+  flow, seat-expiry announcements, and render-side prediction so a guest's own thumb feels instant.
+- **Still outstanding in this phase:** the co-op lobby screens, the four-player HUD, dev menu v2's co-op
+  panels, the remote-config gate, and where the relay is actually hosted in production.
 - **Debt, deliberately deferred to the end of this phase:** the networking folder sits at roughly one line
   of test per 2.7 lines of code, under the one-to-two rule. The shortfall is all in files written before
   the rule existed; one catch-up sweep closes it at the end of Phase 2.
