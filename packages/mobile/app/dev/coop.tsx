@@ -25,7 +25,6 @@
 
 import { Chunk, Cobble, Header, Mortar, Slab, StoneText } from "@/components/stone";
 import { Grid, Palette, PlayerColors } from "@/constants/theme";
-import { createDevContext } from "@/game/dev/channel";
 import {
   AGREEMENT,
   createFaultRequest,
@@ -39,10 +38,10 @@ import {
   ROLE,
   type FaultKind,
 } from "@/game/dev/coop-lab";
-import { DevGate } from "@/game/dev/devgate";
 import { panelCounts } from "@/game/dev/lint";
 import { PROTOCOL_VERSION } from "@/game/net/protocol";
 import { describeTaint } from "@/game/replay/format";
+import { devGate } from "@/lib/dev-gate-host";
 import {
   coopHashes,
   coopLab,
@@ -71,10 +70,9 @@ export default function CoopLabScreen(): ReactNode {
   const readout = useMemo(createLinkReadout, []);
   const fault = useMemo(createFaultRequest, []);
 
-  // FIDELITY: the channel is baked at build time by the release pipeline. Until that exists the dev
-  // build declares itself internal here, which is the only reason this page opens at all in the
-  // sandbox. It changes nothing about the tier rules — the gate still decides, panel by panel.
-  const gate = useMemo(() => new DevGate(createDevContext("internal")), []);
+  // One gate for the whole app, told what it is allowed to do by remote config. Not a local one: two
+  // gates would mean two audit logs and two opinions about whether the current run is still clean.
+  const gate = devGate();
 
   useEffect(() => {
     const timer = setInterval(redraw, REFRESH_MS);
@@ -150,7 +148,7 @@ export default function CoopLabScreen(): ReactNode {
 
         <Slab style={styles.statusRow}>
           <StoneText tone="ash" size={11}>
-            {`CHANNEL INTERNAL · ${counts.system} SYSTEM / ${counts.self} SELF · ${counts.readOnly} READ-ONLY`}
+            {`CHANNEL ${gate.context.channel.toUpperCase()} · ${counts.system} SYSTEM / ${counts.self} SELF · ${counts.readOnly} READ-ONLY`}
           </StoneText>
           <StoneText tone={lab.clean ? "cyan" : "crimson"} size={11} bold>
             {lab.clean ? "RUN CLEAN" : "RUN TAINTED"}

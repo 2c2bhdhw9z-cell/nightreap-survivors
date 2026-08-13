@@ -418,6 +418,47 @@ section("what the dev menu is told");
   rc.apply(docOf({ devMenu: { on: false } }, 3), T0);
   const killed = toDevFlags(rc, T0);
   check("a global kill is off without blaming the account", killed.devMenuEnabled === false && killed.accountBlocked === false);
+
+  /**
+   * SILENCE IS NOT A NO. The dev menu's baked default is off, which is right for a store build and wrong
+   * for one of our own devices with no network — so the bridge reports whether the answer came from an
+   * instruction we applied or from the default, and `channel.ts` treats the two differently.
+   */
+  check("no document at all is not an instruction", toDevFlags(new RemoteConfigState({ build: 100 }), T0).menuPublished === false);
+
+  const quiet = new RemoteConfigState({ build: 100, accountId: "me" });
+  quiet.apply(docOf({ coop: { on: true } }, 1), T0);
+  check("a document that never mentions the menu is not an instruction", toDevFlags(quiet, T0).menuPublished === false);
+
+  const spoken = new RemoteConfigState({ build: 100, accountId: "me" });
+  spoken.apply(docOf({ devMenu: { on: false } }, 1), T0);
+  check("an explicit kill is an instruction", toDevFlags(spoken, T0).menuPublished === true);
+  spoken.apply(docOf({ devMenu: { on: true } }, 2), T0);
+  check("an explicit enable is an instruction", toDevFlags(spoken, T0).menuPublished === true);
+  check("an expired document stops being an instruction", toDevFlags(spoken, T0 + CONFIG_MAX_AGE_MS).menuPublished === false);
+
+  const denied = new RemoteConfigState({ build: 100, accountId: "me" });
+  denied.apply(docOf({ devMenu: { on: true, deny: ["me"] } }, 1), T0);
+  check("a per-account block is an instruction", toDevFlags(denied, T0).menuPublished === true);
+
+  const rolled = new RemoteConfigState({ build: 100, accountId: "me" });
+  rolled.apply(docOf({ devMenu: { rolloutPct: 100 } }, 1), T0);
+  check("being in a rollout is an instruction", toDevFlags(rolled, T0).menuPublished === true);
+  const rolledOut = new RemoteConfigState({ build: 100, accountId: "me" });
+  rolledOut.apply(docOf({ devMenu: { rolloutPct: 0 } }, 1), T0);
+  check("being out of a rollout is also an instruction", toDevFlags(rolledOut, T0).menuPublished === true);
+
+  /** An instruction this build cannot honour is silence, not a no: the default stands and says so. */
+  const tooOld = new RemoteConfigState({ build: 1, accountId: "me" });
+  tooOld.apply(docOf({ devMenu: { on: true, minBuild: 999 } }, 1), T0);
+  check("an instruction for a newer build is not an instruction here", toDevFlags(tooOld, T0).menuPublished === false);
+  check("and it did not turn the menu on", toDevFlags(tooOld, T0).devMenuEnabled === false);
+
+  /** Forcing by hand is the loudest instruction there is, so it counts as published. */
+  const forced = new RemoteConfigState({ build: 100, accountId: "me", internal: true });
+  forced.setOverride(FLAG.DEV_MENU, false);
+  const forcedFlags = toDevFlags(forced, T0);
+  check("a hand-forced kill is an instruction", forcedFlags.menuPublished === true && forcedFlags.devMenuEnabled === false);
 }
 
 /* ---- writing it back --------------------------------------------------------------------------- */

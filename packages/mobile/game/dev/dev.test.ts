@@ -17,7 +17,7 @@
 
 import { TAINT, describeTaint, isLadderEligible } from "../replay/format";
 import { ReplayRecorder, decodeReplay } from "../replay/recorder";
-import { createDevContext, devMenuAvailable } from "./channel";
+import { applyDevFlags, createDevContext, devMenuAvailable, type DevFlags } from "./channel";
 import { DENY, DevGate, describeDeny } from "./devgate";
 import { DEV_PANELS, defineDevPanel, findDevPanel, selfTaintMask } from "./registry";
 import {
@@ -302,6 +302,60 @@ section("source rules");
   check("an RN import inside game/dev is caught", rules.has("engine-has-no-rn"));
   check("bypassing the gate is caught", rules.has("gate-is-the-only-door"));
   check("the planted file count matches", planted.length === 3, `${planted.length} violations`);
+}
+
+section("being told what the menu may do");
+{
+  /**
+   * The asymmetry that matters: the dev menu's baked default is OFF, because that is the shape a store
+   * build is submitted in. Feeding that default into an internal build would lock us out of our own
+   * tools whenever the network is unreachable — so silence leaves an internal menu open, and only an
+   * explicit instruction closes it. A kill, however, still reaches us.
+   */
+  const silentOff: DevFlags = { devMenuEnabled: false, chaosSandboxActive: false, accountBlocked: false };
+
+  const internal = createDevContext("internal");
+  check("internal starts with its menu open", devMenuAvailable(internal));
+  applyDevFlags(internal, silentOff, false);
+  check("silence does not lock an internal build out", devMenuAvailable(internal));
+  check("silence twice reports no change", applyDevFlags(internal, silentOff, false) === false);
+
+  applyDevFlags(internal, silentOff, true);
+  check("an explicit kill reaches an internal build", !devMenuAvailable(internal));
+  check("the kill is reported as a change", internal.flags.devMenuEnabled === false);
+
+  applyDevFlags(internal, { ...silentOff, devMenuEnabled: true }, true);
+  check("an explicit enable brings it back", devMenuAvailable(internal));
+
+  const blocked = createDevContext("internal");
+  applyDevFlags(blocked, { devMenuEnabled: false, chaosSandboxActive: false, accountBlocked: true }, true);
+  check("a blocked account has no menu", !devMenuAvailable(blocked));
+
+  /**
+   * A public build is the opposite case: silence must leave it shut, because that is the default the
+   * store copy ships with and the only thing standing between a stranger and the menu.
+   */
+  const publicCtx = createDevContext("public");
+  applyDevFlags(publicCtx, silentOff, false);
+  check("silence leaves a public build shut", !devMenuAvailable(publicCtx));
+  publicCtx.unlocked = true;
+  check("the secret unlock alone is not enough", !devMenuAvailable(publicCtx));
+  applyDevFlags(publicCtx, { ...silentOff, devMenuEnabled: true }, true);
+  check("published + unlocked opens a public build", devMenuAvailable(publicCtx));
+
+  /** Applied in place, because the app holds exactly one gate and one context for its whole life. */
+  const shared = createDevContext("internal");
+  const gate = new DevGate(shared);
+  applyDevFlags(shared, silentOff, true);
+  check(
+    "a live gate sees the kill without being rebuilt",
+    gate.open("render.overlays").reason === DENY.MENU_UNAVAILABLE,
+  );
+  check("and it agrees with reachable()", gate.reachable("render.overlays") === false);
+
+  /** Chaos Sandbox arrives the same way, and a chaos run is tainted from tick zero. */
+  applyDevFlags(shared, { devMenuEnabled: true, chaosSandboxActive: true, accountBlocked: false }, true);
+  check("chaos closes the public ladder", gate.publicLadderOpen() === false);
 }
 
 section("panel ids");

@@ -457,6 +457,15 @@ export const DEV_PANELS: readonly DevPanelSpec[] = [
     notes: "Poisons the recorded input log so server-side revalidation has something real to reject.",
   }),
   defineDevPanel({
+    id: "ops.config-readout",
+    label: "Remote config readout",
+    group: "ops",
+    tier: "system",
+    taint: 0,
+    readOnly: true,
+    notes: "Every flag, its state and why. Reads only, so it costs the run nothing and is safe mid-run.",
+  }),
+  defineDevPanel({
     id: "ops.remote-config",
     label: "Remote config write",
     group: "ops",

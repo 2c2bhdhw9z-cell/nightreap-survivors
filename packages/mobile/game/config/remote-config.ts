@@ -628,6 +628,30 @@ export interface DevFlagsLike {
   devMenuEnabled: boolean;
   chaosSandboxActive: boolean;
   accountBlocked: boolean;
+  /**
+   * Whether the answer above came from an instruction we actually applied, rather than from the baked
+   * default. False means the server said nothing usable about the dev menu: no document held, nothing
+   * about this flag, a document too old to trust, or an instruction this build is too old to honour.
+   *
+   * It exists because the dev menu's default is *off* — correct for a store build, wrong for one of our
+   * own devices on a plane. `channel.ts` uses this to leave an internal build's menu open on silence
+   * while still obeying an explicit kill.
+   */
+  menuPublished: boolean;
+}
+
+/**
+ * Reasons that mean "we fell back to the baked default", as opposed to "an instruction was applied".
+ * A local override counts as published: somebody chose it by hand, which is the loudest instruction there is.
+ */
+function isPublished(why: WhyCode): boolean {
+  return (
+    why !== WHY.NO_CONFIG &&
+    why !== WHY.NOT_IN_CONFIG &&
+    why !== WHY.EXPIRED &&
+    why !== WHY.UNKNOWN_FLAG &&
+    why !== WHY.BUILD_TOO_OLD
+  );
 }
 
 export function toDevFlags(state: RemoteConfigState, atMs: number): DevFlagsLike {
@@ -636,6 +660,7 @@ export function toDevFlags(state: RemoteConfigState, atMs: number): DevFlagsLike
     devMenuEnabled: menu.on,
     chaosSandboxActive: state.isOn(FLAG.CHAOS_SANDBOX, atMs),
     accountBlocked: menu.why === WHY.DENIED,
+    menuPublished: isPublished(menu.why),
   };
 }
 

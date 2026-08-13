@@ -85,3 +85,38 @@ export function devMenuAvailable(ctx: DevContext): boolean {
 export function countsForPublicLadder(ctx: DevContext): boolean {
   return ctx.channel === "public" && !ctx.flags.chaosSandboxActive;
 }
+
+/* ---- being told what the menu is allowed to do ---------------------------------------------------- */
+
+/**
+ * Replace the context's flags with what remote config currently says, in place.
+ *
+ * IN PLACE, ON PURPOSE. The app holds exactly one `DevGate` and the gate holds this context, so a
+ * replacement object would leave the gate consulting the old one. A flag that flipped two minutes ago
+ * and a panel that still opens are the same bug as a gate that closed and a button that still works.
+ *
+ * THE ONE ASYMMETRY WORTH READING
+ * `devMenu` is baked off, because that is the shape a store build is submitted in. Feeding that default
+ * straight into an internal build would lock us out of our own tools the moment the network is down —
+ * so silence about the dev menu leaves an internal build's menu open, and only an explicit instruction
+ * closes it. `published` is that distinction: it is false when the server said nothing we could apply
+ * (no document, nothing about this flag, an abandoned document, or a build too old for the instruction).
+ *
+ * A kill still reaches us. An explicit `on: false`, or this account on the deny list, shuts the menu on
+ * an internal build too — otherwise the emergency switch would have an exception exactly where a leaked
+ * internal build would be.
+ *
+ * @returns true when something actually changed, so a caller can avoid a pointless redraw.
+ */
+export function applyDevFlags(ctx: DevContext, flags: DevFlags, published: boolean): boolean {
+  const menu = published ? flags.devMenuEnabled : ctx.channel === "internal";
+  const before = ctx.flags;
+  const changed =
+    before.devMenuEnabled !== menu ||
+    before.chaosSandboxActive !== flags.chaosSandboxActive ||
+    before.accountBlocked !== flags.accountBlocked;
+  ctx.flags.devMenuEnabled = menu;
+  ctx.flags.chaosSandboxActive = flags.chaosSandboxActive;
+  ctx.flags.accountBlocked = flags.accountBlocked;
+  return changed;
+}

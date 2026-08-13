@@ -2191,3 +2191,45 @@ and the build are all green.
 
 Next on this: hooking the developer menu's own config page up to it, and deciding where the multiplayer
 server actually lives.
+
+---
+
+## The developer menu now listens to those instructions (13 Aug)
+
+The game has one developer menu, and from now on it has exactly one gatekeeper deciding what that menu
+may do. There was a temptation to give each developer page its own - that would have meant two separate
+records of what was touched during a run, and two different opinions about whether the run still counts.
+One gatekeeper, one record, one answer.
+
+The instructions from our side are pushed into that gatekeeper rather than fetched by it. The part of the
+code that runs the actual fight is not allowed to reach out to storage, the network or the clock, so
+something outside hands it the answers instead.
+
+There is one deliberate lopsidedness. Every gated feature is off unless told otherwise - that is the shape
+the app gets submitted to the store in, and it's the right default there. But it's the wrong default for
+our own phones, sitting offline in a room with no signal: it would lock us out of our own menu. So silence
+leaves the menu open on our internal builds, while an explicit instruction to close it still closes it -
+on internal builds too. The emergency switch has no exception anywhere, including the place a leaked
+internal build would be.
+
+A forced switch counts as an instruction, because a switch someone flipped by hand is the loudest
+instruction there is.
+
+The config page inside the developer menu now shows, for every switch: whether it's on, why it's on or off
+in plain words, how old our instructions are, whether they've gone stale, and which set of instructions
+we're looking at. Reading all that costs nothing and marks nothing - you can open it in the middle of a
+fight and the run still counts for the leaderboard. Forcing a switch by hand does mark the run, and cycles
+through three states rather than two: leave it alone, force on, force off. "I turned this off" and "this
+is off by itself" are different facts and the page shows which. On a store build, forcing is refused by
+the code itself, not just greyed out on screen.
+
+Six deliberate breaks were tried: treating silence as a real no, letting silence open a store build's menu,
+handing the gatekeeper a replacement set of switches instead of updating the one it holds, treating expired
+instructions as still valid, treating "your version is too old" as a real instruction, and letting the
+chaos switch stop closing the public leaderboard. All six were caught. Sources restored and checked
+byte-for-byte afterwards.
+
+Typecheck, lint, the whole game suite, the server test, the two-players-over-a-real-connection test and
+the build are all green.
+
+Next on this: deciding where the multiplayer server actually lives when it isn't on this machine.
