@@ -187,6 +187,16 @@ export interface SaveSettings {
   /** Read-only speedrun overlay: input display, precise timer, seed. Reads do not taint a run. */
   speedrunToolkit: boolean;
 
+  /**
+   * The guided run. Two separate facts, deliberately: whether the one-time offer has already been made
+   * (so it can never be made twice), and whether prompts are currently armed. Answering "I've got it" is
+   * not permanent — Settings can arm the guide again any time — so a single boolean would not do.
+   * These live in the reserved tail of the settings block, so no save version bump: an existing v2 slot
+   * reads both as false, which is exactly "never offered, not armed".
+   */
+  guideOffered: boolean;
+  guideArmed: boolean;
+
   /** Party badges fused to the slot strip (true) or a free-floating cluster the player drags (false). */
   hudBadgesDocked: boolean;
   /** `HUD_ALIGN`, used only while docked. */
@@ -228,6 +238,8 @@ export function defaultSettings(): SaveSettings {
     insectFreeSprites: false,
     autoAim: false,
     speedrunToolkit: false,
+    guideOffered: false,
+    guideArmed: false,
     hudBadgesDocked: true,
     hudBadgeAlign: HUD_ALIGN.LEFT,
     hudBadgeX: 6,

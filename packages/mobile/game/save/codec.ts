@@ -172,7 +172,14 @@ function packSettings(view: DataView, at: number, s: SaveSettings): void {
   view.setUint16(at + 30, s.hudSlotStripScale & 0xffff, true);
   view.setUint16(at + 32, s.hudBadgeScale & 0xffff, true);
   view.setUint16(at + 34, s.hudStickScale & 0xffff, true);
-  // 36..47 reserved, left zero.
+  // Byte 36 is a second flag byte, opened up because byte 10's sixteen bits are all spoken for. It sits
+  // inside the block v2 already reserved, so an existing v2 save reads it as zero — "never offered, not
+  // armed" — and needs no migration.
+  let flags2 = 0;
+  if (s.guideOffered) flags2 |= 1 << 0;
+  if (s.guideArmed) flags2 |= 1 << 1;
+  view.setUint8(at + 36, flags2 & 0xff);
+  // 37..47 reserved, left zero.
 }
 
 function unpackSettings(view: DataView, at: number, version: number): SaveSettings {
@@ -221,6 +228,9 @@ function unpackSettings(view: DataView, at: number, version: number): SaveSettin
   s.hudSlotStripScale = view.getUint16(at + 30, true);
   s.hudBadgeScale = view.getUint16(at + 32, true);
   s.hudStickScale = view.getUint16(at + 34, true);
+  const flags2 = view.getUint8(at + 36);
+  s.guideOffered = (flags2 & (1 << 0)) !== 0;
+  s.guideArmed = (flags2 & (1 << 1)) !== 0;
   return s;
 }
 

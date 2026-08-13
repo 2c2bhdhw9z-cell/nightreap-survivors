@@ -2359,3 +2359,41 @@ progress, with relay hosting explicitly carried forward instead of blocking. Two
 "Also outstanding" were wrong and are corrected: the networking test-ratio debt is paid, and the
 relay does now have a chosen home. Re-verified before committing: types clean, lint clean, the whole
 game test suite passes, the build passes.
+
+## The guided run — engine built (13 Aug)
+
+The first piece of Phase 3 is done, apart from its screens.
+
+**What got built.** Four files. One holds every word the guide can say, as numbered lines rather than
+sentences buried in code, so a translator can be handed a list later without anyone hunting through the
+game for text. One is the list of lessons — nineteen of them, each with the words it says, which edge of
+the screen it sits on, what it points at, how long it stays, and how urgent it is. One is the part that
+watches the run and decides which lesson to show when. One is the rule about who gets offered the guide
+and when it is on or off.
+
+**The thing that had to be true.** A guided run must count. Proven, not assumed: the test plays the same
+seed twice with the same inputs, once with the guide watching every tick and once without, and the two
+worlds come out identical down to the last bit. So turning prompts on can never change a score, and a
+guided run is legal on every leaderboard.
+
+**The rules it follows.** One prompt on screen at a time. Explanations wait their turn; "you're about to
+die" cuts an explanation short instead of queueing behind it. A lesson that has been waiting more than
+three seconds is thrown away rather than shown at the wrong moment. Nothing repeats. Lessons about
+teammates never appear in a solo run, and your own seat is never treated as a teammate. Everything the
+guide points at is looked up fresh from the live screen, so a player who has moved or resized their HUD
+still gets the ring around the thing that moved. One tap turns the whole thing off for the rest of the
+run, instantly, with no confirmation.
+
+**The offer.** Asked once, at the very first launch, and never again. Neither answer is permanent —
+Settings has "How to play" forever. Those two facts (were you asked, are prompts on) are stored in space
+the save file had already set aside, so old saves still load and the save format did not change.
+
+**How hard it was checked.** 997 lines of test against 1,195 lines of code. 191 checks. Seventeen
+deliberate sabotages — wrong timings, a collided storage bit, a lesson allowed to repeat, a blank line of
+text, "no" secretly meaning "yes" — and all seventeen were caught. Typecheck, lint, the whole engine test
+suite and the build all clean.
+
+**Not done yet:** the two screens themselves (the first-launch offer and the "what things mean" page) and
+the Settings entry, all three from the mocks already approved, with the four corrections recorded earlier
+(XP bar inside the top stone block; the offer appears the instant the run starts; a flatter, darker gem
+icon; the evolution icon is two sockets and a star, never crossed weapons).
