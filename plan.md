@@ -1780,7 +1780,10 @@ phase, 88 rejected, 5 escalated as open decisions. Only the accepted items are r
 - Third-party and community integrations: Twitch chat voting on card picks, community-sourced
   translations, community-drawn weapon skins. (Licensed guest characters are "not now" rather than
   never — see the corrections below.)
-- Voice chat and free-text chat in co-op. Preset messages cover the need without moderation exposure.
+- Voice chat in co-op. Needs an audio stack, real-time audio moderation is near-impossible, and a
+  hot mic in a stranger's room is the worst moderation surface there is. (Free-text chat was
+  originally rejected alongside it and has since been **accepted** — see the moderation engine
+  section for why the reasoning changed.)
 - An entire second art style for a weekend event.
 - Randomising the simulation's own rules mid-run. Chaos Sandbox Day already covers chaos.
 - Bribing the Reaper to delay him. His arrival is the game's one ceremony.
@@ -1808,10 +1811,185 @@ phase, 88 rejected, 5 escalated as open decisions. Only the accepted items are r
   communicate. A base set of canned messages — help, chest here, thanks, over here, going down —
   ships **free with co-op in Phase 5**, on the same button as the ping marker. Decorative extra
   emotes on top of that free set are what sells in Phase 8.
-  Voice and text chat both stay rejected: text needs moderation, voice needs an audio stack plus
-  moderation, both worsen the age rating, and both make the developer responsible for policing
-  strangers. A fixed message list cannot be used to say anything harmful, which is the whole point.
+  **Superseded 2026-08-13 on text chat:** this section originally rejected free-text chat as well,
+  on the grounds that it needs moderation. That reasoning assumed moderation means a person reading
+  reports. It does not — enforcement automates almost completely. Free-text chat is now **accepted**
+  behind an automated moderation engine; see the dedicated section below. Voice chat stays rejected.
+  The preset messages are unaffected and still ship free with co-op in Phase 5 — they are what
+  players who never want to type will use, and they remain the only communication in the game until
+  the moderation engine ships.
 - **Licensed guest characters: "not now", not "never".** The blocker is a contract with another
   studio, which realistically only happens after a game succeeds. Post-launch, if a studio
   approaches us, a guest character is a data row plus a sprite sheet — roughly a week. Nothing to
   design for now beyond keeping characters fully data-driven, which they already are.
+
+
+## Moderation engine and free-text chat (settled 2026-08-13)
+
+Free-text co-op chat is **accepted**, gated behind an automated moderation engine, shipping in
+**Phase 8** alongside the cosmetic store and cloud save. It ships there and not earlier because
+every meaningful enforcement action has to attach to an account, and the account system is a Phase 8
+deliverable. Preset messages plus the ping marker carry all co-op communication from Phase 5 through
+launch and remain permanently available.
+
+### The decision that unlocked it
+
+The rating cost was researched and accepted, not dodged. Apple's age rating questionnaire, as of the
+2026 revision, asks directly whether users can communicate freely. Answering yes imposes a floor of
+**13+** regardless of moderation quality — it is a capability checkbox, not an assessment. Google
+Play's content rating questionnaire behaves equivalently, pushing toward Teen. There is no
+engineering workaround: a player-facing on/off switch does not help, because shipping the capability
+is what must be declared.
+
+**User's ruling: 13+ is acceptable.** The realistic audience for a dark gothic horde survival game
+does not skew under 13, so the rating floor costs us approximately nothing in reachable audience.
+
+This also means the earlier reasoning that a switch could preserve a lower rating is dead. The chat
+on/off switch still ships, but it is a **player comfort setting, not a compliance mechanism** — it
+exists so the roughly half of players who do not want strangers typing at them can turn the channel
+off entirely and play with presets only. Default state is decided in the Phase 7 polish pass.
+
+### What the engine must satisfy
+
+Apple's Guideline 1.2 requires, for any app with user-generated content: a method for filtering
+objectionable material before it posts, a mechanism for users to report content, a mechanism for
+users to block other users, and published contact information. Reports must be acted on within
+24 hours. Google Play's equivalent policies are satisfied by the same implementation.
+
+The critical clarification, because it changes the cost enormously: **"eject the offender" is
+satisfied by removing them from chat, not from the app.** A chat-banned player keeps the entire
+game, keeps their save, keeps buying cosmetics. They cannot type. This meets the requirement in full
+and costs zero revenue. Full account bans are reserved for the extreme tail.
+
+### Layer 1 — normalization, before anything is checked
+
+Evasion is the whole game at this layer. Every outgoing message is reduced to a canonical form
+before any list is consulted:
+
+- Unicode confusables and homoglyphs folded to ASCII (Cyrillic а, fullwidth ａ, mathematical bold 𝐚).
+- Combining marks, zero-width characters, and diacritics stripped.
+- Leetspeak reversed (`1`→`i`, `3`→`e`, `0`→`o`, `$`→`s`, `@`→`a`, `!`→`i`).
+- Separator characters between letters collapsed (`s-l-u-r`, `s.l.u.r`, `s l u r`, `s_l_u_r`).
+- Repeated characters collapsed (`sssluuur` → `slur`).
+- Case folded.
+
+Matching then runs on the normalized form, and — critically — also on the normalized form with all
+whitespace removed, which is what catches a slur split across word boundaries. Both the original and
+the normalized text are retained: the original for display and appeals, the normalized for scoring.
+
+Word lists are **content data, versioned, CI-linted** like every other content table, with separate
+severity tiers. They are also **server-updatable via remote config** — a new slur or a new evasion
+trick must be blockable in minutes without an app update, which is exactly the existing remote kill
+switch infrastructure.
+
+### Layer 2 — severity tiers, not a single blocklist
+
+- **Tier 3 (severe):** slurs, sexual content, threats of violence, anything sexual involving minors.
+  Blocked outright, never transmitted, immediate permanent chat ban with no ladder. Sexual content
+  involving minors additionally triggers a full account ban and is preserved for legal reporting.
+- **Tier 2 (profanity):** blocked from transmission, sender warned, one strike accrued. Not
+  transmitted-then-deleted — the recipient never sees it.
+- **Tier 1 (mild):** transmitted with the term masked. No strike.
+
+A blocked message never reaches the network. Filtering happens sender-side for instant feedback and
+is **re-checked host-side and relay-side**, because a modded client can bypass its own filter. The
+sender-side check is UX; the server-side check is the actual enforcement.
+
+### Layer 3 — an AI classifier for the gray middle
+
+A word list cannot catch harassment containing no listed words, grooming patterns, coordinated
+targeting, or self-harm content. A cheap text classification model scores every message that passes
+the list on: harassment, sexual content, self-harm, threat, grooming. Cost is a fraction of a cent
+per message and only messages that clear Layer 2 reach it.
+
+Design constraints: the classifier is **advisory to the ladder, never the sole basis for a permanent
+ban** — high scores mute, they do not permanently ban, precisely because classifiers produce false
+positives and a false permanent ban is the worst possible outcome for a paying player. Self-harm
+detection does **not** punish; it surfaces a crisis-resources card to the sender and takes no
+enforcement action, because punishing a person in distress is indefensible.
+
+If the classifier service is unreachable, messages **fail closed for new accounts and open for
+accounts in good standing**. A total outage must not silence the entire playerbase.
+
+### Layer 4 — behavioral signals, reading no text at all
+
+The strongest signals in moderation are structural and require no language understanding:
+
+- **Multi-reporter convergence.** Several unrelated players reporting one person inside a short
+  window is the highest-confidence signal available. Crossing the threshold auto-mutes pending
+  review. Reporters must be unrelated — not the same party repeatedly, which is how a group grief-
+  reports one player.
+- **Spam and flooding.** Identical or near-identical text to many recipients; message rate above a
+  human ceiling. Rate limits are per-account and per-session.
+- **New-account risk weighting.** A brand-new account messaging strangers heavily is weighted more
+  aggressively than an account with hundreds of clean hours. Tenure earns latitude.
+- **Report accuracy tracking.** Every reporter accumulates a precision score. Players whose reports
+  are consistently dismissed have their reports deweighted and eventually accrue their own strikes —
+  false reporting is itself an abuse vector, and the engine must not be weaponizable.
+
+### Layer 5 — automatic enforcement, and the ladder
+
+**A report does not wait for a human.** On report, the engine re-scores the exact reported text
+against a stricter threshold than the live filter, combines that with the reported account's
+history and the reporter's precision score, and acts in seconds. Unambiguous violations are removed
+and the ladder advances automatically. Unambiguous non-violations are dismissed and count against
+the reporter's precision. Only the genuinely ambiguous middle band is queued for a human.
+
+The ladder, running unattended:
+
+| Step | Trigger | Consequence |
+| --- | --- | --- |
+| 1 | First Tier-2 strike | Message blocked, warning shown in-client |
+| 2 | Repeat | Chat muted 24 hours — game fully playable |
+| 3 | Repeat | Chat muted 7 days |
+| 4 | Repeat | Permanent chat ban |
+| — | Any Tier-3 | Permanent chat ban immediately, ladder skipped |
+| — | Sexual content involving minors | Full account ban, preserved for reporting |
+
+Strikes **decay** — a clean stretch of play reduces accrued strikes, so a player who swore once a
+year ago is not one strike from a permanent ban. The ladder punishes patterns, not history.
+
+**Bans are account-bound and survive reinstalls.** A ban attached to the app on the device is
+theater. Enforcement attaches to the opaque account id already specified for cloud save, and every
+enforcement action is an **append-only event-log row** — the same log used for leaderboard grants —
+so any action can be audited, explained to a player, or reversed in bulk if the engine misbehaves.
+
+### What remains manual, honestly
+
+Appeals, and the ambiguous middle band. Both are queues with **no 24-hour clock**, because the
+enforcement action already happened automatically — a human is only ever reviewing whether the
+engine was *wrong*, never whether to act. At small scale this is a handful of items a week. Tooling
+lives in the existing break-glass admin surfaces: the web admin page and the private dev build.
+
+A bulk-reversal path is mandatory. If a bad word-list update or a misbehaving classifier
+mass-punishes innocent players, every action must be revertable in one operation from the event log.
+
+### Player-facing requirements, all mandatory
+
+- **Report button** on any message, and on a player in the co-op roster.
+- **Block button.** A blocked player's messages are never delivered, in this session or any future
+  one. Blocking is client-enforced *and* server-enforced.
+- **Chat on/off switch** in settings, and a separate switch for chat from non-friends.
+- **Generated display names by default**, custom names opt-in and filtered through the same engine —
+  already settled; names are UGC exactly like messages.
+- **Published contact address** for moderation appeals, listed in the store listing and in-app.
+- Chat is **never** available during the results screen or any leaderboard submission path, to keep
+  harassment out of competitive contexts.
+
+### Explicitly out of scope
+
+- Voice chat. Rejected permanently.
+- Chat with players outside your current co-op session. No global channel, no friend DMs, no
+  persistent inbox. Chat exists only inside an active run, which bounds the entire abuse surface to
+  people you are already playing with and makes stranger-targeting nearly impossible by design.
+- Message history retention beyond what appeals require.
+- Player-created content of any other kind: no custom emotes, no drawings, no profile bios.
+
+### Where this lands in the plan
+
+- **Phase 5:** preset messages plus ping marker ship free with co-op. No free-text chat, no
+  moderation engine, no rating change.
+- **Phase 7:** chat UI designed in the polish pass under the mock-first gate, default states chosen.
+- **Phase 8:** moderation engine, free-text chat, account-bound enforcement, admin queues. Age
+  rating questionnaires updated to declare communication; **13+ accepted**. Ships behind the
+  existing remote-config flag so it can be switched off globally in seconds if it goes wrong.

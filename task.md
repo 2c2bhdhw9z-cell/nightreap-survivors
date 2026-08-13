@@ -1177,3 +1177,104 @@ a second behind the host, and handing the host role over when the host quits. Th
 wait on approved mock images like all UI.
 
 Verified: typecheck clean, lint clean, 17 automated test files pass, build succeeds, pushed to GitHub.
+
+
+---
+
+## Chat, and the machine that polices it (decided 2026-08-13)
+
+Players will be able to type to each other in co-op. This was rejected earlier and that was reversed,
+so here is the whole thing in plain terms.
+
+### Why it was rejected, and why that was wrong
+
+The original reason was "typing needs moderation." That was true but the conclusion was wrong, because
+it quietly assumed moderation means *a person reading complaints every day*. It doesn't. Almost all of
+it is a machine's job.
+
+### What the machine does, with nobody watching
+
+**It cleans up the message before checking it.** People don't type slurs plainly, they try to sneak
+them past. `s1ur`, `s-l-u-r`, `s l u r`, `sssluuur`, or letters from other alphabets that look
+identical to ours. So every message gets flattened first — separators removed, number-for-letter
+tricks undone, repeated letters collapsed, lookalike characters converted — and *then* it gets
+checked. It's also checked with all the spaces taken out, which is what catches a slur split across
+two words.
+
+**It sorts by how bad the thing is.** Mild stuff gets the word starred out. Ordinary swearing gets
+blocked and the sender warned — the other player never sees it at all. Slurs, threats, and sexual
+content get blocked and permanently ban that person from chat on the spot, no warnings.
+
+**It reads for the stuff no word list can catch.** Someone can be vicious without using a single bad
+word. A small, cheap AI reads each message that passed the word check and scores it for harassment,
+threats, and grooming. If the AI thinks someone is talking about hurting themselves, it does *not*
+punish them — it quietly shows that person crisis resources. Punishing someone in distress would be
+indefensible.
+
+**It watches behavior, not just words.** Several different players reporting the same person in a
+short time is the single strongest signal there is, and it needs no reading at all — that alone gets
+someone muted immediately. Same for spamming the same line at twelve people, or typing faster than a
+human can. A brand-new account gets watched harder than someone with three hundred clean hours.
+
+**It handles reports by itself.** This is the part I got wrong before. When someone hits report, the
+machine re-reads that exact message with stricter rules, weighs it against that person's history, and
+acts within seconds. Obviously bad, it's gone and the punishment steps up. Obviously fine — someone
+report-spamming the teammate who outscored them — dismissed, and *that* person gets a mark against
+their own reporting record. People whose reports are always garbage stop being listened to.
+
+### About bans
+
+Punishment escalates: warning, then muted a day, then muted a week, then muted permanently. Only the
+truly severe stuff skips straight to the end.
+
+Two things worth knowing:
+
+**A "ban" means banned from typing, not banned from the game.** Someone chat-banned keeps the game,
+keeps their save, keeps buying cosmetics. They just can't talk. That fully satisfies what the app
+stores require and costs us nothing in sales. Full account bans are for the extreme tail only.
+
+**Marks fade.** Someone who swore once a year ago isn't one mistake away from a permanent ban. It
+punishes patterns, not history.
+
+**Bans stick through a reinstall.** A ban that a player escapes by deleting the app is theater, so it
+attaches to their account instead of their phone.
+
+### What's actually left for you to do
+
+Appeals, and the genuinely unclear cases. Both are just lists you look at whenever you feel like it —
+there's no clock, because the machine already acted. You're only ever checking whether it got
+something *wrong*, never deciding what to do. At our size that's a handful of items a week.
+
+There's also a one-button undo. If a bad update makes the machine start punishing innocent people, one
+action reverses every mistake it made, because every single decision it ever makes is written down
+permanently.
+
+### The one thing I can't build around
+
+The app stores now ask, point blank, "can players type to each other?" Answering yes means the game
+is rated **13+**. It doesn't matter how good our filter is — it's a checkbox, not a grade. You decided
+13+ is fine, and I agree: nobody under 13 was going to be playing a dark gothic horde survival game
+anyway.
+
+Because of that, the chat on/off switch is no longer about the rating — it's just a comfort setting for
+players who don't want strangers typing at them.
+
+### Deliberately kept small
+
+Voice chat is permanently off the table. A hot microphone in a stranger's room is the worst possible
+thing to police, and there's no realistic way to filter live audio.
+
+And chat only exists **inside an active co-op run**. No global chat room, no friend messages, no inbox.
+That single restriction does more for safety than any filter, because you can only talk to people
+you're already in a game with. There's no way to hunt for strangers to harass.
+
+### When
+
+The preset messages — help, chest here, thanks, over here, going down — still ship free with co-op,
+same button as the map ping. Those are what the players who never want to type will use, and they
+arrive well before typing does.
+
+Typing and the moderation machine come in the final stage, alongside the cosmetic shop, because every
+punishment has to attach to an account and accounts don't exist until then. It also ships behind the
+same remote switch as everything else, so if it goes badly it can be turned off worldwide in seconds
+without an app update.
