@@ -2469,3 +2469,47 @@ exactly that was added and it is caught now.
 deliberately not tried: a test line in an append-only table can never be removed. The endpoints sit behind
 an admin token compared in constant time, and a server with no token configured refuses every one of them
 rather than serving the log to anyone who asks.
+
+## An undo can now be undone (13 Aug)
+
+You asked whether there is a way to make an undo undoable. There is, and it did not require breaking the
+rule we already wrote down.
+
+**The rule stays.** An undo still cannot be undone directly. That rule is not stubbornness — it is what
+keeps the history readable. If undos could stack on undos, working out whether a player currently has their
+coins would mean counting how deep the pile goes, and someone would eventually count wrong.
+
+**What we did instead.** Putting something back is a new, ordinary action of the original kind. If an undo
+took away 500 coins, the fix is a normal "gave 500 coins" line — one that carries a link saying "this is here
+because the undo on line 412 was a mistake." The link does nothing mechanically. It is there so that six
+months from now, the page explains itself instead of a support person guessing.
+
+Because the redo is an ordinary line, it can be undone again. So back and forth is unlimited, and nobody ever
+has to know how many undos deep an account is.
+
+**The parts that stop mistakes.** A redo has to point at a real undo, not any line. It has to be the same
+kind of thing that undo took away, and about the same player — checked against both the undo and the original.
+One undo can be put back at most once, so two staff members clicking at the same moment cannot double-refund.
+A line cannot be both an undo and a redo. And you can only redo something that was undoable to begin with,
+or the first redo would be a door that only opens one way.
+
+**Staff never type the amount.** The redo copies what it needs from the original line. The person only says
+who they are, when, and why. That removes the whole category of "meant to give back 500, typed 5000."
+
+**Reading it back.** There is now a walk that follows the links — not the clock, which can lie — and reads
+out "did / undid / redid / undid / redid" in order, starting from any point in the chain. That is what the
+admin page will show as one story instead of five unrelated lines.
+
+**Proof.** 1,707 lines of code against 860 of test, which clears the 1:2 rule. Six deliberate breakages
+tried, six caught. The new column is live in the real database.
+
+## A check that was checking nothing (13 Aug)
+
+While doing the above I found that the website side's type check was pointed at a settings file listing zero
+files. It inspected nothing and passed instantly. I do not know how long it had been dead. I proved it dead by
+putting an obvious error in a real file and watching it pass, fixed it to check both halves including the
+server code, then proved it alive the same way — the build now fails on that error. The moment it started
+working it found a real gap in the new tests, which is now fixed.
+
+This is the second time a check has been caught passing because it could not fail. The rule holds: a check
+that cannot fail is not a check.

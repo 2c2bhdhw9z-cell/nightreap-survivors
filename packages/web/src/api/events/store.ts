@@ -44,10 +44,15 @@ import {
   type BulkPlan,
   type ChainReport,
   planGroupReversal,
+  restoreDraftFor,
+  type RestoreFacts,
   seal,
+  storyOf,
+  type StoryStep,
   type TargetFacts,
   validate,
   validateReversal,
+  validateRestore,
   verifyChain,
 } from "./log";
 
@@ -72,6 +77,8 @@ export interface EventBackend {
   group(groupId: string): Promise<EventRow[]>;
   /** Which of these sequence numbers already have a reversal naming them. */
   reversedAmong(seqs: readonly number[]): Promise<number[]>;
+  /** Which of these sequence numbers already have a restore naming them. One reversal, at most one redo. */
+  restoredAmong(seqs: readonly number[]): Promise<number[]>;
   /** Every row about one account, ascending. */
   bySubject(subjectId: string): Promise<EventRow[]>;
 }
@@ -126,6 +133,8 @@ export class EventLog {
       let reason: BadReason;
       if (draft.kind === EVENT.REVERSAL) {
         reason = validateReversal(draft, nextSeq, await this.targetFacts(draft.reverses));
+      } else if (draft.restores !== 0) {
+        reason = validateRestore(draft, nextSeq, await this.restoreFacts(draft.restores));
       } else {
         reason = validate(draft);
       }
@@ -156,6 +165,85 @@ export class EventLog {
       subjectId: target.subjectId,
       alreadyReversed: reversed.length > 0,
     };
+  }
+
+  /**
+   * The facts a restore's target has to supply.
+   *
+   * Two reads, because a restore is checked against two rows: the reversal it names, and the original row
+   * that reversal undid. A reversal whose own target has vanished reports as not existing rather than as a
+   * half-known thing, so the rule refuses instead of accepting on partial evidence.
+   */
+  private async restoreFacts(seq: number): Promise<RestoreFacts> {
+    const missing: RestoreFacts = {
+      exists: false,
+      seq: 0,
+      kind: 0,
+      subjectId: "",
+      reversedKind: 0,
+      reversedSubjectId: "",
+      alreadyRestored: false,
+    };
+    if (seq <= 0) return missing;
+
+    const reversal = await this.backend.byId(seq);
+    if (reversal === null) return missing;
+    if (reversal.kind !== EVENT.REVERSAL) {
+      // Exists, but is not a reversal. Report it as it is and let the rule name the problem — this is the
+      // case where the caller pointed the redo link at the wrong row, and it deserves its own refusal.
+      return { ...missing, exists: true, seq: reversal.seq, kind: reversal.kind, subjectId: reversal.subjectId };
+    }
+
+    const original = await this.backend.byId(reversal.reverses);
+    if (original === null) return missing;
+    const restored = await this.backend.restoredAmong([seq]);
+    return {
+      exists: true,
+      seq: reversal.seq,
+      kind: reversal.kind,
+      subjectId: reversal.subjectId,
+      reversedKind: original.kind,
+      reversedSubjectId: original.subjectId,
+      alreadyRestored: restored.length > 0,
+    };
+  }
+
+  /**
+   * Put back what a reversal took away.
+   *
+   * Builds the row from the original rather than from anything the caller typed, then appends it through the
+   * ordinary path so it is validated, sealed and chained like every other row. There is no shortcut here for
+   * the same reason there is no bulk fast lane: a second way in is where the rule gets broken.
+   */
+  async restore(
+    reversalSeq: number,
+    actorKind: number,
+    actorId: string,
+    at: number,
+    reason: string,
+    groupId = "",
+  ): Promise<AppendResult> {
+    const reversal = await this.backend.byId(reversalSeq);
+    if (reversal === null || reversal.kind !== EVENT.REVERSAL) {
+      return { status: APPEND.REFUSED, reason: reversal === null ? BAD.NO_SUCH_TARGET : BAD.NOT_A_REVERSAL, row: null };
+    }
+    const original = await this.backend.byId(reversal.reverses);
+    if (original === null) return { status: APPEND.REFUSED, reason: BAD.NO_SUCH_TARGET, row: null };
+
+    return this.append(restoreDraftFor(original, reversal, actorKind, actorId, at, reason, groupId));
+  }
+
+  /**
+   * The whole did / undid / redid story around one row.
+   *
+   * Read from the account's own rows, so the walk sees every link in the chain: a reversal and a restore both
+   * carry the subject of the row they are about, which is what makes one query enough.
+   */
+  async story(seq: number): Promise<StoryStep[]> {
+    const row = await this.backend.byId(seq);
+    if (row === null) return [];
+    if (row.subjectId === "") return storyOf(await this.backend.range(1, Number.MAX_SAFE_INTEGER), seq);
+    return storyOf(await this.backend.bySubject(row.subjectId), seq);
   }
 
   /** A slice of the log, for the admin page and for verification. */
@@ -295,6 +383,15 @@ export class MemoryEventBackend implements EventBackend {
     const found = new Set<number>();
     for (const row of this.rows) {
       if (row.kind === EVENT.REVERSAL && wanted.has(row.reverses)) found.add(row.reverses);
+    }
+    return Promise.resolve([...found]);
+  }
+
+  restoredAmong(seqs: readonly number[]): Promise<number[]> {
+    const wanted = new Set(seqs);
+    const found = new Set<number>();
+    for (const row of this.rows) {
+      if (row.restores > 0 && wanted.has(row.restores)) found.add(row.restores);
     }
     return Promise.resolve([...found]);
   }

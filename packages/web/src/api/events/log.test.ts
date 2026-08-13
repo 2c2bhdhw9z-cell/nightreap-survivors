@@ -27,13 +27,17 @@ import {
   LIMITS,
   planGroupReversal,
   REVERSIBLE,
+  restoreDraftFor,
   seal,
+  storyOf,
   validate,
   validateReversal,
+  validateRestore,
   verifyChain,
   type EventDraft,
   type EventRow,
   type Scalar,
+  type RestoreFacts,
   type TargetFacts,
 } from "./log";
 import { APPEND, EventLog, MemoryEventBackend } from "./store";
@@ -65,7 +69,21 @@ function draftOf(over: Partial<EventDraft> = {}): EventDraft {
     at: T0,
     payload: { amount: 100 },
     reverses: 0,
+    restores: 0,
     groupId: "",
+    ...over,
+  };
+}
+
+function restoreTargetOf(over: Partial<RestoreFacts> = {}): RestoreFacts {
+  return {
+    exists: true,
+    seq: 2,
+    kind: EVENT.REVERSAL,
+    subjectId: "acct-a",
+    reversedKind: EVENT.GOLD_GRANTED,
+    reversedSubjectId: "acct-a",
+    alreadyRestored: false,
     ...over,
   };
 }
@@ -136,7 +154,7 @@ section("the bytes a hash is taken over");
   const base = { ...draftOf(), seq: 7, prevHash: GENESIS_HASH };
 
   check("the same facts give the same bytes twice", canonical(base) === canonical({ ...base }));
-  check("the bytes say which version wrote them", canonical(base).startsWith("v1|"));
+  check("the bytes say which version wrote them", canonical(base).startsWith("v2|"));
 
   const keysOneWay = canonical({ ...base, payload: { alpha: 1, beta: 2 } });
   const keysOther = canonical({ ...base, payload: { beta: 2, alpha: 1 } });
@@ -277,6 +295,11 @@ section("what may undo what");
   const manyKeys: Record<string, Scalar> = {};
   for (let i = 0; i <= LIMITS.PAYLOAD_KEYS; i++) manyKeys[`k${i}`] = i;
   reached.add(validate(draftOf({ payload: manyKeys })));
+  reached.add(validateRestore(draftOf({ restores: 0 }), 9, restoreTargetOf()));
+  reached.add(validate(draftOf({ kind: EVENT.REVERSAL, reverses: 1, restores: 2 })));
+  reached.add(validateRestore(draftOf({ restores: 2 }), 9, restoreTargetOf({ kind: EVENT.GOLD_GRANTED })));
+  reached.add(validateRestore(draftOf({ restores: 2 }), 9, restoreTargetOf({ alreadyRestored: true })));
+  reached.add(validateRestore(draftOf({ restores: 2, kind: EVENT.MARKS_GRANTED }), 9, restoreTargetOf()));
   const missing = Object.values(BAD).filter((b) => !reached.has(b));
   check("every refusal the log can give is actually reachable", missing.length === 0, `never reached: ${missing.map((m) => BAD_NAMES[m]).join(", ")}`);
 }
@@ -483,6 +506,7 @@ section("the store: a lost race is refused, not forked");
     range: (from: number, to: number) => inner.range(from, to),
     group: (id: string) => inner.group(id),
     reversedAmong: (seqs: readonly number[]) => inner.reversedAmong(seqs),
+    restoredAmong: (seqs: readonly number[]) => inner.restoredAmong(seqs),
     bySubject: (id: string) => inner.bySubject(id),
   };
 
@@ -611,6 +635,106 @@ section("the store: undoing a whole wave");
   const secondTime = await log.reverseGroup("wave-1", ACTOR.ADMIN, "admin-1", T0 + 300, "again", "undo-2");
   check("undoing the same wave twice does nothing new", secondTime.appended.length === 0);
   check("and says why for every row", secondTime.skipped.length === 6);
+}
+
+/* ---- the redo ---------------------------------------------------------------------------------- */
+
+section("a redo is a new action, not an un-undo");
+{
+  const good = draftOf({ restores: 2, at: T0 + 5 });
+  check("putting back what an undo took away is allowed", validateRestore(good, 9, restoreTargetOf()) === BAD.NONE, BAD_NAMES[validateRestore(good, 9, restoreTargetOf())] ?? "");
+
+  check(
+    "a redo that names nothing is refused",
+    validate(draftOf({ restores: 0 })) === BAD.NONE && validateRestore(draftOf({ restores: 0 }), 9, restoreTargetOf()) === BAD.RESTORE_NEEDS_TARGET,
+  );
+  check("a redo naming a row that is not there is refused", validateRestore(good, 9, restoreTargetOf({ exists: false })) === BAD.NO_SUCH_TARGET);
+  check("a redo naming a different row than it says is refused", validateRestore(good, 9, restoreTargetOf({ seq: 3 })) === BAD.NO_SUCH_TARGET);
+  check("a redo cannot name a row that comes after it", validateRestore(draftOf({ restores: 9 }), 9, restoreTargetOf({ seq: 9 })) === BAD.TARGET_NOT_BEFORE);
+
+  check(
+    "a redo must name an undo, not just any row",
+    validateRestore(good, 9, restoreTargetOf({ kind: EVENT.GOLD_GRANTED, reversedKind: 0 })) === BAD.NOT_A_REVERSAL,
+    "otherwise the link becomes a made-up justification for a plain handout",
+  );
+  check(
+    "a redo must put back the same kind of thing that was taken away",
+    validateRestore(draftOf({ restores: 2, kind: EVENT.MARKS_GRANTED }), 9, restoreTargetOf()) === BAD.RESTORE_KIND_MISMATCH,
+    "'I undid a mute, so here is gold' is not a redo",
+  );
+  check(
+    "a redo must be about the same account as the undo",
+    validateRestore(draftOf({ restores: 2, subjectId: "acct-b" }), 9, restoreTargetOf()) === BAD.SUBJECT_MISMATCH,
+  );
+  check(
+    "a redo must be about the same account as the original row",
+    validateRestore(good, 9, restoreTargetOf({ reversedSubjectId: "acct-b" })) === BAD.SUBJECT_MISMATCH,
+  );
+  check("the same undo cannot be put back twice", validateRestore(good, 9, restoreTargetOf({ alreadyRestored: true })) === BAD.ALREADY_RESTORED);
+
+  check("an undo cannot also be a redo", validate(draftOf({ kind: EVENT.REVERSAL, reverses: 1, restores: 2 })) === BAD.RESTORE_FORBIDDEN);
+  check(
+    "a redo has to be a kind that can itself be undone",
+    validate(draftOf({ kind: EVENT.ADMIN_NOTE, restores: 2, payload: { note: "x" } })) === BAD.NOT_REVERSIBLE,
+    "otherwise the first redo would be a one-way door",
+  );
+  check("a nonsense redo link is refused", validate(draftOf({ restores: -1 })) === BAD.RESTORE_NEEDS_TARGET);
+  check("the redo link is part of a row's bytes", canonical({ ...draftOf(), seq: 7, prevHash: GENESIS_HASH }) !== canonical({ ...draftOf({ restores: 2 }), seq: 7, prevHash: GENESIS_HASH }));
+}
+
+section("the store: undo, redo, undo again, forever");
+{
+  const backend = new MemoryEventBackend();
+  const log = new EventLog(backend);
+
+  const grant = await log.append(draftOf({ payload: { amount: 500 } }));
+  const grantSeq = grant.row?.seq ?? 0;
+  const undo = await log.append(draftOf({ kind: EVENT.REVERSAL, reverses: grantSeq, payload: { reason: "mistake" }, at: T0 + 1 }));
+  const undoSeq = undo.row?.seq ?? 0;
+  check("the gold is gone after the undo", (await log.accountView("acct-a")).gold === 0);
+
+  const redo = await log.append(restoreDraftFor(grant.row as EventRow, undo.row as EventRow, ACTOR.ADMIN, "admin-1", T0 + 2, "the undo was wrong"));
+  check("the redo was accepted", redo.status === APPEND.OK, BAD_NAMES[redo.reason] ?? "");
+  check("the gold is back", (await log.accountView("acct-a")).gold === 500, `read ${(await log.accountView("acct-a")).gold}`);
+  check("the redo is a plain row of the original kind", redo.row?.kind === EVENT.GOLD_GRANTED);
+  check("the redo carries the amount from the original, not from the caller", redo.row?.payload.amount === 500);
+  check("the redo says why it exists", redo.row?.payload.restoreReason === "the undo was wrong" && redo.row?.payload.undoneBySeq === undoSeq);
+  check("the redo names the undo it puts back", redo.row?.restores === undoSeq);
+  check("nothing was rewritten to make it happen", backend.all().length === 3);
+
+  const twice = await log.restore(undoSeq, ACTOR.ADMIN, "admin-1", T0 + 3, "again");
+  check("the same undo cannot be put back a second time", twice.status === APPEND.REFUSED && twice.reason === BAD.ALREADY_RESTORED);
+
+  const undoTheRedo = await log.append(draftOf({ kind: EVENT.REVERSAL, reverses: redo.row?.seq ?? 0, payload: { reason: "no, it was right" }, at: T0 + 4 }));
+  check("the redo can itself be undone", undoTheRedo.status === APPEND.OK, BAD_NAMES[undoTheRedo.reason] ?? "");
+  check("and the gold goes away again", (await log.accountView("acct-a")).gold === 0);
+
+  const redoAgain = await log.restore(undoTheRedo.row?.seq ?? 0, ACTOR.ADMIN, "admin-1", T0 + 5, "third thoughts");
+  check("and it can be put back again — there is no ceiling", redoAgain.status === APPEND.OK, BAD_NAMES[redoAgain.reason] ?? "");
+  check("the gold is back once more", (await log.accountView("acct-a")).gold === 500);
+  check("the whole history still verifies", (await log.verify(1, 100)).ok);
+  check("and every step is still there", backend.all().length === 5);
+
+  const notAnUndo = await log.restore(grantSeq, ACTOR.ADMIN, "admin-1", T0 + 6, "wrong row");
+  check("pointing a redo at a row that undid nothing is refused", notAnUndo.status === APPEND.REFUSED && notAnUndo.reason === BAD.NOT_A_REVERSAL);
+  const nowhere = await log.restore(999, ACTOR.ADMIN, "admin-1", T0 + 7, "nowhere");
+  check("putting back an undo that does not exist is refused", nowhere.status === APPEND.REFUSED && nowhere.reason === BAD.NO_SUCH_TARGET);
+
+  const story = await log.story(grantSeq);
+  check("the story has all five steps", story.length === 5, `read ${story.length}`);
+  check("it starts with the thing that was done", story[0]?.role === "did" && story[0]?.seq === grantSeq);
+  check("then reads undone, redone, undone, redone", story.map((s) => s.role).join(",") === "did,undid,redid,undid,redid", story.map((s) => s.role).join(","));
+  check("the steps are in the order they happened", story.every((s, i) => i === 0 || s.seq > (story[i - 1]?.seq ?? 0)));
+  check("it says who did each step", story.every((s) => s.actorId.length > 0));
+
+  const fromTheMiddle = await log.story(undoSeq);
+  check("the same story comes back from any row in it", JSON.stringify(fromTheMiddle) === JSON.stringify(story), "an operator should not have to find the first row themselves");
+}
+
+section("the story walk on its own");
+{
+  check("a row nobody touched is a one-step story", storyOf([], 1).length === 0);
+  check("a story about a row that is not there is empty", storyOf([], 5).length === 0);
 }
 
 /* ---- how it reads to a human ------------------------------------------------------------------- */

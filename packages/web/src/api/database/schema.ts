@@ -30,6 +30,7 @@ export const eventLog = sqliteTable(
     at: integer("at").notNull(),
     payload: text("payload").notNull(),
     reverses: integer("reverses").notNull(),
+    restores: integer("restores").notNull().default(0),
     groupId: text("group_id").notNull(),
     prevHash: text("prev_hash").notNull(),
     hash: text("hash").notNull(),
@@ -39,5 +40,6 @@ export const eventLog = sqliteTable(
     index("event_log_subject_idx").on(table.subjectId),
     index("event_log_group_idx").on(table.groupId),
     index("event_log_reverses_idx").on(table.reverses),
+    index("event_log_restores_idx").on(table.restores),
   ],
 );

@@ -6,10 +6,10 @@
     ".": "./src/api/index.ts"
   },
   "scripts": {
-    "build": "tsc --noEmit && vite build",
+    "build": "bun run typecheck && vite build",
     "dev": "vite",
     "start": "bun src/__server.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "lint": "cd ../.. && oxlint packages/web --deny-warnings --no-error-on-unmatched-pattern",
     "preview": "bun run build && vite preview",
     "db:generate": "bun --env-file=../../.env drizzle-kit generate",

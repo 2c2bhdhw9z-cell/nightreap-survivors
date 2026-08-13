@@ -134,6 +134,11 @@ export function isKnownKind(kind: number): boolean {
  * account of events and editing those is exactly what this file exists to prevent. And `REVERSAL` is not
  * reversible, so an undo cannot be undone: if the undo was wrong, re-apply the original as a fresh row
  * with its own attribution, and the log shows all three things happening in the order they happened.
+ *
+ * That re-application is a *restore*, and it is a first-class thing rather than an untracked new row — see
+ * `restores` on the draft. The rule against reversing a reversal stays exactly as it is: a restore is a new
+ * action of the original kind, fully reversible again, so an operator can go back and forth as many times
+ * as needed without anybody ever having to count how many undos deep the account currently is.
  */
 export const REVERSIBLE: ReadonlySet<number> = new Set<number>([
   EVENT.GOLD_GRANTED,
@@ -178,6 +183,18 @@ export interface EventDraft {
   payload: Readonly<Record<string, Scalar>>;
   /** The sequence number this row undoes, or 0. */
   reverses: number;
+  /**
+   * The sequence number of the *reversal* this row puts back, or 0.
+   *
+   * This is the redo link. A restore is an ordinary row of the original kind — it is not a reversal, it
+   * carries no special power, and it can itself be reversed like anything else. The only thing this field
+   * adds is the sentence "this exists because the undo at row N was a mistake", so the three rows read as
+   * one story instead of as an unexplained handout sitting next to an undo.
+   *
+   * Without it the history is still correct and still complete; it is just anonymous, and an anonymous
+   * grant is the row somebody flags during an audit six months from now.
+   */
+  restores: number;
   /** Ties a bulk action together so it can be undone as one. Empty string for a lone row. */
   groupId: string;
 }
@@ -221,7 +238,11 @@ export const GENESIS_HASH = "0".repeat(64);
  */
 export function canonical(row: EventDraft & { seq: number; prevHash: string }): string {
   const parts: string[] = [
-    "v1",
+    // v2 added the redo link. The version prefix is here exactly so a format change is a visible, dated
+    // fact rather than a silent one: rows written under an older prefix would still verify against the
+    // reader that wrote them. Widening the row was free this once because the table held no real rows yet;
+    // after launch a change like this needs the old canonical form kept alongside the new one.
+    "v2",
     String(row.seq),
     String(row.kind),
     String(row.actorKind),
@@ -230,6 +251,7 @@ export function canonical(row: EventDraft & { seq: number; prevHash: string }): 
     String(row.buildId),
     String(row.at),
     String(row.reverses),
+    String(row.restores),
     field(row.groupId),
     row.prevHash,
   ];
@@ -284,6 +306,11 @@ export const BAD = {
   NO_SUCH_TARGET: 13,
   TARGET_NOT_BEFORE: 14,
   SUBJECT_MISMATCH: 15,
+  RESTORE_NEEDS_TARGET: 16,
+  RESTORE_FORBIDDEN: 17,
+  NOT_A_REVERSAL: 18,
+  ALREADY_RESTORED: 19,
+  RESTORE_KIND_MISMATCH: 20,
 } as const;
 
 export type BadReason = (typeof BAD)[keyof typeof BAD];
@@ -314,6 +341,7 @@ export function validate(draft: EventDraft): BadReason {
   if (!Number.isSafeInteger(draft.at) || draft.at < 0) return BAD.BAD_TIME;
   if (!Number.isSafeInteger(draft.buildId) || draft.buildId < 0) return BAD.BAD_BUILD;
   if (!Number.isSafeInteger(draft.reverses) || draft.reverses < 0) return BAD.REVERSAL_NEEDS_TARGET;
+  if (!Number.isSafeInteger(draft.restores) || draft.restores < 0) return BAD.RESTORE_NEEDS_TARGET;
 
   const keys = Object.keys(draft.payload);
   if (keys.length > LIMITS.PAYLOAD_KEYS) return BAD.TOO_MANY_KEYS;
@@ -335,6 +363,15 @@ export function validate(draft: EventDraft): BadReason {
   // A reversal must name a target; nothing else may.
   if (draft.kind === EVENT.REVERSAL && draft.reverses === 0) return BAD.REVERSAL_NEEDS_TARGET;
   if (draft.kind !== EVENT.REVERSAL && draft.reverses !== 0) return BAD.REVERSAL_FORBIDDEN;
+
+  // A row cannot be an undo and a redo at once. If that were allowed the two links would eventually
+  // disagree with each other and the reader would have to pick which one to believe.
+  if (draft.restores !== 0) {
+    if (draft.kind === EVENT.REVERSAL) return BAD.RESTORE_FORBIDDEN;
+    // A restore must be a kind that can be undone again, otherwise the very first redo would be a one-way
+    // door — the opposite of the point.
+    if (!REVERSIBLE.has(draft.kind)) return BAD.NOT_REVERSIBLE;
+  }
 
   return BAD.NONE;
 }
@@ -372,6 +409,137 @@ export function validateReversal(draft: EventDraft, nextSeq: number, target: Tar
   if (target.alreadyReversed) return BAD.ALREADY_REVERSED;
   if (target.subjectId !== draft.subjectId) return BAD.SUBJECT_MISMATCH;
   return BAD.NONE;
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Restoring — the redo                                                                            */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * What the log needs to know about the reversal a restore is putting back.
+ *
+ * `reversedKind` and `reversedSubjectId` are the *original* row's — the one the reversal undid. They are
+ * carried here because the restore has to match them, and the rule that checks that has to be testable
+ * without a database.
+ */
+export interface RestoreFacts {
+  /** The reversal named by `draft.restores`. */
+  exists: boolean;
+  seq: number;
+  /** The named row's own kind. Must be `REVERSAL`; anything else means the caller named the wrong row. */
+  kind: number;
+  subjectId: string;
+  /** The kind of the row that reversal undid. */
+  reversedKind: number;
+  reversedSubjectId: string;
+  /** Whether some earlier row already restored this same reversal. */
+  alreadyRestored: boolean;
+}
+
+/**
+ * Can this restore be appended.
+ *
+ * The three guards, and why each one is not paranoia:
+ *
+ * `NOT_A_REVERSAL` — a restore has to name a row that genuinely undid something. Without this the link
+ * becomes a free-text justification: point it at any row at all and a gold grant acquires a story that
+ * reads like an approved correction.
+ *
+ * `RESTORE_KIND_MISMATCH` and the subject checks — the restore must put back the same kind of thing, for the
+ * same account, as the reversal took away. "I undid a mute, so here is 10,000 gold" is not a redo, and a
+ * mistyped account id must not be able to turn one player's correction into another player's windfall. This
+ * is the same reasoning as the subject check on reversals, which is the check that earns its keep there.
+ *
+ * `ALREADY_RESTORED` — one reversal, at most one restore. Going back and forth again is not another restore
+ * of the same reversal; it is a reversal of the restore, then a restore of *that*. Each link therefore
+ * points at exactly one thing and the chain reads in a single direction, which is what stops "how deep are
+ * we" from ever becoming a question a human has to answer under pressure.
+ */
+export function validateRestore(draft: EventDraft, nextSeq: number, target: RestoreFacts): BadReason {
+  const basic = validate(draft);
+  if (basic !== BAD.NONE) return basic;
+  if (draft.restores === 0) return BAD.RESTORE_NEEDS_TARGET;
+  if (!target.exists) return BAD.NO_SUCH_TARGET;
+  if (target.seq !== draft.restores) return BAD.NO_SUCH_TARGET;
+  if (draft.restores >= nextSeq) return BAD.TARGET_NOT_BEFORE;
+  if (target.kind !== EVENT.REVERSAL) return BAD.NOT_A_REVERSAL;
+  if (target.alreadyRestored) return BAD.ALREADY_RESTORED;
+  if (draft.kind !== target.reversedKind) return BAD.RESTORE_KIND_MISMATCH;
+  if (draft.subjectId !== target.subjectId) return BAD.SUBJECT_MISMATCH;
+  if (draft.subjectId !== target.reversedSubjectId) return BAD.SUBJECT_MISMATCH;
+  return BAD.NONE;
+}
+
+/** One step in a row's history, in the order the steps happened. */
+export interface StoryStep {
+  seq: number;
+  kind: number;
+  /** `did` the original thing, `undid` it, or `redid` it. */
+  role: "did" | "undid" | "redid";
+  actorKind: number;
+  actorId: string;
+  at: number;
+}
+
+/**
+ * Stitch one row together with everything that was later done about it.
+ *
+ * This is what the admin page shows instead of three unrelated lines. Start from any row in the chain and
+ * the whole story comes back in order — granted, undone, granted again, undone again — walked by following
+ * the links rather than by guessing from timestamps, because timestamps here are evidence and not ordering.
+ *
+ * Pure, and given the rows rather than a database, so the walk can be tested on a chain far longer than
+ * anybody will ever produce by hand.
+ */
+export function storyOf(rows: readonly EventRow[], seq: number): StoryStep[] {
+  const bySeq = new Map<number, EventRow>();
+  const reversalOf = new Map<number, EventRow>();
+  const restoreOf = new Map<number, EventRow>();
+  for (const row of rows) {
+    bySeq.set(row.seq, row);
+    if (row.kind === EVENT.REVERSAL && row.reverses > 0) reversalOf.set(row.reverses, row);
+    if (row.restores > 0) restoreOf.set(row.restores, row);
+  }
+
+  // Walk backwards to the row that started it, so the caller can hand us any link in the chain.
+  let root = bySeq.get(seq);
+  const guard = new Set<number>();
+  while (root !== undefined && !guard.has(root.seq)) {
+    guard.add(root.seq);
+    const back = root.kind === EVENT.REVERSAL ? root.reverses : root.restores;
+    if (back <= 0) break;
+    const previous = bySeq.get(back);
+    if (previous === undefined) break;
+    root = previous;
+  }
+  if (root === undefined) return [];
+
+  const steps: StoryStep[] = [];
+  const seen = new Set<number>();
+  let current: EventRow | undefined = root;
+  let role: StoryStep["role"] = "did";
+
+  while (current !== undefined && !seen.has(current.seq)) {
+    seen.add(current.seq);
+    steps.push({
+      seq: current.seq,
+      kind: current.kind,
+      role,
+      actorKind: current.actorKind,
+      actorId: current.actorId,
+      at: current.at,
+    });
+
+    if (role === "undid") {
+      current = restoreOf.get(current.seq);
+      role = "redid";
+    } else {
+      current = reversalOf.get(current.seq);
+      role = "undid";
+    }
+  }
+
+  return steps;
 }
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -521,11 +689,46 @@ export function planGroupReversal(
       // target. An undo nobody can explain is an undo nobody will trust enough to run.
       payload: { reason, ofKind: target.kind, ofGroup: groupId },
       reverses: target.seq,
+      restores: 0,
       groupId: newGroupId,
     });
   }
 
   return plan;
+}
+
+/**
+ * Build the row that puts back what a reversal took away.
+ *
+ * The kind, the subject and the payload come from the *original* row, not from the caller. That is the whole
+ * safety of the redo path: an operator asks to put row 412 back and gets exactly row 412's effect again, not
+ * an amount they typed while tired. The only things the caller contributes are who they are, when, and why.
+ *
+ * `reason` is stored under its own key so it cannot collide with a payload field the original kind owns, and
+ * the two link fields are recorded in the payload as well — so a reader looking at this single row, with no
+ * ability to query anything else, can still see what it is putting back and why.
+ */
+export function restoreDraftFor(
+  original: EventRow,
+  reversal: EventRow,
+  actorKind: number,
+  actorId: string,
+  at: number,
+  reason: string,
+  groupId = "",
+): EventDraft {
+  return {
+    kind: original.kind,
+    actorKind,
+    actorId,
+    subjectId: original.subjectId,
+    buildId: 0,
+    at,
+    payload: { ...original.payload, restoreReason: reason, restoreOfSeq: original.seq, undoneBySeq: reversal.seq },
+    reverses: 0,
+    restores: reversal.seq,
+    groupId,
+  };
 }
 
 /* ---------------------------------------------------------------------------------------------- */

@@ -34,7 +34,7 @@ and anything further down disagree, this section wins and the other place is a b
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 2 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
 | **Phase 2** — co-op | **Closed on the build list.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, the lobby screen, the four-player HUD (rules and drawn), dev menu v2's co-op panels, remote config, and the dev menu wired to it are also done and tested. The networking test-ratio catch-up sweep is **done**, which was the last item on the Phase 2 build list. The only thing still outstanding is relay hosting, which is **decided but not built** (Cloudflare, built when four real phones need it). |
-| **Phase 3** — progression spine | **Started 2026-08-13.** Two items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. Nothing else in Phase 3 has begun. |
+| **Phase 3** — progression spine | **Started 2026-08-13.** Three items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. Nothing else in Phase 3 has begun. |
 | **Phases 4–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -1728,6 +1728,36 @@ and the breakage is caught now. The table is live in the real database and the r
 run against it; writes through the real database were deliberately not tried, because a test row in an
 append-only table can never be removed. The endpoints are behind an admin token, checked in constant time,
 and a server with no token configured refuses every one of them rather than serving the log wide open.
+
+**Third item done: an undo can now be undone.** The rule that a reversal cannot itself be reversed stays
+exactly as it was, because relaxing it is how a log turns into a puzzle nobody can read. Instead, putting
+something back is a brand new ordinary action of the original kind, which carries a link naming the undo it
+is fixing. That link is not a power — it changes nothing about what the row does — it is a sentence, so that
+six months later the page can say "this exists because the undo on row 412 was a mistake" instead of leaving
+a support person to guess. Because a redo is ordinary, it is fully undoable again, so going back and forth is
+unlimited and nobody ever has to work out how many undos deep an account is.
+
+The guards are the interesting part, and every one of them was mutation-tested. A redo has to name an actual
+undo, not any old row. It has to be the same kind of thing that undo took away, and about the same player,
+checked against both the undo and the original. One undo can be put back at most once, so two admins racing
+cannot double-refund. A single row cannot be both an undo and a redo. And a redo can only be of a kind that
+is undoable in the first place, otherwise the very first redo would be a one-way door. Crucially the admin
+never types the amount: the redo copies what it needs from the original row, and the person only supplies who,
+when and why. Alongside it there is now a story walk that follows the links — never the clock — and returns
+"did / undid / redid / undid / redid" in order from any point in the chain, which is what the admin page will
+render.
+
+The fingerprint format moved from its first version to its second to include the new link, which was free to
+do exactly once because the table held no real rows yet. After launch that stops being free, and a format
+change will have to keep computing the old form alongside the new one or every old fingerprint breaks.
+
+**A check that was checking nothing, found and fixed here.** While testing the above, the website package's
+type check turned out to be pointed at a configuration file that listed zero files, so it inspected nothing
+and passed instantly — for how long is unknown. It was proven dead by putting an obvious error into a real
+file and watching it pass anyway. It now checks both halves of that package, including the server code, and
+it was proven alive by the same trick: the build fails on that error now. The moment it started working it
+immediately found a genuine gap in the new tests. This is the second time a check has been caught passing
+because it could not fail, so the standing rule stands: a check that cannot fail is not a check.
 
 - Gold, results payout, **PowerUps shop** (24+ powerups, escalating cost curve).
 - Character select; 8 characters with distinct stats, starting weapons, growth quirks.

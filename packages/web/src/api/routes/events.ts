@@ -118,6 +118,9 @@ const append = admin.input(draftInput).handler(async ({ input }) => {
     at: Date.now(),
     payload: input.payload,
     reverses: input.reverses,
+    // A restore is never hand-written through this door. It is built from the row being put back, by
+    // `restore` below, so the amount can never be something an operator typed while tired.
+    restores: 0,
     groupId: input.groupId,
   });
 
@@ -217,6 +220,52 @@ const reverseGroup = admin
     };
   });
 
+/**
+ * Put back what an undo took away — the redo.
+ *
+ * The caller names the reversal and gives a reason; everything else is read from the row being restored. The
+ * result is an ordinary, fully reversible row of the original kind, so an operator can go back and forth as
+ * many times as the situation needs without the history ever becoming ambiguous.
+ */
+const restore = admin
+  .input(
+    z.object({
+      reversalSeq: z.number().int().min(1),
+      actorId: z.string().min(1).max(64),
+      reason: z.string().min(1).max(512),
+      groupId: z.string().max(64).default(""),
+    }),
+  )
+  .handler(async ({ input }) => {
+    const result = await (await log()).restore(
+      input.reversalSeq,
+      ACTOR.ADMIN,
+      input.actorId,
+      Date.now(),
+      input.reason,
+      input.groupId,
+    );
+
+    if (result.status === APPEND.REFUSED) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `The log refused that restore: ${BAD_NAMES[result.reason] ?? String(result.reason)}`,
+      });
+    }
+
+    return {
+      duplicate: result.status === APPEND.DUPLICATE,
+      seq: result.row?.seq ?? 0,
+      hash: result.row?.hash ?? "",
+      kindName: EVENT_NAMES[result.row?.kind ?? 0] ?? "UNKNOWN",
+    };
+  });
+
+/** The did / undid / redid story around one row, in the order it happened. For the admin page. */
+const story = admin.input(z.object({ seq: z.number().int().min(1) })).handler(async ({ input }) => {
+  const steps = await (await log()).story(input.seq);
+  return { steps: steps.map((step) => ({ ...step, kindName: EVENT_NAMES[step.kind] ?? "UNKNOWN" })) };
+});
+
 /** One account's standing, recomputed from the log every time it is asked for. */
 const accountView = admin
   .input(z.object({ subjectId: z.string().min(1).max(64) }))
@@ -228,5 +277,7 @@ export const events = {
   verify,
   planReversal,
   reverseGroup,
+  restore,
+  story,
   accountView,
 };

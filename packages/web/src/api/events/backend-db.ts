@@ -53,6 +53,7 @@ function toRow(stored: Stored): EventRow {
     at: stored.at,
     payload: readPayload(stored.payload),
     reverses: stored.reverses,
+    restores: stored.restores,
     groupId: stored.groupId,
     prevHash: stored.prevHash,
     hash: stored.hash,
@@ -85,6 +86,7 @@ export class DbEventBackend implements EventBackend {
         at: row.at,
         payload: JSON.stringify(row.payload),
         reverses: row.reverses,
+        restores: row.restores,
         groupId: row.groupId,
         prevHash: row.prevHash,
         hash: row.hash,
@@ -126,6 +128,17 @@ export class DbEventBackend implements EventBackend {
       .where(inArray(eventLog.reverses, [...seqs]));
     const out = new Set<number>();
     for (const row of found) if (row.reverses > 0) out.add(row.reverses);
+    return [...out];
+  }
+
+  async restoredAmong(seqs: readonly number[]): Promise<number[]> {
+    if (seqs.length === 0) return [];
+    const found = await db
+      .select({ restores: eventLog.restores })
+      .from(eventLog)
+      .where(inArray(eventLog.restores, [...seqs]));
+    const out = new Set<number>();
+    for (const row of found) if (row.restores > 0) out.add(row.restores);
     return [...out];
   }
 

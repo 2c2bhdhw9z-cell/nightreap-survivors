@@ -44,7 +44,7 @@ async function call(path: string, body: unknown, token?: string): Promise<number
   return response.status;
 }
 
-const CALLS = ["append", "range", "verify", "planReversal", "reverseGroup", "accountView"];
+const CALLS = ["append", "range", "verify", "planReversal", "reverseGroup", "restore", "story", "accountView"];
 
 /* ---- with no token configured ------------------------------------------------------------------ */
 
