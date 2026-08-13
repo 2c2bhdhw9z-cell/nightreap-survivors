@@ -2284,3 +2284,62 @@ One thing I am deliberately not promising: using Cloudflare in front of everythi
 the caching, the attack shield. That depends on how the publishing side lets a custom domain be attached,
 which is a setting on the publish screen and not something I control. It is a five-minute question when we
 get there, not a rewrite. Do not count it as a yes yet.
+
+## The networking catch-up sweep (13 Aug) — Phase 2's last build item
+
+Plain English: eight of the networking files were written before we agreed the rule that every file
+gets at least half its own length again in tests. Each of them had one thorough test for the path we
+expected everything to take, and nothing at all for the paths we hoped nothing would take. Those
+second paths are exactly where a networking bug lives, because a networking bug does not crash the
+game — it quietly makes two phones play slightly different games and the player just sees a monster
+in the wrong place.
+
+What got written: three new test files, about 2,400 lines, 614 separate checks.
+
+1. **The message format.** Every message the game sends is now packed and unpacked and compared byte
+   for byte, including all four lobby messages, which nothing tested before. A message cut off at
+   every possible length has to report itself as damaged instead of returning a plausible-looking
+   zero. A message that lies about how long its text is has to refuse rather than read the next
+   message's bytes. A name at the full 24 characters and a chat line at the full 160 arrive whole.
+   Accented and Japanese characters survive, and when a line has to be shortened it stops on a whole
+   character rather than cutting one in half. An event from a future build gets stepped over using
+   the length it declares, so an old phone in a staged rollout degrades politely instead of falling
+   out of the game. And the confirmed-input stream is read correctly out of a queue that has already
+   wrapped round more than twice, which is the normal state of it thirty seconds into a run.
+
+2. **The five small rule files.** The correction schedule was run for a simulated minute with two
+   thousand enemies and every single one of them got corrected at least once, with the worst wait
+   staying inside the stated bound — that was a real bug once and it is now watched. The thumbstick
+   was checked at all 360 degrees rather than the eight compass points, so a diagonal cannot end up
+   faster than a straight line. The cheat-envelope monitor trips on each of its six limits, ignores
+   a two-second spike, and sits completely quiet through a hard thirty-minute run — a false alarm
+   there costs a real player their session, so it has to be quiet. The agreement number is
+   order-sensitive and stable across the two odd float values that legitimately differ between
+   phones. The clock ignores a single 500-millisecond spike, closes a gap smoothly rather than
+   teleporting, and never asks the game to run backwards.
+
+3. **The fake network the co-op tests all run on.** This one matters more than it sounds. Every co-op
+   guarantee we claim is proved by running four simulated players over that fake network, so if the
+   fake network quietly lies, every one of those results is worthless at the same moment. It now has
+   to prove that the same seed produces the same lost packets in the same order every run, that
+   packets really do arrive out of order when we ask for jitter, that a lost packet costs nothing,
+   that unplugging one player leaves the other three working in both directions, and that every
+   packet is copied on the way in so a sender reusing its buffer cannot rewrite something already in
+   flight. It also has to prove that the "did anybody disagree?" check is capable of answering yes —
+   a check that can only ever answer no is worse than no check.
+
+Then seventeen deliberate breaks, one at a time, to prove the tests can actually fail: sixteen were
+caught. The seventeenth was not a hole — it is a guard against a zero-tick delay that cannot be
+observed from outside, because the wire always advances a tick before it delivers anything. Every
+wire size and every simulation number is now also pinned to its exact value in a list of its own, so
+changing one by accident fails loudly instead of quietly making this build unable to talk to the last
+one.
+
+One honest limitation found and written down rather than hidden: treasure chests are counted once a
+minute, while the rule for leaving a cheating host wants three bad seconds in a row. So chest abuse
+names itself in the report but never on its own ends the session. Not fixed today; recorded.
+
+Where that leaves us: the whole networking folder now has 5,350 lines of tests against 5,882 lines of
+code, comfortably past the rule. **Phase 2's build list is finished.** The one thing still open is
+where the multiplayer server gets hosted — decided (Cloudflare), not built, and it waits until four
+real phones need to reach each other, which cannot happen on this machine anyway.
