@@ -25,7 +25,7 @@
  * than desync in a way that looks like a bug. Bump it on ANY layout change below.
  */
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Hard ceiling on party size. Sized so per-player arrays can be flat and preallocated. */
 export const MAX_PLAYERS = 4;
@@ -114,7 +114,25 @@ export const HEADER_BYTES = 4;
 export const HDR_TYPE = 0;
 export const HDR_FLAGS = 1;
 export const HDR_PLAYER = 2;
+
+/**
+ * Byte 3 is the relay destination slot, read by the relay and by nothing else.
+ *
+ * The session addresses messages by calling `sendTo(slot, ...)`, which works when every guest has its
+ * own link but says nothing on the wire — and against a real relay there is only ONE socket, so the
+ * address has to travel inside the message. This byte carries it: a slot number, or `RELAY_BROADCAST`
+ * for "every guest but the sender".
+ *
+ * Guests do not set it. A guest's only legal destination is the host, which the relay knows from the
+ * room, so there is nothing for a guest to address and therefore no way for one guest to reach
+ * another. That is a routing rule, not a policy the relay has to enforce message by message.
+ */
+export const HDR_DEST = 3;
+/** Old name for byte 3, kept so existing writers keep compiling. Prefer HDR_DEST. */
 export const HDR_RESERVED = 3;
+
+/** Destination value meaning "every guest except whoever sent this". */
+export const RELAY_BROADCAST = 0xff;
 
 /**
  * Largest datagram we will construct. WebSocket has no practical limit but staying under a typical
@@ -131,9 +149,16 @@ export const MAX_NACK_CHUNKS = 256;
 /** How long the host keeps a served snapshot around to answer repair requests from. */
 export const RESYNC_KEEP_TICKS = 240;
 
-/** Room codes are 6 characters from an ambiguity-free alphabet (no O/0, I/1, S/5). */
+/**
+ * Room codes are 6 characters from an ambiguity-free alphabet (no O/0, I/1, S/5).
+ *
+ * Every character appears exactly once. An earlier version of this string listed 8 twice, which made
+ * one character in thirty-one twice as likely as the rest — harmless for collisions at this scale,
+ * but a code generator with a biased alphabet is the kind of thing that is never noticed and never
+ * gets better, so the test now counts the letters. 30^6 is 729 million codes.
+ */
 export const ROOM_CODE_LENGTH = 6;
-export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXYZ23467889";
+export const ROOM_CODE_ALPHABET = "ABCDEFGHJKLMNPQRTUVWXYZ2346789";
 
 /** Fraction of live enemies re-synced per tick by the rolling sweep, in percent. */
 export const CORRECTION_SWEEP_PERCENT = 5;

@@ -72,15 +72,18 @@ import {
   INPUT_BATCH_TICKS,
   INPUT_DELAY_TICKS,
   INPUT_HISTORY_TICKS,
+  HOST_SLOT,
   MAX_MESSAGE_BYTES,
   MAX_NACK_CHUNKS,
   MAX_PLAYERS,
   MSG,
+  RELAY_BROADCAST,
   RESYNC_AFTER_STALL_TICKS,
   RESYNC_KEEP_TICKS,
   RESYNC_NACK_WAIT_TICKS,
   STATE_HASH_INTERVAL_TICKS,
 } from "./protocol";
+import { setDestination } from "./routing";
 import { HASH_SEED, HashTrail } from "./state-hash";
 import { MS_PER_TICK, NetClock } from "./clock";
 
@@ -592,15 +595,18 @@ export class HostSession {
   }
 
   private broadcast(bytes: Uint8Array): void {
-    for (let p = 1; p < this.playerCount; p++) this.sendTo(p, bytes);
+    // Addressed to every guest at once. A direct link ignores the stamp; a relay reads it and fans out.
+    for (let p = 1; p < this.playerCount; p++) this.sendTo(p, bytes, RELAY_BROADCAST);
   }
 
-  private sendTo(slot: number, bytes: Uint8Array): void {
+  private sendTo(slot: number, bytes: Uint8Array, dest: number = slot): void {
     const g = this.guests[slot] as GuestConn;
     if (g.link === null || !g.connected) return;
     // The writer is reused, so anything handed to a link must be copied — a link may queue it.
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
+    // Stamp where this is going, so a relay that never reads a body still knows who gets it.
+    setDestination(copy, dest);
     g.link.send(copy);
     this.stats.bytesSent += copy.byteLength;
     this.stats.messagesSent++;
@@ -962,6 +968,8 @@ export class GuestSession {
   private send(bytes: Uint8Array): void {
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
+    // A guest has exactly one legal destination: the host. The relay enforces this regardless.
+    setDestination(copy, HOST_SLOT);
     this.link.send(copy);
     this.stats.bytesSent += copy.byteLength;
     this.stats.messagesSent++;
