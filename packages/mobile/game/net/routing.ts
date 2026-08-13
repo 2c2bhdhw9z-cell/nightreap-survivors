@@ -122,11 +122,22 @@ export function roleFor(type: number): number {
 /**
  * Types the relay answers itself instead of forwarding.
  *
- * HELLO is a join, LEAVE is a departure, PING is an RTT probe the relay can answer faster than the
- * host can. Everything else is somebody else's business.
+ * Only LEAVE. An earlier version of this also swallowed HELLO and PING, and both were wrong:
+ *
+ *   - HELLO is the *session* handshake, guest to host: it is how the host assigns a play slot and
+ *     replies with the seed and the modifier stack. Getting into a room is a separate, out-of-band
+ *     thing the relay settles when the socket connects, so a relay that ate HELLO would leave every
+ *     guest seated in a room and waiting forever for a WELCOME that nobody was asked for.
+ *   - PONG must carry the HOST's tick, because that is what the guest's clock subtracts to work out
+ *     how far ahead to send. A relay answering the probe itself would report the round trip to the
+ *     relay and the relay's idea of the tick, so every guest would sync to the wrong clock and then
+ *     drift against the only machine that matters.
+ *
+ * LEAVE stays because a departure is genuinely the relay's business: it frees or holds the seat and,
+ * if the leaver was the host, promotes someone and announces it.
  */
 function serverHandled(type: number): boolean {
-  return type === MSG.HELLO || type === MSG.LEAVE || type === MSG.PING;
+  return type === MSG.LEAVE;
 }
 
 /**
@@ -215,4 +226,22 @@ export function setDestination(bytes: Uint8Array, slot: number): void {
 export function claimedSlot(bytes: Uint8Array): number {
   if (bytes.byteLength < HEADER_BYTES) return -1;
   return bytes[HDR_PLAYER] as number;
+}
+
+/**
+ * Overwrite the sender slot with the seat the message actually came from.
+ *
+ * The relay calls this on every message it forwards, and that turns byte 2 from a claim into a fact.
+ * It has to: `HostSession.receive(slot, bytes)` is told which guest is speaking by the transport,
+ * which works when every guest owns a socket — but a relay-backed host owns exactly one socket for
+ * the whole room, so the only place that answer can live is the header. The relay knows the true seat
+ * from the room, so it stamps it here and the host reads it back with `claimedSlot`.
+ *
+ * The security consequence is the point: a guest can write any number it likes in byte 2 and the
+ * relay erases it before anyone sees it, so impersonating another player is not a thing that can be
+ * attempted, let alone detected.
+ */
+export function setSender(bytes: Uint8Array, slot: number): void {
+  if (bytes.byteLength < HEADER_BYTES) return;
+  bytes[HDR_PLAYER] = slot;
 }

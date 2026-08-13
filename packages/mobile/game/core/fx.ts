@@ -162,13 +162,20 @@ const SIN_QUADRANT: Int32Array = (() => {
   return table;
 })();
 
-/** sin of an angle in brads, returned as Q16.16. */
+/**
+ * sin of an angle in brads, returned as Q16.16.
+ *
+ * Every index here is already inside the table by construction — `b` is masked to one turn and each
+ * branch folds it into the first quadrant — but the reads are asserted anyway so this file typechecks
+ * under the strictest indexing rules. The relay compiles against it, and a shared module that only
+ * builds under the loosest of its consumers' settings is a trap waiting for whoever imports it next.
+ */
 export function fxSin(brad: number): Fx {
   const b = brad & BRAD_MASK;
-  if (b <= BRAD_QUARTER) return SIN_QUADRANT[b];
-  if (b <= BRAD_HALF) return SIN_QUADRANT[BRAD_HALF - b];
-  if (b <= BRAD_HALF + BRAD_QUARTER) return -SIN_QUADRANT[b - BRAD_HALF];
-  return -SIN_QUADRANT[BRAD_FULL - b];
+  if (b <= BRAD_QUARTER) return SIN_QUADRANT[b] as number;
+  if (b <= BRAD_HALF) return SIN_QUADRANT[BRAD_HALF - b] as number;
+  if (b <= BRAD_HALF + BRAD_QUARTER) return -(SIN_QUADRANT[b - BRAD_HALF] as number);
+  return -(SIN_QUADRANT[BRAD_FULL - b] as number);
 }
 
 /** cos of an angle in brads, returned as Q16.16. */

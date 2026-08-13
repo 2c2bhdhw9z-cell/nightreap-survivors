@@ -266,13 +266,44 @@ export class RoomRegistry {
     return n;
   }
 
-  /** Seats neither live nor held. What the public queue cares about. */
+  /**
+   * Physically empty seats out of MAX_PLAYERS, counting a held seat as taken.
+   *
+   * This is the reaper's question, not the lobby's: a room with four empty seats has nobody left who
+   * could come back, which is the only condition under which it may be closed. For "can another
+   * player get in", ask `seatsAvailable`, which respects the size the host actually asked for.
+   */
   openSeats(room: Room): number {
     let n = 0;
     for (let i = 0; i < MAX_PLAYERS; i++) {
       if ((room.seats[i] as Seat).state === SEAT_STATE.EMPTY) n++;
     }
     return n;
+  }
+
+  /** Seats in use, held ones included, within the party size the host asked for. */
+  takenSeats(room: Room): number {
+    let n = 0;
+    for (let i = 0; i < room.targetSize; i++) {
+      if ((room.seats[i] as Seat).state !== SEAT_STATE.EMPTY) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Seats another player could actually take.
+   *
+   * Party size is a promise, not a hint. A duo that asked for a third is not asking for a fourth, and
+   * a relay that seats one anyway has silently changed the game they chose — enemy counts scale with
+   * player count, so an uninvited fourth makes the run harder for everyone in it.
+   */
+  seatsAvailable(room: Room): number {
+    return room.targetSize - this.takenSeats(room);
+  }
+
+  /** True when the room has as many players as it asked for. */
+  isFull(room: Room): boolean {
+    return this.seatsAvailable(room) <= 0;
   }
 
   /**
@@ -343,7 +374,10 @@ export class RoomRegistry {
       return out;
     }
 
-    for (let i = 0; i < MAX_PLAYERS; i++) {
+    // Only seats inside the requested party size exist as far as a joiner is concerned. A room built
+    // for three has a fourth seat in memory, and handing it out would quietly change the run everyone
+    // else agreed to.
+    for (let i = 0; i < room.targetSize; i++) {
       const seat = room.seats[i] as Seat;
       if (seat.state !== SEAT_STATE.EMPTY) continue;
       seat.state = SEAT_STATE.LIVE;
@@ -560,7 +594,7 @@ export class RoomRegistry {
       if (room.closed) continue;
       if (room.visibility !== VISIBILITY.PUBLIC) continue;
       if (room.targetSize !== targetSize) continue;
-      if (this.openSeats(room) === 0) continue;
+      if (this.isFull(room)) continue;
       if (this.liveCount(room) === 0) continue;
       if (this.connAt(room, room.hostSlot) === excludeConnId) continue;
       if (best === null || room.createdAtMs < best.createdAtMs) best = room;

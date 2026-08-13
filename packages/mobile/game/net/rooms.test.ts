@@ -59,6 +59,7 @@ import {
   roleFor,
   routeFor,
   setDestination,
+  setSender,
 } from "./routing";
 
 let failures = 0;
@@ -429,11 +430,19 @@ section("8. Routing — a guest can only ever reach the host");
   check("and named as a bad address", decision.reason === DROP_REASON.BAD_DESTINATION);
 
   routeFor(msg(MSG.HELLO, 0, 0), false, decision);
-  check("a join is handled by the server itself", decision.kind === ROUTE.SERVER);
-  routeFor(msg(MSG.LEAVE, 2, 0), false, decision);
-  check("so is a departure", decision.kind === ROUTE.SERVER);
+  check("a guest's session handshake reaches the host, not the relay", decision.kind === ROUTE.TO_HOST);
+  routeFor(msg(MSG.WELCOME, 0, 1), true, decision);
+  check("and the host's answer comes back to that guest alone", decision.kind === ROUTE.TO_SLOT && decision.slot === 1);
+
   routeFor(msg(MSG.PING, 2, 0), false, decision);
-  check("so is a latency probe", decision.kind === ROUTE.SERVER);
+  check("a latency probe is answered by the host, not the relay", decision.kind === ROUTE.TO_HOST);
+  routeFor(msg(MSG.PONG, 0, 2), true, decision);
+  check("so the clock a guest syncs to is the host's", decision.kind === ROUTE.TO_SLOT && decision.slot === 2);
+
+  routeFor(msg(MSG.LEAVE, 2, 0), false, decision);
+  check("a departure is the relay's own business", decision.kind === ROUTE.SERVER);
+  routeFor(msg(MSG.LEAVE, 0, 0), true, decision);
+  check("including the host's", decision.kind === ROUTE.SERVER);
 }
 
 section("9. Routing — nobody sends what is not theirs to send");
@@ -503,6 +512,96 @@ section("10. Cost — this runs once per packet per player");
 
   check("the header is still four bytes", HEADER_BYTES === 4);
   check("the room ceiling is sane", MAX_ROOMS >= 1024 && CODE_ATTEMPTS >= 4);
+}
+
+section("11. Party size is a promise, not a hint");
+{
+  // Enemy counts scale with how many players are in the run, so an uninvited extra player makes the
+  // fight harder for everyone who agreed to a smaller one. A room built for three seats three.
+  const reg = makeRegistry().reg;
+  const room = reg.createRoom(1, 3, VISIBILITY.PRIVATE);
+  if (room === null) throw new Error("no room");
+  const join = createJoinResult();
+
+  check("a trio has two seats to give", reg.seatsAvailable(room) === 2, `${reg.seatsAvailable(room)}`);
+  reg.join(room.code, 2, join);
+  check("the second player gets in", join.status === JOIN.OK && join.slot === 1);
+  reg.join(room.code, 3, join);
+  check("the third player gets in", join.status === JOIN.OK && join.slot === 2);
+  check("and now it is full", reg.isFull(room));
+
+  reg.join(room.code, 4, join);
+  check("a fourth is refused even though a seat exists in memory", join.status === JOIN.FULL);
+  check("and the physical seat is still there, untouched", reg.openSeats(room) === 1);
+
+  // A held seat counts against the promise too: someone who dropped four seconds ago still outranks a
+  // stranger, or every tunnel would cost you your place to whoever queued next.
+  const left = createLeaveResult();
+  reg.leave(3, false, left);
+  check("dropping holds the seat", left.heldForReturn);
+  check("so the trio is still full", reg.isFull(room));
+  reg.join(room.code, 5, join);
+  check("and a stranger cannot take the held seat", join.status === JOIN.FULL);
+
+  // Quitting is different: that seat is genuinely given up.
+  reg.leave(2, true, left);
+  check("quitting frees a seat", reg.seatsAvailable(room) === 1);
+  reg.join(room.code, 6, join);
+  check("which the next player can take", join.status === JOIN.OK && join.slot === 1);
+
+  // Matchmaking has to agree with all of the above, or the queue would keep sending people to a room
+  // that will refuse them.
+  const pub = makeRegistry().reg;
+  const duo = pub.createRoom(10, 2, VISIBILITY.PUBLIC);
+  if (duo === null) throw new Error("no room");
+  check("an empty duo is offered to the queue", pub.findPublicRoom(2, 99) === duo);
+  pub.join(duo.code, 11, join);
+  check("a filled duo is not", pub.findPublicRoom(2, 99) === null);
+  check("even though it still has spare seats in memory", pub.openSeats(duo) === 2);
+}
+
+section("12. Nobody gets to be somebody else");
+{
+  // A relay-backed host has one socket for the whole room, so "who sent this" can only live in the
+  // header — and a header field a client wrote is a claim, not a fact. The relay overwrites it with
+  // the seat the message actually came from, which is what makes it safe for the host to trust.
+  const forged = msg(MSG.INPUT_BATCH, 3, 0);
+  check("a guest can write any sender it likes", claimedSlot(forged) === 3);
+  setSender(forged, 1);
+  check("but the relay overwrites it with the real seat", claimedSlot(forged) === 1);
+
+  // Impersonation is not merely detected, it is erased: the stamp happens on every forwarded message,
+  // so the number the other players see is never the one the sender chose.
+  let leaked = 0;
+  for (let claim = 0; claim < 8; claim++) {
+    for (let seat = 0; seat < MAX_PLAYERS; seat++) {
+      const m = msg(MSG.CARD_REQUEST, claim, 0);
+      setSender(m, seat);
+      if (claimedSlot(m) !== seat) leaked++;
+    }
+  }
+  check("no combination of claim and seat survives the stamp", leaked === 0, `${leaked} leaked`);
+
+  // Stamping touches one byte and never the destination byte, so a host broadcast stays a broadcast.
+  const confirm = msg(MSG.TICK_CONFIRM, 0, RELAY_BROADCAST);
+  setSender(confirm, 0);
+  check("stamping the sender leaves the address alone", confirm[HDR_DEST] === RELAY_BROADCAST);
+  check("and leaves the type alone", confirm[HDR_TYPE] === MSG.TICK_CONFIRM);
+
+  const runt = new Uint8Array(2);
+  setSender(runt, 2);
+  check("a runt cannot be stamped with a sender either", claimedSlot(runt) === -1);
+
+  // And after the stamp the message still routes the same way, because routing reads the room's idea
+  // of who the host is and not anything in the bytes.
+  const decision = createRouteDecision();
+  const stamped = msg(MSG.INPUT_BATCH, 0, 0);
+  setSender(stamped, 2);
+  routeFor(stamped, false, decision);
+  check("a stamped guest message still goes to the host", decision.kind === ROUTE.TO_HOST);
+  routeFor(stamped, true, decision);
+  check("and claiming to be slot 0 does not make it host traffic", decision.kind === ROUTE.DROP);
+  check("it is refused for the role, not the number", decision.reason === DROP_REASON.WRONG_ROLE);
 }
 
 console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
