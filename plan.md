@@ -33,7 +33,7 @@ and anything further down disagree, this section wins and the other place is a b
 | --- | --- |
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 3 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
-| **Phase 2** — co-op | **In progress.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process and the client's connection to it are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Host-migration handling on the player's side, local movement smoothing, lobby UI, dev menu v2 and relay hosting are not. |
+| **Phase 2** — co-op | **In progress.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, lobby UI, the four-player HUD, dev menu v2, remote-config scaffolding and relay hosting are not. |
 | **Phases 3–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -2306,3 +2306,43 @@ follow these rules, not the picture**:
 5. **The survival board needs a stage filter.** Without one, whichever stage has the softest
    wave table owns every top slot and the other stages are dead. Board identity is
    (mode, stage, party size, season).
+
+### Host migration — BUILT AND TESTED 2026-08-13
+
+The design recorded earlier in this file is now code, in `packages/mobile/game/net/party.ts`, with a
+test file of its own in the `test:game` chain (13 sections, all passing, non-zero exit on failure).
+What shipped, and the two bugs the tests found before anyone played:
+
+- **`Party` is the only place in the codebase that knows whether this phone is hosting.** The renderer,
+  the HUD and the simulation never learn about a migration; they hold a run and it keeps ticking.
+  Solo never constructs a `Party` at all, which is the whole enforcement of "solo does not touch the
+  co-op code path" — not a flag checked everywhere, a layer that is absent.
+- **The relay's word on who hosts always wins.** A host that comes back from a drop to find it has been
+  demoted becomes a guest, however sure it was. Proven by test.
+- **A promoted host never re-confirms a tick it did not seal.** This was the dangerous one: a promoted
+  host is behind the host it replaced, and re-sending its own empty records for the gap would hand a
+  guest running behind a stretch of invented input, with no error anywhere. Test 2 asserts it against
+  the bytes that actually go out, and fails if the clamp is removed (verified by breaking it on purpose).
+- **A guest that was not promoted throws its whole queue away and asks for the new host's world.** One
+  snapshot per player, once, on an event that only happens when somebody's app is killed.
+- **A duplicate migration announcement is counted and ignored**, because the relay tells the whole room
+  and a reconnecting player can also work it out from its seat frame.
+- **Losing our own connection freezes the world.** A host that has lost its connection has also lost its
+  authority — the relay promoted someone else the moment it dropped — so it stops simulating rather than
+  building a world nobody else has and handing it over on reconnect.
+
+**Two real bugs the tests caught, both now fixed:**
+
+1. A held seat running out of time was reported to the room as somebody *choosing to leave*, because the
+   seat state was read after the relay's room view had already overwritten it. Players read those two
+   very differently.
+2. Draining the notice queue into an array too small to hold it threw away the notices that did not fit.
+   They now wait for the next frame.
+
+**The relay now announces what its sweep changes.** Everything the sweep does is a subtraction against a
+clock, so it happens with nobody talking to the server: a held seat finally expiring, and a room ending
+up with a new host because the old host's held seat expired. Both were previously silent — the first left
+a badge greyed out forever, the second left a room with a host that did not know it was hosting. The
+registry now names both in a reused report object and the relay speaks them. Tested at the registry level
+with an injected clock; **not** covered by the live relay smoke test, because that would mean waiting the
+real forty-five second grace window.

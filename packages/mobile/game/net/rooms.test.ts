@@ -19,6 +19,8 @@
  *      to another guest.
  *   9. A guest cannot author a host-authoritative message, and nobody can author a server one.
  *  10. Routing a message allocates nothing, because it runs once per packet per player.
+ *  11. The sweep names what it changed, so the players still in the room can be told a held seat ran
+ *      out and that the room has a new host — both of which happen with nobody talking to the server.
  */
 
 import {
@@ -46,6 +48,7 @@ import {
   VISIBILITY,
   createJoinResult,
   createLeaveResult,
+  createSweepReport,
   generateCode,
   isValidCode,
   normalizeCode,
@@ -602,6 +605,81 @@ section("12. Nobody gets to be somebody else");
   routeFor(stamped, true, decision);
   check("and claiming to be slot 0 does not make it host traffic", decision.kind === ROUTE.DROP);
   check("it is refused for the role, not the number", decision.reason === DROP_REASON.WRONG_ROLE);
+}
+
+section("13. A sweep says what it changed, or nobody finds out");
+{
+  const { world, reg } = makeRegistry();
+  const join = createJoinResult();
+  const left = createLeaveResult();
+  const report = createSweepReport();
+
+  const room = reg.createRoom(700, 4, VISIBILITY.PRIVATE);
+  if (room === null) throw new Error("no room");
+  reg.join(room.code, 701, join);
+  reg.join(room.code, 702, join);
+
+  // One player's signal dies. Their seat is held, and the countdown runs with nobody sending anything.
+  reg.leave(702, false, left);
+  reg.sweep(report);
+  check("nothing to report while the seat is still theirs", report.expiredCount === 0);
+
+  world.advance(SEAT_GRACE_MS + 1);
+  reg.sweep(report);
+  check("the expiry is reported", report.expiredCount === 1, `saw ${report.expiredCount}`);
+  check("naming the room", report.expiredRoom[0] === room);
+  check("and the seat", report.expiredSlot[0] === 2, `saw ${report.expiredSlot[0]}`);
+  check("the seat really is gone", (room.seats[2] as { state: number }).state === SEAT_STATE.EMPTY);
+
+  reg.sweep(report);
+  check("and it is reported exactly once", report.expiredCount === 0);
+
+  // Now the host itself drops. The room keeps a host immediately, by promotion on departure.
+  const other = reg.createRoom(800, 4, VISIBILITY.PRIVATE);
+  if (other === null) throw new Error("no room");
+  reg.join(other.code, 801, join);
+  reg.join(other.code, 802, join);
+  reg.leave(800, false, left);
+  check("departure promotes straight away", left.newHostSlot === 1, `saw ${left.newHostSlot}`);
+
+  // The case only a sweep can produce: the host seat is held, so nothing was promoted at the time,
+  // and the promotion happens later off the clock alone.
+  const third = reg.createRoom(900, 4, VISIBILITY.PRIVATE);
+  if (third === null) throw new Error("no room");
+  reg.join(third.code, 901, join);
+  reg.join(third.code, 902, join);
+  reg.leave(901, false, left);
+  reg.leave(902, false, left);
+  reg.leave(900, false, left);
+  check("with nobody live there is nobody to promote", left.newHostSlot === -1);
+  // Bring one guest back, so the room is live again but its host seat is still held.
+  world.advance(1_000);
+  reg.join(third.code, 903, join);
+  check("a returning player takes the lowest free seat", join.status === JOIN.OK);
+  world.advance(SEAT_GRACE_MS + 1);
+  reg.sweep(report);
+  check("the sweep promotes the room", third.hostSlot === join.slot, `host is ${third.hostSlot}`);
+  check("and says so", report.migratedCount === 1, `saw ${report.migratedCount}`);
+  check("naming the room", report.migratedRoom[0] === third);
+  check("and the new host", report.migratedHost[0] === third.hostSlot);
+  check("the expiries came with it", report.expiredCount > 0, `saw ${report.expiredCount}`);
+
+  reg.sweep(report);
+  check("a settled room reports nothing", report.migratedCount === 0 && report.expiredCount === 0);
+
+  // The sweep runs forever on a timer, so it must not leave rubbish behind for the collector.
+  const usage = (globalThis as { process?: { memoryUsage?: () => { heapUsed: number } } }).process
+    ?.memoryUsage;
+  if (usage !== undefined) {
+    const before = usage().heapUsed;
+    for (let i = 0; i < 500; i++) reg.sweep(report);
+    const grew = usage().heapUsed - before;
+    check("sweeping a quiet server allocates almost nothing", grew < 256 * 1024, `${grew} bytes`);
+  }
+
+  // And a relay that never passes a report must keep working exactly as it did.
+  const plain = reg.sweep();
+  check("a sweep with nothing to report into still works", plain >= 0);
 }
 
 console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);

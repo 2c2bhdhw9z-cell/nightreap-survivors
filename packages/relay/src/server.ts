@@ -48,8 +48,10 @@ import {
   SEAT_STATE,
   type Seat,
   VISIBILITY,
+  type SweepReport,
   createJoinResult,
   createLeaveResult,
+  createSweepReport,
 } from "../../mobile/game/net/rooms";
 import {
   DROP_REASON,
@@ -136,6 +138,7 @@ interface Admission {
 const decision: RouteDecision = createRouteDecision();
 const joinResult: JoinResult = createJoinResult();
 const leaveResult = createLeaveResult();
+const sweepReport: SweepReport = createSweepReport();
 const writer = new Writer();
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -290,6 +293,41 @@ function depart(connId: number, graceful: boolean): void {
     const bytes = encodeHostMigrate(writer, leaveResult.newHostSlot, 0);
     for (let i = 0; i < MAX_PLAYERS; i++) {
       const seat = room.seats[i] as Seat;
+      if (seat.state !== SEAT_STATE.LIVE) continue;
+      const peer = sockets.get(seat.connId);
+      if (peer !== undefined) peer.send(bytes, true);
+    }
+  }
+}
+
+/**
+ * Say out loud what the sweep quietly changed.
+ *
+ * Everything the sweep does is a subtraction against a clock, so it happens with nobody talking to the
+ * relay at all. Two of its outcomes matter to players who are still in the room: a held seat finally
+ * running out, and a room ending up with a new host because the old one's held seat expired. Both are
+ * announced with exactly the messages the clients already understand from a normal departure — a seat
+ * that is gone for good is `held: false`, which is the same thing a quit looks like, and the client
+ * knows which of the two it was because it remembers where the seat was a moment ago.
+ */
+function announceSweep(): void {
+  for (let i = 0; i < sweepReport.expiredCount; i++) {
+    const room = sweepReport.expiredRoom[i];
+    if (room === undefined || room === null || room.closed) continue;
+    controlToRoom(room, -1, {
+      t: "peer_left",
+      slot: sweepReport.expiredSlot[i],
+      held: false,
+      room: roomView(room),
+    });
+  }
+
+  for (let i = 0; i < sweepReport.migratedCount; i++) {
+    const room = sweepReport.migratedRoom[i];
+    if (room === undefined || room === null || room.closed) continue;
+    const bytes = encodeHostMigrate(writer, sweepReport.migratedHost[i] as number, 0);
+    for (let seatIndex = 0; seatIndex < MAX_PLAYERS; seatIndex++) {
+      const seat = room.seats[seatIndex] as Seat;
       if (seat.state !== SEAT_STATE.LIVE) continue;
       const peer = sockets.get(seat.connId);
       if (peer !== undefined) peer.send(bytes, true);
@@ -490,7 +528,8 @@ const server = Bun.serve<ConnData, never>({
 });
 
 setInterval(() => {
-  registry.sweep();
+  registry.sweep(sweepReport);
+  announceSweep();
 }, SWEEP_INTERVAL_MS);
 
 console.log(`relay listening on :${server.port}`);

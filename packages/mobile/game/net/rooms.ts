@@ -195,6 +195,38 @@ function makeSeat(): Seat {
   return { state: SEAT_STATE.EMPTY, connId: -1, token: 0, absentSinceMs: 0 };
 }
 
+/** Most seat expiries and promotions one sweep will report. Beyond this the sweep still does its work
+ * — the extras simply go unannounced, and the clients find out from the next room view. Sized well
+ * past four seats times the rooms one sweep can plausibly reap at once. */
+export const MAX_SWEEP_REPORTS = 256;
+
+/**
+ * What a sweep changed, written into a caller-owned object.
+ *
+ * Parallel arrays rather than a list of objects, and reused rather than returned, for the same reason
+ * everything else in here is: the sweep runs on a timer forever, and a relay that allocates a little
+ * rubbish every five seconds is a relay that pauses for the collector during somebody's boss fight.
+ */
+export interface SweepReport {
+  expiredRoom: (Room | null)[];
+  expiredSlot: Int32Array;
+  expiredCount: number;
+  migratedRoom: (Room | null)[];
+  migratedHost: Int32Array;
+  migratedCount: number;
+}
+
+export function createSweepReport(): SweepReport {
+  return {
+    expiredRoom: Array.from<Room | null>({ length: MAX_SWEEP_REPORTS }).fill(null),
+    expiredSlot: new Int32Array(MAX_SWEEP_REPORTS),
+    expiredCount: 0,
+    migratedRoom: Array.from<Room | null>({ length: MAX_SWEEP_REPORTS }).fill(null),
+    migratedHost: new Int32Array(MAX_SWEEP_REPORTS),
+    migratedCount: 0,
+  };
+}
+
 export class RoomRegistry {
   private readonly rooms = new Map<string, Room>();
   /** Reverse index so a socket closing is a map lookup rather than a scan of every room. */
@@ -542,9 +574,13 @@ export class RoomRegistry {
    * Everything here is a subtraction against the injected clock, which is why expiry can be tested in
    * microseconds instead of by sleeping for a minute.
    */
-  sweep(): number {
+  sweep(report: SweepReport | null = null): number {
     const nowMs = this.now();
     let closed = 0;
+    if (report !== null) {
+      report.expiredCount = 0;
+      report.migratedCount = 0;
+    }
     for (const room of Array.from(this.rooms.values())) {
       for (let i = 0; i < MAX_PLAYERS; i++) {
         const seat = room.seats[i] as Seat;
@@ -554,6 +590,14 @@ export class RoomRegistry {
         seat.token = 0;
         seat.absentSinceMs = 0;
         this.stats.seatsExpired++;
+        // Naming the seat is what lets the room be told. Without this the players left behind watch a
+        // countdown reach zero and then nothing happens: the badge sits there greyed out forever,
+        // because the only two messages that ever mention a seat are a join and a leave.
+        if (report !== null && report.expiredCount < report.expiredRoom.length) {
+          const at = report.expiredCount++;
+          report.expiredRoom[at] = room;
+          report.expiredSlot[at] = i;
+        }
       }
 
       const live = this.liveCount(room);
@@ -574,6 +618,13 @@ export class RoomRegistry {
         if (promoted >= 0) {
           room.hostSlot = promoted;
           this.stats.hostMigrations++;
+          // A promotion nobody is told about is worse than no promotion: the room has a host that does
+          // not know it, so every guest waits for confirms that will never come.
+          if (report !== null && report.migratedCount < report.migratedRoom.length) {
+            const at = report.migratedCount++;
+            report.migratedRoom[at] = room;
+            report.migratedHost[at] = promoted;
+          }
         }
       }
     }

@@ -1714,3 +1714,38 @@ and the code will follow the rule:
 - The leaderboard has no way to pick a stage. If we ship it like that, whichever stage is
   easiest takes every top spot and nobody ever looks at the other four. Each stage gets its
   own board.
+
+## Taking over when the host's phone dies - 2026-08-13
+
+Built and tested the part where the person hosting the party disappears.
+
+Before today, one player was running the world for everyone. If their phone died, rang, ran out of
+battery or went into a tunnel, everyone else's game was over. Now somebody else takes over and the
+fight carries on.
+
+What it does, in order:
+
+1. The server notices the host is gone and picks whoever is left, instantly.
+2. That phone takes over the world it was already playing - nothing restarts, nothing rewinds.
+3. Everyone else is handed the new host's world so nobody is quietly playing a different fight.
+4. Everyone sees a line saying the host changed, or that they are now in charge.
+
+Costs about a third of a second of catching up, once, and only when somebody's phone actually dies.
+
+**Two things the tests caught that I would never have spotted by playing:**
+
+- When somebody's connection died and their time to come back ran out, the game told everyone else
+  they had *quit*. Those are different things and people react to them differently. Fixed.
+- If the screen only had room for two messages and three arrived, the third was thrown away instead of
+  shown a moment later. Fixed.
+
+**And two things nobody was being told at all:** when somebody's time to come back finally ran out, the
+other players were never informed - their badge just sat there greyed out forever. And if the host was
+the one whose time ran out, the server handed the room to somebody else and never told them, so that
+phone sat there not hosting while everyone waited on it. Both now announced.
+
+Everything passes: 21 test files, the live server test, and the two-phones-on-a-real-connection test.
+
+Still to do before this phase is finished: making your own thumb feel instant on a guest phone, the
+lobby screen, the four-player heads-up display, the co-op tools in the dev menu, and the switch that
+keeps co-op turned off until it is ready.
