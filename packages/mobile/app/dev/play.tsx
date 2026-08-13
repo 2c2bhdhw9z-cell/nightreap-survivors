@@ -40,6 +40,7 @@ import { GLView, type ExpoWebGLRenderingContext } from "expo-gl";
 import { Link } from "expo-router";
 
 import { useScreenAwake } from "@/hooks/use-screen-awake";
+import { useSettings } from "@/hooks/use-settings";
 import { Palette } from "@/constants/theme";
 
 import { FixedLoop } from "@/game/core/loop";
@@ -55,16 +56,35 @@ import { MAX_WEAPONS, WEAPON_TYPES } from "@/game/sim/weapons";
 import { PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
 import { OFFERS_PER_SCREEN } from "@/game/sim/cards";
+import { MAX_PLAYERS } from "@/game/sim/player";
+import { REAPER_SECOND, TICKS_PER_SECOND } from "@/game/sim/waves";
+import { HudView, createHudInput, readRunInto, touchSummonsStick, type HudFrame } from "@/game/hud/hud";
+import { HudPainter, paintStick } from "@/game/render/hud-draw";
+import type { HudRect, ResolvedHud } from "@/game/settings/settings";
 
-/** On-screen radius of the thumbstick, in layout points. Sized for a thumb, not a mouse. */
-const STICK_RADIUS_DP = 76;
-/** Distance from the screen's bottom-left corner to the stick's outer edge, in layout points. */
-const STICK_INSET_DP = 28;
 /**
  * Fraction of the stick's travel that reads as "not moving". Without this a resting thumb drifts
  * the character a pixel at a time, which feels like the game is fighting you.
  */
 const STICK_DEADZONE = 0.16;
+
+/**
+ * Live thumbstick state.
+ *
+ * There is no pad. The stick has no position until a thumb lands, and then its centre *is* where the
+ * thumb landed — which is why the origin is stored here rather than being a constant. `x`/`y` is what
+ * the simulation reads; `knobX`/`knobY` is what gets drawn, and they are not the same thing, because
+ * the deadzone must not make the knob jump.
+ */
+interface StickState {
+  x: number;
+  y: number;
+  active: boolean;
+  originX: number;
+  originY: number;
+  knobX: number;
+  knobY: number;
+}
 
 /** Seeds are picked from a fixed list so a run that felt good can be asked for again by hand. */
 const SEEDS = [1, 7, 1337, 90210] as const;
@@ -163,12 +183,24 @@ export default function PlayScreen() {
   const [hurry, setHurry] = useState(false);
   const [hyper, setHyper] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Seats in the run. The other three stand still — this is here to look at the four-player HUD. */
+  const [partySize, setPartySize] = useState(1);
+  const [paused, setPaused] = useState(false);
+
+  // The HUD draws itself from resolved settings and from nothing else, so the screen reads them the
+  // same way every other screen does. Party size is passed in because it decides whether badges exist.
+  const settings = useSettings(partySize);
 
   // Live handles the render loop reads without being torn down and rebuilt by a re-render.
   const runRef = useRef<Run | null>(null);
   const rafRef = useRef<number | null>(null);
   /** Current stick vector, -1..1, already deadzoned. Read once per sim tick. */
-  const stickRef = useRef({ x: 0, y: 0, active: false, knobX: 0, knobY: 0 });
+  const stickRef = useRef<StickState>({ x: 0, y: 0, active: false, originX: 0, originY: 0, knobX: 0, knobY: 0 });
+  /** Resolved HUD geometry and the live HUD frame, for the touch handlers to read. */
+  const hudRef = useRef<ResolvedHud>(settings.resolved.hud);
+  const frameRef = useRef<HudFrame | null>(null);
+  const pausedRef = useRef(false);
+  const partyRef = useRef(partySize);
   /** GLView size in layout points, and the multiplier from points to HUD units. */
   const layoutRef = useRef({ w: 1, h: 1, hudPerDp: 1 });
   /** Bumped to ask the GL loop to restart the run with the current seed and modifier choices. */
@@ -180,6 +212,9 @@ export default function PlayScreen() {
   seedRef.current = seed;
   hurryRef.current = hurry;
   hyperRef.current = hyper;
+  hudRef.current = settings.resolved.hud;
+  pausedRef.current = paused;
+  partyRef.current = partySize;
 
   const onLayout = useCallback((e: LayoutChangeEvent) => {
     const { width, height } = e.nativeEvent.layout;
@@ -188,21 +223,42 @@ export default function PlayScreen() {
   }, []);
 
   // --- Thumbstick -------------------------------------------------------------------------
-  // The stick's visual lives in GL so it is pixel-exact with the game; this responder only turns
-  // touches into a vector. Touch coordinates are relative to the pad view and are allowed to leave
-  // it, which is what lets a thumb slide past the edge and still hold full tilt.
+  // There is no pad. The responder covers the whole screen and the settled rule decides what a touch
+  // means: the top block is interface, everything below it is movement, and there is no third case.
+  // That rule lives in `touchSummonsStick` in the engine, not here, so it is testable without a phone.
+  const togglePause = useCallback(() => setPaused((p) => !p), []);
+
   const stick = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (e: GestureResponderEvent) => applyStick(stickRef, e),
+        onPanResponderGrant: (e: GestureResponderEvent) => {
+          const x = e.nativeEvent.locationX;
+          const y = e.nativeEvent.locationY;
+          const pause = frameRef.current?.pauseButton;
+          // The one button in a run. Checked first, so a mis-scaled top block can never make pausing
+          // impossible by having the movement region swallow it.
+          if (pause && insideRect(pause, x, y)) {
+            togglePause();
+            return;
+          }
+          if (!touchSummonsStick(x, y, hudRef.current, pause)) return;
+          const s = stickRef.current;
+          s.active = true;
+          s.originX = x;
+          s.originY = y;
+          s.x = 0;
+          s.y = 0;
+          s.knobX = 0;
+          s.knobY = 0;
+        },
         onPanResponderMove: (e: GestureResponderEvent, _g: PanResponderGestureState) =>
-          applyStick(stickRef, e),
+          applyStick(stickRef, e, hudRef.current.stickRadius),
         onPanResponderRelease: () => releaseStick(stickRef),
         onPanResponderTerminate: () => releaseStick(stickRef),
       }),
-    [],
+    [togglePause],
   );
 
   useEffect(
@@ -215,6 +271,7 @@ export default function PlayScreen() {
   const restart = useCallback(() => {
     restartRef.current++;
     setEnded(null);
+    setPaused(false);
     setCards(CLOSED_CARDS);
   }, []);
 
@@ -238,7 +295,6 @@ export default function PlayScreen() {
       const skull = atlas.need("debug/skull");
       const gem = atlas.need("debug/gem");
       const diamond = atlas.need("debug/diamond");
-      const ring = atlas.need("debug/ring");
 
       // Looked up once. Packing a colour from a hex string inside a frame would allocate a string
       // per sprite, which is exactly the kind of thing that starved the benchmark of memory.
@@ -260,11 +316,19 @@ export default function PlayScreen() {
         gold: Renderer.color(Palette.gold),
         food: Renderer.color(Palette.venom),
         special: Renderer.color(Palette.violetLit),
-        track: Renderer.color(Palette.stone),
-        hp: Renderer.color(Palette.crimsonLit),
-        stickBase: Renderer.color(Palette.ash, 90),
-        stickKnob: Renderer.color(Palette.boneLit, 150),
       } as const;
+
+      // The HUD: one view that decides the numbers, one painter that draws them, both built once and
+      // reused for the life of the screen. Nothing here is allocated per frame.
+      const hudView = new HudView();
+      const hudInput = createHudInput();
+      const painter = new HudPainter({ white });
+      frameRef.current = hudView.frame;
+      // Who is on the network and what they are playing is the party layer's business, not the run's.
+      // There is no party on this screen, so everybody is present and everybody is character zero.
+      const connected = new Uint8Array(MAX_PLAYERS).fill(1);
+      const characterIds = new Uint8Array(MAX_PLAYERS);
+      const reaperAtTicks = REAPER_SECOND * TICKS_PER_SECOND;
 
       const run = new Run(seedRef.current);
       runRef.current = run;
@@ -308,6 +372,10 @@ export default function PlayScreen() {
             reportedEnd = RUN_END.running;
           }
 
+          // Paused means paused. Rather than freezing the loop and letting it owe itself a second of
+          // ticks on resume, the clock is re-anchored to now every paused frame — the sim's tick count
+          // is kept, so unpausing does not fast-forward and does not rewind either.
+          if (pausedRef.current) loop.reset(now, loop.stats.tick);
           loop.advance(now);
           const alpha = loop.stats.alpha;
           renderer.beginFrame(alpha);
@@ -386,39 +454,43 @@ export default function PlayScreen() {
             }
           }
 
-          // 6. hud — screen space, drawn in GL so the bars are pixel-exact with the game.
+          // 6. hud — screen space, and every coordinate in it comes from resolved settings.
+          //
+          // The screen's whole job here is three calls: copy the run into an input block, let the HUD
+          // rules turn that into a frame, then paint the frame. It decides nothing itself, which is why
+          // the layout editor will be a screen rather than a rewrite of this file.
           {
             const b = renderer.layer("hud");
-            const vw = renderer.camera.worldViewW;
-            const vh = renderer.camera.worldViewH;
-
-            // Experience across the very top: the one number a bullet-heaven player reads constantly.
-            const xp = run.prog.barFraction;
-            b.drawRect(white, 0, 0, vw, 3, C.track);
-            b.drawRect(white, 0, 0, vw * xp, 3, C.xp);
-
-            // Health under it, only while it matters.
-            const maxHp = run.stats.get(STAT.maxHealth) / STAT_SCALE;
-            const hp = maxHp > 0 ? run.players.health[0] / maxHp : 0;
-            if (hp < 1) {
-              b.drawRect(white, 0, 4, vw, 2, C.track);
-              b.drawRect(white, 0, 4, vw * Math.max(0, hp), 2, C.hp);
-            }
-
-            // The thumbstick, positioned from the layout rect React measured.
+            const hud = hudRef.current;
             const L = layoutRef.current;
-            L.hudPerDp = vw / L.w;
+            // The one bridge between the two coordinate systems: settings resolve in layout points, the
+            // HUD layer draws in screen units.
+            L.hudPerDp = renderer.camera.worldViewW / L.w;
             const k = L.hudPerDp;
-            const r = STICK_RADIUS_DP * k;
-            const cx = (STICK_INSET_DP + STICK_RADIUS_DP) * k;
-            const cy = vh - (STICK_INSET_DP + STICK_RADIUS_DP) * k;
-            const baseScale = (r * 2) / 32;
-            b.drawScaled(ring, cx, cy, baseScale, baseScale, C.stickBase);
+
+            readRunInto(
+              run,
+              0,
+              run.stats.get(STAT.maxHealth) / STAT_SCALE,
+              connected,
+              characterIds,
+              reaperAtTicks,
+              hudInput,
+            );
+            hudView.update(hudInput, hud);
+            painter.paint(b, hudView.frame, k);
+
             const s = stickRef.current;
-            if (s.active) {
-              const knob = (r * 0.8) / 32;
-              b.drawScaled(blob, cx + s.knobX * r, cy + s.knobY * r, knob, knob, C.stickKnob);
-            }
+            paintStick(
+              b,
+              { white },
+              s.originX * k,
+              s.originY * k,
+              hud.stickRadius * k,
+              s.knobX,
+              s.knobY,
+              s.active,
+            );
           }
 
           renderer.endFrame();
@@ -517,8 +589,8 @@ export default function PlayScreen() {
       <View style={styles.fill} onLayout={onLayout}>
         <GLView style={styles.gl} onContextCreate={onContextCreate} />
 
-        {/* Invisible pad over the GL-drawn stick. Only job: turn touches into a vector. */}
-        <View style={styles.stickPad} {...stick.panHandlers} />
+        {/* One invisible surface over the whole screen. The engine decides what a touch means. */}
+        <View style={styles.touchLayer} {...stick.panHandlers} />
 
         <View style={styles.hud} pointerEvents="box-none">
           <Text style={styles.clock}>
@@ -532,7 +604,8 @@ export default function PlayScreen() {
           </Text>
           <Text style={styles.dim}>
             {readout.kills} kills · {Math.round(readout.damage)} damage · {readout.gold} gold ·
-            stick {readout.stickX.toFixed(2)},{readout.stickY.toFixed(2)}
+            stick {readout.stickX.toFixed(2)},{readout.stickY.toFixed(2)} · {partySize}p hud
+            {settings.ready ? "" : " (defaults)"}
           </Text>
           <Text style={styles.dim}>{readout.weapons}</Text>
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -558,6 +631,25 @@ export default function PlayScreen() {
               <Pressable style={styles.btn} onPress={skip}>
                 <Text style={styles.btnText}>skip{cards.skips > 0 ? ` (${cards.skips})` : ""}</Text>
               </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {paused && !cards.open && ended === null ? (
+          <View style={styles.overlay}>
+            <Text style={styles.title}>Paused</Text>
+            <Text style={styles.row}>
+              The clock is stopped. Nothing is happening until you say so.
+            </Text>
+            <View style={styles.controls}>
+              <Pressable style={styles.btn} onPress={togglePause}>
+                <Text style={styles.btnText}>resume</Text>
+              </Pressable>
+              <Link href="/" asChild>
+                <Pressable style={styles.btn}>
+                  <Text style={styles.btnText}>give up</Text>
+                </Pressable>
+              </Link>
             </View>
           </View>
         ) : null}
@@ -591,6 +683,18 @@ export default function PlayScreen() {
                 <Text style={styles.chipText}>seed {s}</Text>
               </Pressable>
             ))}
+            {[1, 2, 3, 4].map((n) => (
+              <Pressable
+                key={`party${n}`}
+                style={[styles.chip, partySize === n ? styles.chipOn : null]}
+                onPress={() => {
+                  setPartySize(n);
+                  restart();
+                }}
+              >
+                <Text style={styles.chipText}>{n}p</Text>
+              </Pressable>
+            ))}
             <Pressable
               style={[styles.chip, hurry ? styles.chipOn : null]}
               onPress={() => setHurry(!hurry)}
@@ -616,21 +720,35 @@ export default function PlayScreen() {
     const mods = [];
     if (hurryRef.current) mods.push(MOD_HURRY);
     if (hyperRef.current) mods.push(MOD_HYPER);
-    run.begin({ seed: seedRef.current, playerCount: 1, modifiers: mods, record: false });
+    run.begin({
+      seed: seedRef.current,
+      playerCount: partyRef.current,
+      modifiers: mods,
+      record: false,
+    });
     stickRef.current.x = 0;
     stickRef.current.y = 0;
     stickRef.current.active = false;
   }
 }
 
-/** Turn a touch inside the pad into a clamped, deadzoned stick vector. Allocates nothing. */
-function applyStick(
-  ref: { current: { x: number; y: number; active: boolean; knobX: number; knobY: number } },
-  e: GestureResponderEvent,
-) {
+/** Is this point inside that rectangle? Both in layout points. */
+function insideRect(r: HudRect, x: number, y: number): boolean {
+  return x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height;
+}
+
+/**
+ * Turn a moving thumb into a clamped, deadzoned stick vector, measured from where the thumb landed.
+ *
+ * A thumb is allowed to slide past the stick's radius and keep full tilt — that is what makes chasing
+ * a gem across the screen possible without lifting off. Allocates nothing.
+ */
+function applyStick(ref: { current: StickState }, e: GestureResponderEvent, radius: number) {
   const s = ref.current;
-  let dx = (e.nativeEvent.locationX - STICK_RADIUS_DP) / STICK_RADIUS_DP;
-  let dy = (e.nativeEvent.locationY - STICK_RADIUS_DP) / STICK_RADIUS_DP;
+  if (!s.active) return;
+  const r = radius > 0 ? radius : 1;
+  let dx = (e.nativeEvent.locationX - s.originX) / r;
+  let dy = (e.nativeEvent.locationY - s.originY) / r;
   const len = Math.sqrt(dx * dx + dy * dy);
   if (len > 1) {
     dx /= len;
@@ -638,7 +756,6 @@ function applyStick(
   }
   s.knobX = dx;
   s.knobY = dy;
-  s.active = true;
   if (len < STICK_DEADZONE) {
     s.x = 0;
     s.y = 0;
@@ -648,9 +765,7 @@ function applyStick(
   s.y = dy;
 }
 
-function releaseStick(ref: {
-  current: { x: number; y: number; active: boolean; knobX: number; knobY: number };
-}) {
+function releaseStick(ref: { current: StickState }) {
   const s = ref.current;
   s.x = 0;
   s.y = 0;
@@ -729,15 +844,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.ink },
   fill: { flex: 1 },
   gl: { ...StyleSheet.absoluteFillObject },
-  stickPad: {
-    position: "absolute",
-    left: STICK_INSET_DP,
-    bottom: STICK_INSET_DP,
-    width: STICK_RADIUS_DP * 2,
-    height: STICK_RADIUS_DP * 2,
-  },
+  touchLayer: { ...StyleSheet.absoluteFillObject },
   panelInner: { padding: 14, gap: 8 },
-  hud: { position: "absolute", left: 8, top: 10, right: 8, gap: 2 },
+  hud: { position: "absolute", left: 8, top: 96, right: 8, gap: 2 },
   clock: {
     color: Palette.boneLit,
     fontSize: 15,
@@ -767,7 +876,7 @@ const styles = StyleSheet.create({
   },
   cardName: { color: Palette.boneLit, fontSize: 14, fontWeight: "700" },
   cardText: { color: Palette.bone, fontSize: 12 },
-  footer: { position: "absolute", right: 8, bottom: 10, left: STICK_RADIUS_DP * 2 + 40 },
+  footer: { position: "absolute", right: 8, bottom: 10, left: 8 },
   controls: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "flex-end" },
   chip: {
     paddingHorizontal: 8,

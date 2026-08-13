@@ -171,6 +171,8 @@ export interface HudFrame {
   levelPending: boolean;
 
   statusStrip: HudRect;
+  /** The band the twelve item cells sit in. Carried so the painter never has to guess at its slab. */
+  slotStrip: HudRect;
   /** The pause icon: the only interface button in a run. */
   pauseButton: HudRect;
 
@@ -229,6 +231,7 @@ export class HudView {
     level: 1,
     levelPending: false,
     statusStrip: rect(),
+    slotStrip: rect(),
     pauseButton: rect(),
     health: 0,
     maxHealth: 0,
@@ -283,6 +286,7 @@ export class HudView {
 
     copyRect(hud.xpBar, f.xpBar);
     copyRect(hud.statusStrip, f.statusStrip);
+    copyRect(hud.slotStrip, f.slotStrip);
     copyRect(hud.stickZone, f.stickZone);
     f.stickRadius = hud.stickRadius;
 
@@ -290,6 +294,8 @@ export class HudView {
     f.xpFraction = input.xpToNext > 0 ? clamp01(input.xp / input.xpToNext) : 1;
     f.level = input.level;
     f.levelPending = input.pendingLevels > 0;
+    f.gold = input.gold;
+    f.kills = input.kills;
 
     this.updateStatus(input, hud);
     this.updateClock(input);

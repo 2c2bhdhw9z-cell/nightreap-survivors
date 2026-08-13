@@ -465,6 +465,13 @@ section("reading a live run");
   check("the shared level came across", input.level === 14 && input.pendingLevels === 2);
 
   view.update(input, hud);
+  // Every one of these is a number the status strip draws. A field that never reaches the frame is a
+  // field that reads zero forever on screen, which is exactly the kind of thing nobody notices in a
+  // code review and everybody notices in a run.
+  check("the gold total reaches the frame the strip draws from", view.frame.gold === 1250, `${view.frame.gold}`);
+  check("the kill count reaches the frame too", view.frame.kills === 431, `${view.frame.kills}`);
+  check("so does the level and the fact that a pick is owed", view.frame.level === 14 && view.frame.levelPending);
+  check("and the band the twelve cells sit in", view.frame.slotStrip.height === hud.slotStrip.height && view.frame.slotStrip.y === hud.slotStrip.y);
   check("the local seat's own weapon is in cell zero", view.frame.slots.type[0] === 5);
   check("the local seat's health is drawn, not seat zero's", Math.abs(view.frame.healthFraction - 45 / 120) < 1e-6);
   check("the downed guest reads downed", (view.frame.badges.state[1] ?? -1) === BADGE.downed);

@@ -2034,3 +2034,39 @@ budget now rather than discovered later. Roughly 1,600 lines plus tests.
 Also noted for the art phase: you are sending a video of Vampire Survivors' chest opening as the quality
 bar for ours. What gets matched is the timing - the wind-up, the burst, the reveal, the settle - not the
 shapes or the colours, which stay ours.
+
+## The bar at the top of a fight is now on the screen - 2026-08-13
+
+The four-player HUD is drawn. The part written yesterday decided every number; this part turns those
+numbers into shapes and is allowed to decide nothing else. There is exactly one line in it that converts
+between the two ways the game measures the screen, and every rectangle it draws traces back to something
+in settings - which is what makes the layout editor a screen to build later rather than a rewrite.
+
+It draws its own text. There is no art in the project yet and no lettering, so the HUD carries a tiny
+three-by-five pixel alphabet built out of plain squares. That means the level, the health, the clock, the
+gold and the kill count all show real numbers today. When the real lettering is drawn each character
+becomes one shape instead of fifteen and nothing else about this changes.
+
+While looking at the first picture of it I found a real bug: gold and kills were being read from the run
+but never handed to the display, so both would have read zero forever on screen. Fixed, and the test now
+checks every number the strip draws actually arrives - the class of mistake, not just this one instance.
+
+The in-run screen was rewired onto it. The old thumbstick in the bottom-left corner is gone: a touch
+anywhere below the top block now makes the stick appear under your thumb, wherever that is. The pause icon
+is the only button in a run, and it is checked before the movement region, so no combination of layout
+settings can ever make pausing impossible. Pausing stops the clock properly - it does not owe the game a
+second of catching up when you unpause. There is also a seat-count switch on the dev screen so the two,
+three and four player layouts can be looked at without four phones.
+
+Nine deliberate breaks were tried against the drawing tests - ignoring the scale factor, drawing badges in
+solo, giving every seat the same number of dots, marking a disconnected player with the dead X, leaving a
+revive bar up when nobody is being revived, dropping the low-health colour, dropping half the pause icon,
+un-rimming a maxed item. Every one was caught. 76 checks in the new file, 29 test files in total, plus the
+live server test, the two-players-over-a-real-connection test, typecheck, lint and build, all green.
+
+One thing worth knowing: two of the four player colours are also colours the game already uses for
+meanings - player one's cyan is the experience colour and player three's crimson is the health colour. It
+reads fine because the badges are somewhere else on screen and the dots back the colour up, but if it ever
+looks muddy, that is why, and the fix is a data change.
+
+Next on this: the dev menu's co-op panels, then remote config, which co-op has to ship behind.
