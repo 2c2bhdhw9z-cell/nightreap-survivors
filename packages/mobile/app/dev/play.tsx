@@ -47,14 +47,27 @@ import { saveStore } from "@/hooks/use-settings";
 import { Palette } from "@/constants/theme";
 
 import { FixedLoop } from "@/game/core/loop";
-import { createDebugAtlas, type Atlas } from "@/game/render/atlas";
+import { type Atlas } from "@/game/render/atlas";
+import { loadRunAtlas } from "@/lib/load-atlas";
+import {
+  BOSS_DRAW_SCALE,
+  ENEMY_DRAW_SCALE,
+  ENEMY_FRAME,
+  PLAYER_DRAW_SCALE,
+  PICKUP_FRAME,
+  PLAYER_FRAME,
+  SHOT_FRAME,
+  STAGE_ART,
+  WHITE_FRAME,
+} from "@/game/art/run-art";
 import { Renderer } from "@/game/render/renderer";
+import { COLOR_WHITE } from "@/game/render/batcher";
 import { Ground, type FrameSource, type GroundTheme } from "@/game/render/ground";
 import { Run } from "@/game/run/run";
 import { STAT, STAT_SCALE } from "@/game/sim/stats";
 import { MOD_HURRY, MOD_HYPER } from "@/game/sim/modifiers";
 import { PICKUP } from "@/game/sim/pickups";
-import { ENEMY_FLAG } from "@/game/sim/enemies";
+import { ENEMY_FLAG, ENEMY_TYPES } from "@/game/sim/enemies";
 import { MAX_WEAPONS, WEAPON_TYPES } from "@/game/sim/weapons";
 import { PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
@@ -354,26 +367,37 @@ export default function PlayScreen() {
     setCards(CLOSED_CARDS);
   }, []);
 
-  const onContextCreate = useCallback((gl: ExpoWebGLRenderingContext) => {
+  const onContextCreate = useCallback(async (gl: ExpoWebGLRenderingContext) => {
     try {
       const renderer = new Renderer(gl);
       renderer.setClearColor(Palette.ink);
-      const atlas = createDebugAtlas(gl);
+      // The real art, from the one packed sheet. This deliberately has no fallback to placeholder
+      // squares: a build with missing art that looks like a build with placeholder art is a build that
+      // ships. If the sheet will not load, the screen says so instead.
+      const atlas = await loadRunAtlas(gl as unknown as WebGLRenderingContext);
       renderer.setAtlas(atlas);
       renderer.resize(gl.drawingBufferWidth, gl.drawingBufferHeight);
 
       const source = frameSourceFor(atlas);
+      // Real drawn floors and scenery, and no tint on either: the art already carries its own colour,
+      // and tinting a drawn picture only muddies it.
       const ground = new Ground(source, {
         ...DEBUG_GROUND,
-        floorTint: Renderer.color(Palette.stone),
-        propTint: Renderer.color(Palette.crypt),
+        floorFrames: STAGE_ART.crypt?.floorFrames ?? [],
+        propFrames: STAGE_ART.crypt?.propFrames ?? [],
+        floorTint: COLOR_WHITE,
+        propTint: COLOR_WHITE,
       });
 
-      const white = atlas.need("debug/white");
-      const blob = atlas.need("debug/blob");
-      const skull = atlas.need("debug/skull");
-      const gem = atlas.need("debug/gem");
-      const diamond = atlas.need("debug/diamond");
+      // Every picture this screen will ever draw, looked up once. A frame lookup is a string lookup,
+      // and doing string work inside a frame is exactly what starved the benchmark of memory.
+      const white = atlas.need(WHITE_FRAME);
+      const enemyFrames = ENEMY_TYPES.map((t) => atlas.need(ENEMY_FRAME[t.id] ?? WHITE_FRAME));
+      const shotFrames = WEAPON_TYPES.map((w) => atlas.need(SHOT_FRAME[w.id] ?? WHITE_FRAME));
+      const pickupFrames = PICKUP_FRAME.map((name) => atlas.need(name));
+      // Every character on the roster, so the body is right the moment a run restarts as somebody else
+      // without re-reading the sheet.
+      const bodyFrames = CHARACTERS.map((c) => atlas.need(PLAYER_FRAME[c.id] ?? WHITE_FRAME));
 
       // Looked up once. Packing a colour from a hex string inside a frame would allocate a string
       // per sprite, which is exactly the kind of thing that starved the benchmark of memory.
@@ -470,16 +494,8 @@ export default function PlayScreen() {
             for (let i = 0; i < p.pool.count; i++) {
               const s = slots[i];
               const kind = p.kind[s];
-              const colour =
-                kind === PICKUP.gold
-                  ? C.gold
-                  : kind === PICKUP.health
-                    ? C.food
-                    : kind === PICKUP.gemSmall || kind === PICKUP.gemMedium || kind === PICKUP.gemLarge
-                      ? C.xp
-                      : C.special;
               const size = kind === PICKUP.gemLarge ? 0.5 : kind === PICKUP.gemMedium ? 0.38 : 0.28;
-              b.drawScaled(gem, p.x[s], p.y[s], size, size, colour);
+              b.drawScaled(pickupFrames[kind] ?? white, p.x[s], p.y[s], size, size, COLOR_WHITE);
             }
           }
 
@@ -492,14 +508,16 @@ export default function PlayScreen() {
               const s = slots[i];
               const boss = (e.flags[s] & ENEMY_FLAG.boss) !== 0;
               const r = e.radius[s];
-              const scale = (r * 2) / 32;
+              const scale = ((r * 2) / 32) * ENEMY_DRAW_SCALE;
+              // The drawn picture, untinted. A boss is drawn bigger; it keeps the gold wash, because a
+              // boss has to be readable through a screen full of everything else.
               b.drawScaled(
-                blob,
+                enemyFrames[e.typeIndex[s]] ?? white,
                 e.x[s],
                 e.y[s],
-                boss ? scale * 1.6 : scale,
-                boss ? scale * 1.6 : scale,
-                boss ? C.boss : C.enemy[e.typeIndex[s] % C.enemy.length],
+                boss ? (scale / ENEMY_DRAW_SCALE) * BOSS_DRAW_SCALE : scale,
+                boss ? (scale / ENEMY_DRAW_SCALE) * BOSS_DRAW_SCALE : scale,
+                boss ? C.boss : COLOR_WHITE,
               );
             }
           }
@@ -511,13 +529,22 @@ export default function PlayScreen() {
             for (let i = 0; i < pl.count; i++) {
               const x = pl.prevX[i] + (pl.x[i] - pl.prevX[i]) * alpha;
               const y = pl.prevY[i] + (pl.y[i] - pl.prevY[i]) * alpha;
+              // The character's own body, drawn as drawn while nothing is happening to them. Being hit
+              // and being down still wash the sprite, because those two have to be unmissable.
               const colour =
                 pl.state[i] === PLAYER_STATE.alive
                   ? pl.invuln[i] > 0
                     ? C.invuln
-                    : C.player
+                    : COLOR_WHITE
                   : C.downed;
-              b.drawScaled(skull, x, y, 0.6, 0.6, colour);
+              b.drawScaled(
+                bodyFrames[characterIds[i] ?? 0] ?? white,
+                x,
+                y,
+                PLAYER_DRAW_SCALE,
+                PLAYER_DRAW_SCALE,
+                colour,
+              );
             }
           }
 
@@ -529,7 +556,7 @@ export default function PlayScreen() {
             for (let i = 0; i < pr.pool.count; i++) {
               const s = slots[i];
               const scale = Math.max(0.2, (pr.radius[s] * 2) / 32);
-              b.drawScaled(diamond, pr.x[s], pr.y[s], scale, scale, C.shot);
+              b.drawScaled(shotFrames[pr.weapon[s]] ?? white, pr.x[s], pr.y[s], scale, scale, COLOR_WHITE);
             }
           }
 

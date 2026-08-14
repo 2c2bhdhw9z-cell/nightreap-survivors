@@ -3042,3 +3042,41 @@ hood, Odrick's skull.
 
 **Still to do on art:** the game itself still draws test squares — the sheet is packed but not yet handed to
 the renderer. Props, the six evolved weapons and the in-run guide prompts are unpainted.
+
+### The game draws the real art now — same day
+
+The sheet was packed but the game was still drawing coloured shapes. That's fixed.
+
+- **The sheet is loaded once**, when the drawing surface opens, and stays for the life of it. Loading a
+  picture file is the one job that is completely different on a phone and in a browser, so that part sits
+  outside the game's own code, and the game is handed a finished sheet.
+- **If it fails, it fails loudly.** No falling back to placeholder squares. A build with missing art that
+  looks like a build with placeholder art is a build that ships.
+- **A second guard, at load:** the sheet and the written list of positions are two separate files, and
+  nothing stops one of them being replaced on its own. If they disagree the game refuses and says how — all
+  the disagreements at once, because a stale file makes dozens of pictures wrong and seeing them together
+  reads as "wrong file" instead of "one bad picture".
+- **A second written table** says which picture stands for which thing in a run: each character's body,
+  each enemy, each weapon's shot including all six evolved ones, every kind of thing that can lie on the
+  floor, and the floors and scenery for three stages. Checked both ways — nothing in the game without a
+  picture, and nothing in the table for something the game no longer has.
+- **One check exists purely for feel:** no weapon and its own evolution may throw the same picture. That
+  would make the evolution moment land flat, and it is the one duplicate that would be invisible in play.
+- **Sprites are drawn bigger than their real size.** A sprite drawn the exact size of the space it occupies
+  for hitting things looks like an ant next to the floor; growing the hitbox to match a comfortable sprite
+  makes the game feel unfair. So the picture is allowed to be bigger, and the part of the game that decides
+  what touched what cannot see those drawing numbers at all.
+- **One generated cell.** Every health bar and fade is a plain rectangle, and the only thing the renderer
+  knows how to draw is a piece of the sheet — so there is now a single cell of solid white on it. It is the
+  only cell in the whole art folder that isn't drawn by hand, and there is a note next to it saying so.
+
+**Checked, not assumed.** I loaded the running game in a real browser, dismissed the first-run offer like a
+player would, and looked at the pixels: skeletons and zombies walking around, the character lit up while
+they had their moment of invulnerability, gems on the floor, gravestones and slabs standing on tiled stone.
+First attempt had two problems, both visible only in the picture: the floor was so busy with bones and moss
+that it fought the enemies for attention, and everything on it was drawn far too small. Both fixed and
+re-checked.
+
+**Twelve more deliberate breakages** across the two new tables — a character with no body, two enemies
+wearing the same picture, an evolution throwing its old shot, a stage laying the same tile twice, the sheet
+guard blinded five different ways. All twelve caught.

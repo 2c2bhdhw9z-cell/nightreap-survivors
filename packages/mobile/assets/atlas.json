@@ -1321,112 +1321,118 @@
       "x": 817,
       "y": 205
     },
-    "weapons/icon-01": {
+    "ui-solid/icon-01": {
       "h": 32,
       "w": 32,
       "x": 341,
       "y": 239
     },
-    "weapons/icon-02": {
+    "weapons/icon-01": {
       "h": 32,
       "w": 32,
       "x": 375,
       "y": 239
     },
-    "weapons/icon-03": {
+    "weapons/icon-02": {
       "h": 32,
       "w": 32,
       "x": 409,
       "y": 239
     },
-    "weapons/icon-04": {
+    "weapons/icon-03": {
       "h": 32,
       "w": 32,
       "x": 443,
       "y": 239
     },
-    "weapons/icon-05": {
+    "weapons/icon-04": {
       "h": 32,
       "w": 32,
       "x": 477,
       "y": 239
     },
-    "weapons/icon-06": {
+    "weapons/icon-05": {
       "h": 32,
       "w": 32,
       "x": 511,
       "y": 239
     },
-    "weapons/icon-07": {
+    "weapons/icon-06": {
       "h": 32,
       "w": 32,
       "x": 545,
       "y": 239
     },
-    "weapons/icon-08": {
+    "weapons/icon-07": {
       "h": 32,
       "w": 32,
       "x": 579,
       "y": 239
     },
-    "weapons/icon-09": {
+    "weapons/icon-08": {
       "h": 32,
       "w": 32,
       "x": 613,
       "y": 239
     },
-    "weapons/icon-10": {
+    "weapons/icon-09": {
       "h": 32,
       "w": 32,
       "x": 647,
       "y": 239
     },
-    "weapons/icon-11": {
+    "weapons/icon-10": {
       "h": 32,
       "w": 32,
       "x": 681,
       "y": 239
     },
-    "weapons/icon-12": {
+    "weapons/icon-11": {
       "h": 32,
       "w": 32,
       "x": 715,
       "y": 239
     },
-    "weapons/icon-13": {
+    "weapons/icon-12": {
       "h": 32,
       "w": 32,
       "x": 749,
       "y": 239
     },
-    "weapons/icon-14": {
+    "weapons/icon-13": {
       "h": 32,
       "w": 32,
       "x": 783,
       "y": 239
     },
-    "weapons/icon-15": {
+    "weapons/icon-14": {
       "h": 32,
       "w": 32,
       "x": 817,
       "y": 239
     },
-    "weapons/icon-16": {
+    "weapons/icon-15": {
       "h": 32,
       "w": 32,
       "x": 851,
       "y": 239
     },
-    "weapons/icon-17": {
+    "weapons/icon-16": {
       "h": 32,
       "w": 32,
       "x": 885,
       "y": 239
     },
-    "weapons/icon-18": {
+    "weapons/icon-17": {
       "h": 32,
       "w": 32,
       "x": 919,
+      "y": 239
+    },
+    "weapons/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
       "y": 239
     }
   },
@@ -1682,6 +1688,9 @@
       "ui-parts-2/icon-13",
       "ui-parts-2/icon-14",
       "ui-parts-2/icon-15"
+    ],
+    "ui-solid": [
+      "ui-solid/icon-01"
     ],
     "weapons": [
       "weapons/icon-01",
