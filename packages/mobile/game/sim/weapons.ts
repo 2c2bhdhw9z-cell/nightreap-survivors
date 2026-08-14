@@ -35,6 +35,7 @@ import {
   type ProjectileStore,
   type SpawnRequest,
 } from "./projectiles";
+import { PASSIVE_BY_ID } from "./passives";
 import { STAT, STAT_SCALE, type Stats } from "./stats";
 
 /** Weapons a single player can carry. Matches the genre and the HUD layout. */
@@ -104,10 +105,18 @@ export interface WeaponType {
   readonly sprite: number;
   /** Levels 2 through 8. Seven entries. */
   readonly levels: readonly WeaponLevel[];
-  /** Weapon this becomes when evolved, by id. Empty means no evolution yet. */
+  /** Weapon this becomes when evolved, by id. Empty means it is already the end of its line. */
   readonly evolvesTo: string;
-  /** Passive item required to evolve, by id. */
+  /** Passive item required to evolve, by id. Empty means nothing is required. */
   readonly evolveRequires: string;
+  /**
+   * The weapon this one evolved from, by id. Empty for everything the player can be offered.
+   *
+   * This is what keeps an evolution out of the level-up screen. An evolution is not a weapon you can
+   * be offered, find, or start with — it is earned by taking a weapon to the top and holding the
+   * right passive, and it only ever arrives out of a chest.
+   */
+  readonly evolvedFrom: string;
 }
 
 const DEG_TO_BRAD = BRAD_FULL / 360;
@@ -140,8 +149,9 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
     arc: 70,
     spread: 0,
     sprite: 0,
-    evolvesTo: "",
-    evolveRequires: "hollowHeart",
+    evolvesTo: "reapersVerdict",
+    evolveRequires: "grimSigil",
+    evolvedFrom: "",
     levels: [
       { text: "Strikes the other side too", count: 1 },
       { text: "+5 damage", damage: 5 },
@@ -172,8 +182,9 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
     arc: 0,
     spread: 0,
     sprite: 1,
-    evolvesTo: "",
-    evolveRequires: "spectralWind",
+    evolvesTo: "boneStorm",
+    evolveRequires: "wanderersBoots",
+    evolvedFrom: "",
     levels: [
       { text: "+1 knife", count: 1 },
       { text: "+1 knife", count: 1 },
@@ -204,8 +215,9 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
     arc: 0,
     spread: 26,
     sprite: 2,
-    evolvesTo: "",
-    evolveRequires: "brokenCompass",
+    evolvesTo: "gravehail",
+    evolveRequires: "ashHourglass",
+    evolvedFrom: "",
     levels: [
       { text: "+2 bolts", count: 2 },
       { text: "+3 damage", damage: 3 },
@@ -236,8 +248,9 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
     arc: 0,
     spread: 22,
     sprite: 3,
-    evolvesTo: "",
-    evolveRequires: "candelabra",
+    evolvesTo: "tombfall",
+    evolveRequires: "boneCharm",
+    evolvedFrom: "",
     levels: [
       { text: "+1 axe", count: 1 },
       { text: "+10 damage", damage: 10 },
@@ -268,8 +281,9 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
     arc: 200,
     spread: 0,
     sprite: 4,
-    evolvesTo: "",
-    evolveRequires: "duskGlass",
+    evolvesTo: "codexOfHollows",
+    evolveRequires: "hollowLantern",
+    evolvedFrom: "",
     levels: [
       { text: "+1 tome", count: 1 },
       { text: "+6 damage", damage: 6 },
@@ -300,8 +314,9 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
     arc: 0,
     spread: 0,
     sprite: 5,
-    evolvesTo: "",
-    evolveRequires: "pallidMask",
+    evolvesTo: "plagueBloom",
+    evolveRequires: "gravemossRoot",
+    evolvedFrom: "",
     levels: [
       { text: "Wider ring", radius: 8 },
       { text: "+3 damage", damage: 3 },
@@ -310,6 +325,212 @@ export const WEAPON_TYPES: readonly WeaponType[] = [
       { text: "+4 damage", damage: 4 },
       { text: "Rots faster", retick: 4 },
       { text: "Wider ring", radius: 10 },
+    ],
+  },
+  // --- Evolutions -------------------------------------------------------------------------------
+  //
+  // An evolution is never offered on a card and never found on the floor. It is earned: take a weapon
+  // to its top level, hold the passive it asks for, and the next chest turns it into this. It arrives
+  // finished — granted at the top level — so what a player sees is the base numbers below plus every
+  // one of its level-ups at once. Its level-ups still exist because they are what "finished" means,
+  // and writing them out keeps an evolution the same shape as every other weapon rather than a
+  // special case the firing code has to know about.
+  {
+    id: "reapersVerdict",
+    name: "Reaper's Verdict",
+    wireId: 7,
+    move: MOVE.sweep,
+    blurb: "The lash, answered. Cuts both sides at once and does not care what is in the way.",
+    damage: 26,
+    cooldown: 54,
+    count: 2,
+    speed: 0,
+    radius: 22,
+    ttl: 16,
+    pierce: 99,
+    knockback: 120,
+    flags: PROJ_FLAG.reticks,
+    retick: 8,
+    anchorDist: 30,
+    arc: 110,
+    spread: 0,
+    sprite: 0,
+    evolvesTo: "",
+    evolveRequires: "",
+    evolvedFrom: "reapersLash",
+    levels: [
+      { text: "+6 damage", damage: 6 },
+      { text: "Reaches further", radius: 4 },
+      { text: "+6 damage", damage: 6 },
+      { text: "One more strike", count: 1 },
+      { text: "Cracks faster", cooldown: 8 },
+      { text: "+8 damage", damage: 8 },
+      { text: "Reaches further", radius: 4 },
+    ],
+  },
+  {
+    id: "boneStorm",
+    name: "Bone Storm",
+    wireId: 8,
+    move: MOVE.homing,
+    blurb: "A blizzard of splinters. Nothing closes the distance.",
+    damage: 15,
+    cooldown: 34,
+    count: 4,
+    speed: 300,
+    radius: 8,
+    ttl: 140,
+    pierce: 3,
+    knockback: 30,
+    flags: 0,
+    retick: 0,
+    anchorDist: 0,
+    arc: 0,
+    spread: 0,
+    sprite: 1,
+    evolvesTo: "",
+    evolveRequires: "",
+    evolvedFrom: "boneKnives",
+    levels: [
+      { text: "+1 knife", count: 1 },
+      { text: "+4 damage", damage: 4 },
+      { text: "Passes through one more enemy", pierce: 1 },
+      { text: "+1 knife", count: 1 },
+      { text: "+5 damage", damage: 5 },
+      { text: "Thrown faster", speed: 40, cooldown: 6 },
+      { text: "+1 knife", count: 1 },
+    ],
+  },
+  {
+    id: "gravehail",
+    name: "Gravehail",
+    wireId: 9,
+    move: MOVE.straight,
+    blurb: "A wall of bolts, wide enough that aiming stops mattering.",
+    damage: 13,
+    cooldown: 52,
+    count: 7,
+    speed: 320,
+    radius: 7,
+    ttl: 110,
+    pierce: 3,
+    knockback: 25,
+    flags: 0,
+    retick: 0,
+    anchorDist: 0,
+    arc: 0,
+    spread: 54,
+    sprite: 2,
+    evolvesTo: "",
+    evolveRequires: "",
+    evolvedFrom: "gravebolt",
+    levels: [
+      { text: "+2 bolts", count: 2 },
+      { text: "+3 damage", damage: 3 },
+      { text: "Passes through two more enemies", pierce: 2 },
+      { text: "+2 bolts", count: 2 },
+      { text: "Fires faster", cooldown: 10 },
+      { text: "+4 damage", damage: 4 },
+      { text: "+2 bolts", count: 2 },
+    ],
+  },
+  {
+    id: "tombfall",
+    name: "Tombfall",
+    wireId: 10,
+    move: MOVE.arcing,
+    blurb: "Headstones out of the sky. Everything under them stops being a problem.",
+    damage: 46,
+    cooldown: 76,
+    count: 3,
+    speed: 210,
+    radius: 18,
+    ttl: 150,
+    pierce: 99,
+    knockback: 150,
+    flags: 0,
+    retick: 0,
+    anchorDist: 0,
+    arc: 0,
+    spread: 34,
+    sprite: 3,
+    evolvesTo: "",
+    evolveRequires: "",
+    evolvedFrom: "tombAxe",
+    levels: [
+      { text: "+12 damage", damage: 12 },
+      { text: "Bigger blade", radius: 3 },
+      { text: "+1 headstone", count: 1 },
+      { text: "+14 damage", damage: 14 },
+      { text: "Thrown more often", cooldown: 12 },
+      { text: "+16 damage", damage: 16 },
+      { text: "+1 headstone", count: 1 },
+    ],
+  },
+  {
+    id: "codexOfHollows",
+    name: "Codex of Hollows",
+    wireId: 11,
+    move: MOVE.orbiting,
+    blurb: "A ring of open books. Whatever comes close is read out and put down.",
+    damage: 30,
+    cooldown: 150,
+    count: 3,
+    speed: 0,
+    radius: 16,
+    ttl: 260,
+    pierce: 99,
+    knockback: 0,
+    flags: PROJ_FLAG.reticks | PROJ_FLAG.noKnockback,
+    retick: 14,
+    anchorDist: 46,
+    arc: 260,
+    spread: 0,
+    sprite: 4,
+    evolvesTo: "",
+    evolveRequires: "",
+    evolvedFrom: "shroudedTome",
+    levels: [
+      { text: "+1 tome", count: 1 },
+      { text: "+8 damage", damage: 8 },
+      { text: "Orbits wider", radius: 3, ttl: 30 },
+      { text: "+1 tome", count: 1 },
+      { text: "+10 damage", damage: 10 },
+      { text: "Stays out longer", ttl: 60 },
+      { text: "Grinds faster", retick: 3 },
+    ],
+  },
+  {
+    id: "plagueBloom",
+    name: "Plague Bloom",
+    wireId: 12,
+    move: MOVE.aura,
+    blurb: "The rot, in flower. Standing near you is the mistake.",
+    damage: 14,
+    cooldown: 0,
+    count: 1,
+    speed: 0,
+    radius: 82,
+    ttl: 2_000_000_000,
+    pierce: 99,
+    knockback: 0,
+    flags: PROJ_FLAG.reticks | PROJ_FLAG.noCrit | PROJ_FLAG.noKnockback,
+    retick: 18,
+    anchorDist: 0,
+    arc: 0,
+    spread: 0,
+    sprite: 5,
+    evolvesTo: "",
+    evolveRequires: "",
+    evolvedFrom: "rotAura",
+    levels: [
+      { text: "Wider bloom", radius: 8 },
+      { text: "+4 damage", damage: 4 },
+      { text: "Rots faster", retick: 3 },
+      { text: "Wider bloom", radius: 8 },
+      { text: "+5 damage", damage: 5 },
+      { text: "Rots faster", retick: 3 },
+      { text: "Wider bloom", radius: 10 },
     ],
   },
 ];
@@ -331,6 +552,37 @@ for (const w of WEAPON_TYPES) {
     throw new Error(
       `weapon ${w.id} has ${w.levels.length} level-ups, expected ${MAX_WEAPON_LEVEL - 1}`,
     );
+  }
+}
+
+/**
+ * Every promise an evolution makes has to be real, checked the moment this file loads.
+ *
+ * A weapon that claims to evolve into something the game does not have, or asks for a passive that
+ * does not exist, would be a dead end the player can never see coming: they would take the weapon to
+ * the top, hold the item, open chest after chest and never be told why nothing happened.
+ */
+for (const w of WEAPON_TYPES) {
+  if (w.evolvesTo !== "") {
+    const target = WEAPON_TYPES.find((t) => t.id === w.evolvesTo);
+    if (target === undefined) {
+      throw new Error(`weapon ${w.id} evolves into ${w.evolvesTo}, which does not exist`);
+    }
+    if (target.evolvedFrom !== w.id) {
+      throw new Error(`${w.evolvesTo} does not point back at ${w.id} — the pair would half-work`);
+    }
+    if (w.evolveRequires === "") {
+      throw new Error(`weapon ${w.id} evolves but asks for nothing — a chest would hand it out free`);
+    }
+  }
+  if (w.evolvedFrom !== "" && !WEAPON_TYPES.some((t) => t.id === w.evolvedFrom)) {
+    throw new Error(`${w.id} evolved from ${w.evolvedFrom}, which does not exist`);
+  }
+  if (w.evolveRequires !== "" && !PASSIVE_BY_ID.has(w.evolveRequires)) {
+    throw new Error(`weapon ${w.id} needs passive ${w.evolveRequires}, which does not exist`);
+  }
+  if (w.evolvedFrom !== "" && w.evolvesTo !== "") {
+    throw new Error(`${w.id} is an evolution of an evolution — the ladder has to end`);
   }
 }
 
@@ -477,6 +729,25 @@ export class WeaponStore {
       return 1;
     }
     return 0;
+  }
+
+  /**
+   * Turn a weapon a player is carrying into its evolution, in the same slot.
+   *
+   * Returns false when they were not carrying it. The slot is kept on purpose: an evolution is not a
+   * seventh weapon and must never cost the player a slot, and keeping the position means the HUD does
+   * not reshuffle underneath them at the moment the upgrade lands. It arrives at the top level, which
+   * is what "finished" means — an evolution the player then has to level again would be a downgrade.
+   */
+  evolveInPlace(player: number, fromTypeIndex: number, toTypeIndex: number): boolean {
+    const slot = this.slotOf(player, fromTypeIndex);
+    if (slot < 0) return false;
+    this.typeIndex[slot] = toTypeIndex;
+    this.level[slot] = MAX_WEAPON_LEVEL;
+    // Fire immediately, for the same reason a newly picked weapon does.
+    this.timer[slot] = 0;
+    this.flip[slot] = 0;
+    return true;
   }
 
   /** True when this weapon is carried and cannot be levelled further. */

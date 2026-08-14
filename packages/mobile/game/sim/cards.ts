@@ -411,6 +411,9 @@ export class CardDraw {
     const weaponsFull = weapons.isFull(player);
     for (let i = 0; i < WEAPON_TYPES.length; i++) {
       if (this.banishedWeapon[i] === 1) continue;
+      // Evolutions are never offered, not even to the dev menu's "ignore unlocks" switch. The only way
+      // to hold one is to earn it: a maxed weapon, the item it asks for, and a chest.
+      if (WEAPON_TYPES[i].evolvedFrom !== "") continue;
       const level = weapons.levelOf(player, i);
       if (level > 0) {
         if (level >= MAX_WEAPON_LEVEL) continue;

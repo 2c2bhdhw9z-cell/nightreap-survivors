@@ -129,7 +129,21 @@ function req(over: Partial<SpawnRequest>): SpawnRequest {
 // ---------------------------------------------------------------------------------------------
 section("weapon table integrity");
 {
-  check("six launch weapons, one per archetype", WEAPON_TYPES.length === 6);
+  const offerable = WEAPON_TYPES.filter((w) => w.evolvedFrom === "");
+  const evolutions = WEAPON_TYPES.filter((w) => w.evolvedFrom !== "");
+  check("six launch weapons, one per archetype", offerable.length === 6, `${offerable.length} offerable`);
+  check(
+    "every launch weapon has an evolution waiting behind it",
+    evolutions.length === 6 && offerable.every((w) => w.evolvesTo !== ""),
+    `${evolutions.length} evolutions`,
+  );
+  check(
+    "an evolution keeps the archetype it grew out of, so it fires the way the player learned it",
+    evolutions.every((e) => {
+      const base = WEAPON_TYPES.find((w) => w.id === e.evolvedFrom);
+      return base !== undefined && base.move === e.move;
+    }),
+  );
 
   const moves = new Set(WEAPON_TYPES.map((w) => w.move));
   check(

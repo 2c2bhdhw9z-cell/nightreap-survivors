@@ -2861,3 +2861,44 @@ one caught by the tests. Everything else in the game still passes, and lint, typ
 238 sprites.
 
 Next: treasure chests and the evolution roll.
+
+## 2026-08-14 — Treasure chests and weapon evolution (Phase 3, item 9 of the eight)
+
+Done and pushed.
+
+**What a chest is now.** A chest is worth one, three or five things. Luck pushes the odds away from the
+one-item chest, two thirds of what it takes going to the three and one third to the five. The odds are
+whole numbers out of 1024, not percentages — a percentage rolled on two different phones is how a co-op
+run quietly stops agreeing about what was in a chest.
+
+**Every reward lands on something already being carried.** A chest never hands over a new weapon and
+never fills a free slot. The player chose the six things they carry; a chest that overwrites that choice,
+or takes the slot they were saving for something, is a chest that ruined a run.
+
+**A chest is never empty.** With nothing left to improve it pays sixty coins for each reward it could not
+give, one line each. No reward is ever silently skipped, and the screen always has something honest to
+show. Those coins reach the run's purse — checked, not assumed.
+
+**Evolution.** Take a weapon to its top level, carry the item that weapon asks for, and the next chest
+turns it into its finished form. It replaces the base weapon in the same slot, arrives fully levelled,
+costs no second slot, and does not consume the item. When an evolution is owed it is the **whole chest**,
+nothing else — burying it among four other lines makes the biggest moment in a build unreadable. One per
+chest, earliest slot first, so a player with two ready weapons controls the order by where they put them.
+Evolutions never appear on a card, not even with the dev menu's unlock switch on, and an evolved weapon
+cannot evolve again.
+
+**Co-op.** A chest is not shared. It opens for whoever walked into it, and the run reports whose build
+changed, so four players do not read one banner and three of them be wrong.
+
+**Replays.** Chests roll from their own stream of numbers. Retuning what enemies drop can never change
+what a chest in a saved replay contained — proved by burning five hundred drop rolls before a run and
+confirming five chests came out identically.
+
+**How hard it was tested.** Sixteen things that could go wrong were deliberately broken to confirm the
+tests notice: eight in the chest rules and eight in the run loop. Three slipped through at first and were
+real gaps in the tests, not in the game — luck being allowed to push the odds until the table collapses
+onto a single size, a reward landing on something already at its ceiling, and items the player is not
+carrying being counted as things a chest could improve. All sixteen are caught now. Everything else in the
+game still passes, and the whole project builds clean.
+
+**Next:** anti-cheat v1 — the last of the eight items that are mine.

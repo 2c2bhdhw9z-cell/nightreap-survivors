@@ -22,12 +22,22 @@
  *      to read later — and starving that announcement channel cannot change the game by one bit.
  */
 
+import {
+  CHEST_CONSOLATION_GOLD,
+  CHEST_REWARD,
+  MAX_CHEST_REWARDS,
+  evolvableWeapon,
+  rewardLine,
+} from "../sim/chests";
 import { CUE, MAX_CUES } from "../sim/cues";
 import { MOD_DEV_GODMODE, MOD_HURRY, MOD_HYPER } from "../sim/modifiers";
+import { MAX_PASSIVE_LEVEL, PASSIVE_BY_ID, PASSIVE_TYPES } from "../sim/passives";
+import { PICKUP } from "../sim/pickups";
 import { PLAYER_STATE } from "../sim/player";
 import { PROP_HIT_COOLDOWN } from "../sim/props";
 import { RUN_END, isCompletion } from "../sim/results";
 import { STAT, STAT_SCALE } from "../sim/stats";
+import { MAX_WEAPON_LEVEL, WEAPON_BY_ID, WEAPON_TYPES } from "../sim/weapons";
 import { TICKS_PER_SECOND } from "../sim/waves";
 import { REAPER_SECOND } from "../sim/waves";
 import { Run } from "./run";
@@ -602,8 +612,334 @@ function countPassives(run: Run): number {
   return n;
 }
 
+// ---------------------------------------------------------------------------------------------
+section("10. chests reach the loadout during a real run");
+
+/**
+ * Put a chest under the player's feet and run the loop until it has been picked up.
+ *
+ * Deliberately goes through the real pickup path rather than calling the chest code directly: the
+ * thing being proved here is the wiring, and a test that skips the wiring proves nothing about it.
+ */
+function feedChest(run: Run, budget = 240, who = 0): boolean {
+  const before = run.chestsOpened;
+  for (let i = 0; i < budget; i++) {
+    if (run.paused) {
+      run.pickCard(0);
+      continue;
+    }
+    if (run.over) return false;
+    if (run.chestsOpened > before) return true;
+    const r = run.pickups.request;
+    r.kind = PICKUP.chest;
+    r.x = run.players.x[who];
+    r.y = run.players.y[who];
+    r.value = 0;
+    r.vx = 0;
+    r.vy = 0;
+    run.pickups.spawn(r);
+    run.setStick(0, 0, 0);
+    run.tick();
+    if (run.chestsOpened > before) return true;
+  }
+  return false;
+}
+
+/** Bring one weapon all the way to its ceiling by handing it card-sized levels. */
+function maxWeapon(run: Run, player: number, typeIndex: number): void {
+  for (let i = 0; i < MAX_WEAPON_LEVEL; i++) run.weapons.grant(player, typeIndex);
+}
+
+{
+  const run = new Run();
+  run.begin({ seed: 909, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 120);
+
+  const opened = feedChest(run);
+  check("a chest picked up mid-run opens", opened, `${run.chestsOpened} opened`);
+  check("and it opened for the player who walked into it", run.chestReport.player === 0);
+  check("a chest is never empty", run.chestReport.count > 0, `${run.chestReport.count} rows`);
+  check(
+    "and it wrote no more rows than a chest can hold",
+    run.chestReport.count <= MAX_CHEST_REWARDS,
+  );
+  for (let r = 0; r < run.chestReport.count; r++) {
+    if (rewardLine(run.chestReport, r).length === 0) {
+      check("every row has something to show the player", false, `row ${r} read empty`);
+      break;
+    }
+  }
+  check("every row has something to show the player", true);
+}
+
+// A loadout with nothing left to improve must still pay, or the chest was eaten.
+{
+  const run = new Run();
+  run.begin({ seed: 4242, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 60);
+
+  // Fill all six weapon slots with things that cannot evolve, each at its ceiling, and max every
+  // passive. Evolutions are used here precisely because they are the one weapon that cannot evolve
+  // again, so no chest can find an evolution owed.
+  const terminal: number[] = [];
+  for (let i = 0; i < WEAPON_TYPES.length; i++) {
+    if (WEAPON_TYPES[i].evolvedFrom !== "") terminal.push(i);
+  }
+  run.weapons.reset(1);
+  run.passives.reset(1);
+  for (let i = 0; i < 6 && i < terminal.length; i++) maxWeapon(run, 0, terminal[i]);
+  for (let p = 0; p < PASSIVE_TYPES.length; p++) run.passives.devSetLevel(0, p, MAX_PASSIVE_LEVEL);
+
+  const goldBefore = run.prog.gold;
+  const opened = feedChest(run);
+  const report = run.chestReport;
+  let coinRows = 0;
+  let coinTotal = 0;
+  for (let r = 0; r < report.count; r++) {
+    if (report.kind[r] === CHEST_REWARD.gold) {
+      coinRows++;
+      coinTotal += report.value[r];
+    }
+  }
+
+  check("a fully-built loadout still opens the chest", opened);
+  check(
+    "nothing left to improve pays coins instead",
+    coinRows === report.count && coinRows > 0,
+    `${coinRows} of ${report.count} rows paid coins`,
+  );
+  check(
+    "and those coins actually reach the run's purse",
+    run.prog.gold - goldBefore === coinTotal && coinTotal === coinRows * CHEST_CONSOLATION_GOLD,
+    `+${run.prog.gold - goldBefore} banked`,
+  );
+}
+
+// A passive level from a chest has to change the resolved stats, not just the passive's own number.
+{
+  const run = new Run();
+  run.begin({ seed: 77, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 60);
+
+  // One passive at level 1, no weapons at all: every reward the chest rolls has to land on it.
+  run.weapons.reset(1);
+  run.passives.reset(1);
+  run.passives.devSetLevel(0, 0, 1);
+  run.passives.applyTo(run.stack, 0);
+  run.stack.resolve(run.stats);
+
+  const before = new Int32Array(run.stats.values);
+  const levelBefore = run.passives.levelOf(0, 0);
+  const opened = feedChest(run);
+  const levelAfter = run.passives.levelOf(0, 0);
+
+  let moved = 0;
+  for (let i = 0; i < before.length; i++) {
+    if (before[i] !== run.stats.values[i]) moved++;
+  }
+
+  check("a chest can level a passive the player already carries", opened && levelAfter > levelBefore, `level ${levelBefore} to ${levelAfter}`);
+  check(
+    "and the run rebuilds the player's stats from it",
+    moved > 0,
+    `${moved} stat${moved === 1 ? "" : "s"} changed`,
+  );
+}
+
+// The headline case: top level plus the required item plus a chest swaps the weapon in place.
+{
+  const run = new Run();
+  run.begin({ seed: 5150, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 60);
+
+  let baseIndex = -1;
+  for (let i = 0; i < WEAPON_TYPES.length; i++) {
+    if (WEAPON_TYPES[i].evolvesTo !== "") {
+      baseIndex = i;
+      break;
+    }
+  }
+  if (baseIndex < 0) throw new Error("no evolvable weapon in the content table");
+  const base = WEAPON_TYPES[baseIndex];
+  const intoIndex = WEAPON_BY_ID.get(base.evolvesTo);
+  const needed = PASSIVE_BY_ID.get(base.evolveRequires);
+  if (intoIndex === undefined || needed === undefined) {
+    throw new Error("evolution pair is not wired up");
+  }
+
+  run.weapons.reset(1);
+  run.passives.reset(1);
+  maxWeapon(run, 0, baseIndex);
+  const slot = run.weapons.slotOf(0, baseIndex);
+
+  // Chest first with the required item missing: the evolution must not happen.
+  const evolvedBefore = run.evolutionsEarned;
+  feedChest(run);
+  check(
+    "top level alone does not evolve anything",
+    run.evolutionsEarned === evolvedBefore && run.weapons.typeIndex[slot] === baseIndex,
+  );
+
+  // Now hand over the required item and try again.
+  run.passives.devSetLevel(0, needed, 1);
+  const opened = feedChest(run);
+  const report = run.chestReport;
+
+  check("with the required item, the chest evolves it", opened && report.evolved);
+  check("an evolution is the whole chest", report.size === 1 && report.count === 1);
+  check(
+    "the evolved weapon takes over the same slot",
+    run.weapons.typeIndex[slot] === intoIndex,
+    `slot ${slot} now holds ${WEAPON_TYPES[run.weapons.typeIndex[slot]].id}`,
+  );
+  check("it arrives fully levelled", run.weapons.level[slot] === MAX_WEAPON_LEVEL);
+  check("it did not cost a second slot", countWeapons(run) === 1);
+  check("and the required item is still there", run.passives.levelOf(0, needed) === 1);
+  check("the run counted the evolution", run.evolutionsEarned === evolvedBefore + 1);
+  check(
+    "an evolved weapon cannot evolve again",
+    evolvableWeapon(0, run.weapons, run.passives) === -1,
+  );
+}
+
+// A chest changes the loadout without a card being picked, so the state hash has to notice.
+{
+  const a = new Run();
+  a.begin({ seed: 31337, modifiers: [MOD_DEV_GODMODE] });
+  drive(a, 180);
+  const before = a.hashState(0x811c9dc5);
+  const openedCount = a.chestsOpened;
+  feedChest(a);
+  const after = a.hashState(0x811c9dc5);
+  check(
+    "opening a chest moves the state hash",
+    a.chestsOpened > openedCount && before !== after,
+  );
+}
+
+// Two runs, same seed, same script: the same chests with the same contents.
+{
+  function scripted(seed: number): { chests: number; rows: number; gold: number; hash: number } {
+    const run = new Run();
+    run.begin({ seed, modifiers: [MOD_DEV_GODMODE] });
+    drive(run, 120);
+    let rows = 0;
+    for (let i = 0; i < 4; i++) {
+      feedChest(run);
+      rows += run.chestReport.count;
+    }
+    return {
+      chests: run.chestsOpened,
+      rows,
+      gold: run.prog.gold,
+      hash: run.hashState(0x811c9dc5),
+    };
+  }
+  const one = scripted(2024);
+  const two = scripted(2024);
+  check(
+    "the same seed opens the same chests twice",
+    one.chests === two.chests && one.rows === two.rows && one.gold === two.gold && one.hash === two.hash,
+    `${one.chests} chests, ${one.rows} rows`,
+  );
+}
+
+// In co-op a chest is not shared: it opens for whoever walked into it, and only their build changes.
+{
+  const run = new Run();
+  run.begin({ seed: 8080, playerCount: 2, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 60);
+
+  // Give the two players different things to improve, so "whose chest was it" is readable from the
+  // loadouts alone rather than from the report agreeing with itself.
+  run.weapons.reset(2);
+  run.passives.reset(2);
+  run.weapons.grant(0, 0);
+  run.weapons.grant(1, 1);
+  const slotZero = run.weapons.slotOf(0, 0);
+  const slotOne = run.weapons.slotOf(1, 1);
+  const levelZeroBefore = run.weapons.level[slotZero];
+  const levelOneBefore = run.weapons.level[slotOne];
+
+  const opened = feedChest(run, 240, 1);
+  check("a chest walked into by the second player opens", opened);
+  check("and the report says whose it was", run.chestReport.player === 1, `player ${run.chestReport.player}`);
+  check(
+    "the second player's build is the one that grew",
+    run.weapons.level[slotOne] > levelOneBefore,
+    `${levelOneBefore} to ${run.weapons.level[slotOne]}`,
+  );
+  check(
+    "and the first player's build was left alone",
+    run.weapons.level[slotZero] === levelZeroBefore,
+  );
+}
+
+// What a chest contains must not move when the rest of the game is retuned. Enemy drops and chests
+// roll from separate streams for exactly this reason, so burning drop rolls has to change nothing.
+{
+  function chestSizes(burnDropRolls: number): string {
+    const run = new Run();
+    run.begin({ seed: 1212, modifiers: [MOD_DEV_GODMODE] });
+    const drops = run.rng.get("drop");
+    for (let i = 0; i < burnDropRolls; i++) drops.nextInt(1024);
+
+    const sizes: number[] = [];
+    for (let c = 0; c < 5; c++) {
+      // Force the same loadout back in front of every chest, so the only thing that can move the
+      // answer is the roll itself.
+      run.weapons.reset(1);
+      run.passives.reset(1);
+      run.weapons.grant(0, 0);
+      run.weapons.grant(0, 1);
+      run.passives.devSetLevel(0, 0, 1);
+      // Generous luck on purpose: it spreads the sizes out, so a sequence that came from the wrong
+      // stream reads differently instead of being a row of ones either way.
+      run.stats.values[STAT.luck] = STAT_SCALE * 3;
+      feedChest(run, 60);
+      sizes.push(run.chestReport.size);
+    }
+    return sizes.join(",");
+  }
+  const plain = chestSizes(0);
+  const retuned = chestSizes(500);
+  check(
+    "retuning what enemies drop cannot change what a chest contained",
+    plain === retuned && plain.length > 0,
+    `${plain} vs ${retuned}`,
+  );
+}
+
+// The handshake has to carry how many chests were opened, not just what they happened to change.
+{
+  const run = new Run();
+  run.begin({ seed: 99, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 60);
+  const honest = run.hashState(0x811c9dc5);
+  run.chestsOpened++;
+  const bumped = run.hashState(0x811c9dc5);
+  run.chestsOpened--;
+  check("the state hash counts chests on its own", honest !== bumped);
+  check("and reads the same again once the count is put back", run.hashState(0x811c9dc5) === honest);
+}
+
+// Counters belong to the run, not to the object the run is played on.
+{
+  const run = new Run();
+  run.begin({ seed: 611, modifiers: [MOD_DEV_GODMODE] });
+  drive(run, 60);
+  feedChest(run);
+  const carried = run.chestsOpened;
+  run.begin({ seed: 612, modifiers: [MOD_DEV_GODMODE] });
+  check(
+    "starting a new run forgets the last run's chests",
+    carried > 0 && run.chestsOpened === 0 && run.evolutionsEarned === 0 && run.chestReport.count === 0,
+  );
+}
+
 console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);
 if (failures > 0) {
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };
   host.process?.exit?.(1);
+  throw new Error(`run: ${failures} check${failures === 1 ? "" : "s"} failed`);
 }

@@ -34,6 +34,13 @@ import { hashByte, hashFloat, hashFloat32Range, hashUint8Range, hashWord } from 
 import { quantiseStick } from "../net/input";
 import { ReplayRecorder } from "../replay/recorder";
 import { CardDraw } from "../sim/cards";
+import {
+  CHEST_REWARD,
+  createChestReport,
+  openChest,
+  resetChestReport,
+  type ChestReport,
+} from "../sim/chests";
 import { CUE, CueBus } from "../sim/cues";
 import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore } from "../sim/enemies";
 import { ModifierStack, RUN_FLAG, type RunModifier } from "../sim/modifiers";
@@ -79,7 +86,13 @@ export const BOMB_RADIUS = 160;
 /** Damage a bomb applies. Far above any enemy's health, so "clears the screen" is literally true. */
 export const BOMB_DAMAGE = 1_000_000;
 
-/** What a chest is worth for now. Chests become a proper multi-upgrade reward in Phase 2. */
+/**
+ * Coins a chest pays when it is opened by a player who is not in the run's loadout at all.
+ *
+ * A real chest hands out upgrades — see `chests.ts`. This is only the floor: a chest picked up by a
+ * player the run has no loadout for still has to be worth something rather than silently doing
+ * nothing, because a chest that does nothing reads as a bug every single time.
+ */
 export const CHEST_GOLD = 100;
 
 /** Enemy the Reaper uses until it gets its own record in Phase 4. */
@@ -179,6 +192,8 @@ export class Run {
   readonly cards = new CardDraw();
   readonly waves = new WaveDirector();
   readonly summary = new RunSummary();
+  /** Last chest's payout. Caller-owned and refilled per chest, so opening one allocates nothing. */
+  readonly chestReport: ChestReport = createChestReport();
   readonly recorder = new ReplayRecorder();
 
   /**
@@ -205,6 +220,9 @@ export class Run {
 
   /** Run totals the results screen needs and no single system owns. */
   kills = 0;
+  /** Chests opened this run, and evolutions they produced, for the results screen. */
+  chestsOpened = 0;
+  evolutionsEarned = 0;
   damageDealt = 0;
   revives = 0;
 
@@ -263,12 +281,14 @@ export class Run {
   private dropRng: Rng;
   private cardRng: Rng;
   private critRng: Rng;
+  private chestRng: Rng;
 
   constructor(seed = 1) {
     this.rng = new RngSet(seed);
     this.spawnRng = this.rng.get("spawn");
     this.dropRng = this.rng.get("drop");
     this.cardRng = this.rng.get("cardDraw");
+    this.chestRng = this.rng.get("chest");
     this.critRng = this.rng.get("crit");
     this.owners = { count: 1, x: this.players.x, y: this.players.y };
   }
@@ -311,6 +331,9 @@ export class Run {
     this.damageDealt = 0;
     this.revives = 0;
     this.whiteHandTicks = -1;
+    this.chestsOpened = 0;
+    this.evolutionsEarned = 0;
+    resetChestReport(this.chestReport);
 
     this.reseedStreams(this.seed);
 
@@ -738,10 +761,6 @@ export class Run {
       this.prog.addGold(pickups.goldBanked, stats);
       this.cues.emit(CUE.goldCollected, px, py, pickups.goldBanked);
     }
-    if (pickups.chestsTaken > 0) {
-      this.prog.addGold(CHEST_GOLD * pickups.chestsTaken, stats);
-      for (let i = 0; i < pickups.chestsTaken; i++) this.cues.emit(CUE.chestOpened, px, py);
-    }
     if (pickups.vacuumsTaken > 0) pickups.startVacuum();
 
     if (pickups.collectCount === 0) return;
@@ -755,8 +774,53 @@ export class Run {
         this.players.heal(who, pickups.collectValue[i], stats);
       } else if (kind === PICKUP.bomb) {
         this.detonate(pickups.collectX[i], pickups.collectY[i]);
+      } else if (kind === PICKUP.chest) {
+        // Opened for whoever walked into it. In co-op a chest is not shared: the upgrades go into one
+        // player's loadout, and pretending otherwise would mean deciding whose build to change.
+        this.openChestFor(who, pickups.collectX[i], pickups.collectY[i]);
       }
     }
+  }
+
+  /**
+   * Open one chest for one player.
+   *
+   * The decision of what is inside lives in `chests.ts`; this is only the part that has to touch the
+   * rest of the run — banking coins for rewards that could not be given, rebuilding the modifier stack
+   * when a passive changed, and telling the presentation layer that something happened. The chest
+   * stream is used rather than the drop stream so that retuning what enemies drop can never change
+   * what a chest in a replay contained.
+   */
+  private openChestFor(player: number, x: number, y: number): void {
+    if (player < 0 || player >= this.players.count) {
+      // No loadout to put anything into. Pay coins rather than eat the chest.
+      this.prog.addGold(CHEST_GOLD, this.stats);
+      this.cues.emit(CUE.chestOpened, x, y);
+      return;
+    }
+
+    const report = this.chestReport;
+    openChest(player, this.weapons, this.passives, this.stats, this.chestRng, report);
+    this.chestsOpened++;
+
+    let passiveChanged = false;
+    for (let r = 0; r < report.count; r++) {
+      const kind = report.kind[r];
+      if (kind === CHEST_REWARD.gold) {
+        this.prog.addGold(report.value[r], this.stats);
+      } else if (kind === CHEST_REWARD.passiveLevel) {
+        passiveChanged = true;
+      } else if (kind === CHEST_REWARD.evolution) {
+        this.evolutionsEarned++;
+      }
+    }
+    // Rebuilt from what the player owns rather than patched, for the same reason a card pick is.
+    if (passiveChanged) {
+      this.passives.applyTo(this.stack, player);
+      this.stack.resolve(this.stats);
+    }
+
+    this.cues.emit(CUE.chestOpened, x, y, report.count, player);
   }
 
   /** Clear the crowd around a point, and pay out for everything it killed. */
@@ -992,6 +1056,9 @@ export class Run {
     h = hashWord(h, this.prog.gold);
     h = hashWord(h, this.prog.pending);
     h = hashWord(h, this.kills);
+    // Chests opened is simulation state: it is how many times the loadout was changed by something
+    // other than a card, and two devices disagreeing about it is a desync worth catching.
+    h = hashWord(h, this.chestsOpened);
 
     for (let p = 0; p < players.count; p++) {
       for (let i = 0; i < 6; i++) {
