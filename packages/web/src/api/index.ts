@@ -5,6 +5,7 @@ import { cloud } from "./routes/cloud";
 import { config } from "./routes/config";
 import { events } from "./routes/events";
 import { ping } from "./routes/ping";
+import { runs } from "./routes/runs";
 
 // API features are oRPC procedures, one file per feature in ./routes/,
 // composed into this router — typed end-to-end via the clients
@@ -18,6 +19,7 @@ export const router = {
   cloud,
   config,
   events,
+  runs,
 };
 
 export type AppRouter = typeof router;

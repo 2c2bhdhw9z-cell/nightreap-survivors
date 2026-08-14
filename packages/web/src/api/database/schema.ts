@@ -88,3 +88,65 @@ export const cloudSave = sqliteTable(
   },
   (table) => [index("cloud_save_updated_idx").on(table.updatedAt)],
 );
+
+/**
+ * Submitted runs — the input log, the result claimed with it, and what the server made of the pair.
+ *
+ * WHY THE LOG IS KEPT AND NOT JUST THE VERDICT
+ * A verdict is an opinion produced by a rulebook that is still being written. The log is evidence, and it
+ * is the only thing that can ever *prove* a result: replayed tick for tick on the build it was played on,
+ * it either lands on the same final state hash or it does not. Keeping the bytes means a rule we get wrong
+ * today can be re-run tomorrow on the same run, instead of us having thrown the run away and kept only the
+ * mistake. It is also what makes an appeal answerable.
+ *
+ * The blob is base64 of the exact bytes the phone uploaded, and nothing rewrites it. `verdictJson` beside
+ * it is the judgement `anticheat/submission.ts` reached, stored whole rather than as a spread of columns,
+ * because a verdict is one document produced by one rulebook version and half of it is meaningless without
+ * the rest. The loose columns are the handful of things an operator screen sorts and filters by.
+ *
+ * A REFUSED SUBMISSION IS STILL A ROW. Refusals are how an attack looks from here: a hundred refused
+ * uploads from one account in a minute is the signal, and a server that drops them keeps no signal at all.
+ * `refusal` is 0 for an accepted run.
+ *
+ * Nothing in here grants anything. A run being stored is not a run being trusted, a flag is not a
+ * punishment, and the only thing that changes an account is an operator action, which lands in the event
+ * log with a name against it.
+ */
+export const runSubmission = sqliteTable(
+  "run_submission",
+  {
+    /** Server-assigned. The client does not get to name its own submissions. */
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    accountId: text("account_id").notNull(),
+    /** Server wall clock. A submitter's clock is evidence, not ordering. */
+    receivedAt: integer("received_at").notNull(),
+    /** 0 when the run was accepted; a REFUSE_RUN code otherwise. */
+    refusal: integer("refusal").notNull(),
+    /** How many flags the verdict carried. The codes live in the verdict document. */
+    flagCount: integer("flag_count").notNull(),
+    /** Which rulebook judged it. See SUBMIT_LIMITS_VERSION. */
+    limitsVersion: integer("limits_version").notNull(),
+    ladderEligible: integer("ladder_eligible").notNull(),
+    /** Facts read out of the log itself, for sorting and for finding a run again. */
+    seed: integer("seed").notNull(),
+    stageId: integer("stage_id").notNull(),
+    ticks: integer("ticks").notNull(),
+    playerCount: integer("player_count").notNull(),
+    tainted: integer("tainted").notNull(),
+    buildId: integer("build_id").notNull(),
+    contentVersion: integer("content_version").notNull(),
+    finalStateHash: integer("final_state_hash").notNull(),
+    /** The whole verdict, as JSON. One rulebook, one document. */
+    verdictJson: text("verdict_json").notNull(),
+    /** The result the phone claimed, as JSON. An assertion, kept so it can be argued with later. */
+    claimJson: text("claim_json").notNull(),
+    /** Base64 of the uploaded log. Never rewritten. Empty when the upload was not a log at all. */
+    blob: text("blob").notNull(),
+    bytes: integer("bytes").notNull(),
+  },
+  (table) => [
+    index("run_submission_account_idx").on(table.accountId),
+    index("run_submission_received_idx").on(table.receivedAt),
+    index("run_submission_refusal_idx").on(table.refusal),
+  ],
+);

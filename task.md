@@ -2902,3 +2902,60 @@ carrying being counted as things a chest could improve. All sixteen are caught n
 game still passes, and the whole project builds clean.
 
 **Next:** anti-cheat v1 — the last of the eight items that are mine.
+
+## Anti-cheat v1 — the server half (2026-08-14)
+
+A finished run is now uploaded, judged and kept.
+
+**What the phone sends.** The result it is claiming, plus the log of every button press the run was played
+from. Both together, never one without the other.
+
+**Why the log is kept and not just the verdict.** A verdict is an opinion produced by a rulebook that is
+still being written. The log is evidence, and it is the only thing that can ever *prove* a result: played
+back move for move on the build it was played on, it either lands on the same ending or it does not. Keeping
+the bytes means a rule we get wrong today can be re-run against the same run tomorrow, instead of that run
+having been thrown away and only the mistake kept. It is also the only thing that makes an appeal
+answerable.
+
+**Fourteen reasons an upload is refused.** It is not one of our logs. It is a version this server does not
+read. It is cut short. It has no length at all. It claims more time than it contains. It claims a different
+run than the one attached. It never ended. And so on.
+
+**Refusals are stored, with their reason.** A hundred refused uploads from one account in a minute is the
+signal, and a server that throws them away keeps no signal at all.
+
+**Thirteen more things are flagged, not refused.** Killing faster than the game can spawn. Earning coins
+faster than the floor pays them. Gaining experience faster than the crowd drops it. Reaching a level the
+clock cannot pay for. Coins without kills. Taking more upgrades than were offered. Never once being touched
+in ten minutes. Never once moving. A clock set far into the future. Dev-menu marks on the run. A damage
+breakdown that does not add up.
+
+**A flag is not a punishment.** Nothing in this whole path changes an account. The only thing that can do
+that is a person pressing a button on the operator page, and that lands in the append-only record with their
+name, their reason and the date against it.
+
+**Two lines per submission, always.** One for the bytes arriving, one for the verdict on them. Kept separate
+on purpose: "these bytes turned up under this account at this moment" is true forever, while "this rulebook
+accepted them" is only true of a rulebook that will be rewritten. Written as one line they could never be
+separated again.
+
+**What the phone is told back.** Whether the run was kept, why not if not, and how many things a person may
+look at. Never *which* flags fired. A game that can read its own flags is a game that can be tuned against
+them, and an honest player gains nothing from the list.
+
+**Only the right phone can file a run.** The upload has to carry the profile's own secret, the same one the
+cloud locker uses. An unknown account and a wrong secret get the identical answer, so the endpoint cannot be
+used to find out which accounts exist.
+
+**What an operator can open.** The newest runs, only the refused, only the flagged, one account's entire
+history with accepted/refused/flagged counted separately, and the stored log itself for a future replay job.
+All of it behind the admin token, and all of it refusing everything when that token is not set.
+
+**Deliberately not built yet:** actually re-playing a log on the server. The logs are being kept from launch
+precisely so that can be added later and run against every run ever filed.
+
+**Proof it is tested and not just written.** Ten things that could go wrong were broken on purpose to check
+the tests notice. Two slipped through at first — the arrival line quietly not being written, and one
+account's history being able to show another account's runs — and both are caught now.
+
+**Still mine in Phase 3:** the operator screen in the browser for these new run views.
