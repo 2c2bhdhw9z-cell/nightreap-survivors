@@ -74,6 +74,11 @@ export default function Index() {
         <Text style={styles.ctaAltText}>CHARACTERS</Text>
       </Link>
 
+      {/* Also a stopgap. Its shipped home is Settings, which does not exist yet. */}
+      <Link href="/cloud" style={styles.ctaAlt}>
+        <Text style={styles.ctaAltText}>BACK UP PROFILE</Text>
+      </Link>
+
       <View style={styles.card}>
         <Text style={styles.cardTitle}>How to run the real test</Text>
         {STEPS.map((step, i) => (

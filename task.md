@@ -2741,3 +2741,84 @@ lint, typecheck and build are all clean.
 Screenshot of the screen: `screens/character-select-v1.png`.
 
 Next: unlocks that persist, save migrations, and account-backed sync.
+
+---
+
+## Item 7 — unlocks that stick, and syncing between two phones (2026-08-14)
+
+### What a player will notice
+
+Finish a run that earns you a new character and the results screen now tells you so, right there, with the
+reason underneath it ("Finished a run", "Earned 2,000 gold in total"). It tells you once. The next run does
+not mention it again.
+
+There is a BACK UP PROFILE button on the launcher. Press it and your profile is copied off the phone. Press
+it on a second phone with the same backup name and the two profiles are combined.
+
+### The rules I picked, and why
+
+**An unlock is a promise, not a calculation.** Once you have a character, the game writes it down, and from
+then on the written note beats the condition that earned it. If I rebalance an unlock later, or make it
+harder, nobody loses anybody. There is no code path anywhere that clears an unlock.
+
+**The three starting characters get written in the moment a profile is loaded.** Not when the character
+screen opens — the loader. That means a profile arriving from anywhere at all, including an old version of
+the game that did not keep character marks, opens with people you can play instead of an empty roster. It
+also means starters are never announced as news, which would be insulting.
+
+**Sixteen unlocks fit on the results screen, and the rest are counted, not dropped.** If a single run somehow
+earns seventeen things, the seventeenth is still yours; the screen just says "and 1 more".
+
+**Combining two profiles never picks a winner.** Three kinds of number, one rule each:
+- Unlocks and achievements: added together. Anything either phone had, the result has.
+- Records and totals (lifetime gold, runs, time survived, best time, upgrade ranks): whichever is higher.
+- Your gold balance: rebuilt as lifetime earnings minus what the shop is holding. Not copied from either
+  side. Copying it would let two phones mint gold; taking the lower would steal it.
+
+That last one has a consequence I decided to say out loud rather than hide: **if your other phone spent more
+in the shop, your visible balance can go down after a sync.** Nothing is lost — the upgrades it bought came
+across too — but a number going down on its own looks like theft, so the backup screen says exactly that in
+plain words when it happens.
+
+**Settings are copied whole from whichever phone saved last.** Never mixed field by field, because a
+half-and-half settings screen is a bug nobody can reproduce.
+
+**The merged profile is saved to the phone before it is sent anywhere.** If the upload then fails you have
+lost a retry, not your evening. The other order loses the merge every time the write fails, and I tested it
+by breaking it: putting the send first makes a test fail immediately.
+
+**A backup written by a newer version of the game is left strictly alone** and you are told to update. A merge
+that quietly drops fields it does not recognise is how an update eats a profile.
+
+**If another phone saves at the exact same moment, its copy is merged in and sent once more.** Exactly once.
+A phone that keeps losing that race stops and waits for the next sync rather than spending your battery
+arguing.
+
+**The server never opens a save.** It stores the bytes and enforces one rule: a newer copy wins, and an equal
+one is refused. All the combining happens on the phone. Two implementations of a rule that decides whether
+somebody keeps their progress is two chances to disagree, and the day they disagree is the day saves start
+getting halved.
+
+**Until real sign-in exists, the backup is guarded by a padlock, not an identity.** The phone invents a
+backup name and a secret on first use and keeps both. A stranger who guesses the name gets exactly the same
+answer as somebody asking for a name that does not exist, so the door cannot be used to find out which
+backups exist. Write the backup name down — it is currently the only way to reach a backup from a new phone.
+
+### Proof, not intention
+
+- 314 checks across the three new self-checks (unlock awards, merging, the sync order), all passing.
+- 49 more driven through the real server against the real database, including a stranger being refused, a
+  stale save being told what it missed, and thirteen kinds of malformed request.
+- 47 deliberate breakages of my own code, each one confirmed to make a test fail and then put back exactly.
+  The ones worth naming: sending before saving, merging over a newer save, an unlock being cleared instead of
+  set, gold being allowed to go negative, a report keeping last sync's figures, and a device secret short
+  enough to guess. That last one found a genuine hole in my own tests, which I then filled.
+- Lint, typecheck and build all clean. The app bundles with the new screen in it.
+
+### Still to do here
+
+Nothing automatic yet — syncing happens when you press the button. Automatic background syncing waits until
+players have reason to trust it. The character portraits on the results screen are placeholder marks until
+the sprite atlas is packed.
+
+Next: destructible props and pickups (floor chicken, bomb, magnet, coins).
