@@ -25,8 +25,8 @@
  * phone should not be able to unwind an hour of decisions. It asks once, says exactly how much gold comes
  * back, and the confirm is the only gold-weight button in that state.
  *
- * FIDELITY: rows draw a placeholder mark where the powerup icon goes. The 24 icons already exist as loose
- * sprites; they become atlas cells in Phase 4 and drop into the same box without any layout moving.
+ * Each row draws its real icon out of the packed sheet. Which icon belongs to which upgrade is a table in
+ * the art layer, not arithmetic here, so a redraw or a rename cannot quietly shift every row by one.
  */
 
 import { useCallback, useState, type ReactNode } from "react";
@@ -34,7 +34,9 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
+import { Sprite } from "@/components/sprite";
 import { Chunk, Mortar, Slab, StoneText } from "@/components/stone";
+import { powerupFrame } from "@/game/art/frames";
 import { Grid, Palette } from "@/constants/theme";
 import { formatGold } from "@/game/save/payout";
 import {
@@ -179,11 +181,10 @@ export default function ShopScreen(): ReactNode {
           const dim = lock.locked || maxed || rank < 0;
           return (
             <Slab key={power.id} raised style={styles.row}>
-              {/* FIDELITY: the powerup icon lands here as an atlas cell. */}
-              <View style={styles.iconBox}>
-                <StoneText tone={dim ? "ash" : "gold"} size={16} bold align="center">
-                  {power.name.slice(0, 1)}
-                </StoneText>
+              {/* Anything the player cannot act on is drawn faded rather than hidden: a locked or maxed row
+                  is still information. */}
+              <View style={[styles.iconBox, dim ? styles.iconDim : null]}>
+                <Sprite name={powerupFrame(power.id)} size={Grid * 8} locked={lock.locked} />
               </View>
 
               <View style={styles.rowText}>
@@ -289,9 +290,14 @@ const styles = StyleSheet.create({
     gap: Grid,
     padding: Grid,
   },
+  iconDim: {
+    opacity: 0.45,
+  },
   iconBox: {
-    width: Grid * 5,
-    height: Grid * 5,
+    // Wide enough for art at two scales. One scale is legible on a desk and not on a phone held at arm's
+    // length, and it leaves no corner for the lock badge.
+    width: Grid * 9,
+    height: Grid * 9,
     backgroundColor: Palette.ink,
     borderWidth: 1,
     borderColor: Palette.stoneLit,

@@ -41,7 +41,11 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
+import { Sprite } from "@/components/sprite";
 import { Chunk, Header, Mortar, Slab, StoneText, type StoneTextTone } from "@/components/stone";
+import { portraitFrame } from "@/game/art/frames";
+import { CHARACTERS } from "@/game/characters/roster";
+import { TRACK } from "@/game/unlocks/awards";
 import { Grid, Palette } from "@/constants/theme";
 import { COUNT_MS, countDone, countValue } from "@/game/save/countup";
 import { formatDuration, formatGold } from "@/game/save/payout";
@@ -159,6 +163,12 @@ function GoldCount({ from, to }: { from: number; to: number }): ReactNode {
  * gold landed, and all that is left here is saying so once. The report holds at most sixteen rows, so a
  * profile that somehow earns more in one run is summarised rather than truncated in silence.
  */
+function UnlockFace({ track, index }: { track: number; index: number }): ReactNode {
+  const who = track === TRACK.CHARACTER ? CHARACTERS[index] : undefined;
+  if (!who) return <View style={styles.unlockMark} />;
+  return <Sprite name={portraitFrame(who.id)} size={Grid * 6} style={styles.unlockFace} />;
+}
+
 function UnlockBlock({ awards }: { awards: AwardReport }): ReactNode {
   if (awards.count === 0 && awards.overflow === 0) return null;
   const rows = Math.min(awards.count, AWARD_LIMIT);
@@ -170,9 +180,9 @@ function UnlockBlock({ awards }: { awards: AwardReport }): ReactNode {
       </StoneText>
       {Array.from({ length: rows }, (_, i) => (
         <View key={`${awards.tracks[i]}-${awards.indices[i]}`} style={styles.unlockRow}>
-          {/* A placeholder mark until the portrait atlas is packed. It is deliberately a shape and not an
-              empty gap, so the row reads as "a character" rather than as a layout bug. */}
-          <View style={styles.unlockMark} />
+          {/* The face of whoever was just unlocked. A row from any other list, or an index this build does
+              not have a character for, keeps the plain mark: a wrong face is worse than no face. */}
+          <UnlockFace track={awards.tracks[i] ?? -1} index={awards.indices[i] ?? -1} />
           <View style={styles.unlockText}>
             <StoneText tone="bone" size={12} bold>
               {awards.names[i]}
@@ -399,6 +409,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: Grid,
     paddingTop: 2,
+  },
+  unlockFace: {
+    borderWidth: 1,
+    borderColor: Palette.violet,
   },
   unlockMark: {
     width: Grid * 4,

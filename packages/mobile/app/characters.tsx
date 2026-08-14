@@ -29,7 +29,9 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
+import { Sprite } from "@/components/sprite";
 import { Chunk, Slab, StoneText } from "@/components/stone";
+import { portraitFrame } from "@/game/art/frames";
 import { Grid, Palette } from "@/constants/theme";
 import { STAT, STAT_NAMES, STAT_SCALE } from "@/game/sim/stats";
 import { WEAPON_TYPES } from "@/game/sim/weapons";
@@ -174,11 +176,16 @@ export default function CharacterScreen(): ReactNode {
               }}
             >
               <Slab raised={selected} style={[styles.row, selected ? styles.rowPicked : null]}>
-              {/* FIDELITY: the character portrait lands here as an atlas cell. */}
+              {/* A character nobody has earned yet keeps their face hidden. Showing the portrait behind a
+                  lock badge would give away the one thing unlocking them is for. */}
               <View style={[styles.portrait, selected ? styles.portraitPicked : null]}>
-                <StoneText tone={open ? "gold" : "ash"} size={18} bold align="center">
-                  {open ? character.name.slice(0, 1) : "?"}
-                </StoneText>
+                {open ? (
+                  <Sprite name={portraitFrame(character.id)} size={Grid * 8} />
+                ) : (
+                  <StoneText tone="ash" size={18} bold align="center">
+                    ?
+                  </StoneText>
+                )}
               </View>
 
               <View style={styles.rowText}>
@@ -260,8 +267,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
   },
   portrait: {
-    width: Grid * 7,
-    height: Grid * 7,
+    // A face at a single scale is 32 screen pixels and reads as a smudge. Two scales, so the box is one
+    // step wider than the art it holds.
+    width: Grid * 9,
+    height: Grid * 9,
     backgroundColor: Palette.ink,
     borderWidth: 1,
     borderColor: Palette.stoneLit,

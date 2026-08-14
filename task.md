@@ -2996,3 +2996,49 @@ lengths rounded the wrong way, a turned-away run told off for missing the leader
 out-of-run menus (including the real Settings screen), and getting both test tracks handing the game to real
 testers — Google's closed test wants twelve real people opted in for fourteen days in a row, so about
 eighteen to twenty need recruiting.
+
+## The art is now one sheet, and it's on the screens — 2026-08-14
+
+**What was wrong.** All 238 pictures were sitting in the project as 238 separate files, and the game had no
+way to use them. Menus were drawing the first letter of a name in a box where a picture belonged.
+
+**What I did.**
+
+1. **Packed everything into one sheet.** One picture file holding all 238, plus a written list of where each
+   one sits on it. It has to be one file: every time the phone has to swap to a different picture file
+   mid-draw it stalls, so two files would mean the game's speed depended on the art rather than on the game.
+
+2. **The packer refuses rather than guesses.** Every finished picture must be exactly 32 by 32. One that
+   isn't stops the whole thing dead and leaves the previous good sheet untouched — the alternative is a
+   silently squashed picture nobody spots for a month. It also never repaints, recolours or renames
+   anything; pictures land byte for byte. And packing twice gives an identical sheet, so re-running it
+   never shows up as a change that isn't one.
+
+3. **A one-dot gap around every picture.** Without it, a spinning sprite on a fussy phone reads one column
+   past its own edge, and the bug looks like a bright thread down the side of everything.
+
+4. **Which picture goes with which thing is written down, never counted.** "The third upgrade uses the third
+   picture" breaks the moment anything is inserted or redrawn, and no test can catch it. Three upgrades
+   deliberately share a picture with a near-twin (might/knockback, armour/dodge frames, rerolls/crit) and
+   that sharing is declared — so an accidental share fails a check.
+
+5. **Real art on three screens.** Shop rows, character select and the end-of-run unlock lines. Locked
+   characters still keep their faces hidden — showing the portrait behind a padlock gives away the reward.
+   Locked shop rows are faded, not hidden, because a locked row is still information.
+
+**Two things this caught that "it compiles" would not have.**
+
+- The first screenshot showed four locked shop rows all wearing the same padlock and none of their own
+  pictures. The badge was being drawn exactly as big as the art it was supposed to be marking. Fixed, and
+  the rule that a badge is always smaller than its picture is now a check that fails if anyone breaks it.
+- A test was passing against a leftover compiled copy of an older version of the packer, and reported a
+  sheet size that is physically impossible. The compiled-copy shortcut is now switched off for that test.
+
+**How I know it works.** The packer has 62 checks, and I broke it twelve different ways on purpose — every
+break was caught. The picture-to-thing table has 31 checks. The sizing arithmetic has 118 lines of checks
+and was broken eight ways, all caught. Then I loaded the shop and character screens in a real browser and
+looked at the pixels: a bone fist on Might, a heart on Max Health, a winged boot on Move Speed, Vesna's
+hood, Odrick's skull.
+
+**Still to do on art:** the game itself still draws test squares — the sheet is packed but not yet handed to
+the renderer. Props, the six evolved weapons and the in-run guide prompts are unpainted.

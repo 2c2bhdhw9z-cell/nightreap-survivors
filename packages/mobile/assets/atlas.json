@@ -1,0 +1,1708 @@
+{
+  "cell": 32,
+  "frames": {
+    "achievements/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 1
+    },
+    "achievements/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 1
+    },
+    "achievements/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 1
+    },
+    "achievements/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 1
+    },
+    "achievements/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 1
+    },
+    "achievements/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 1
+    },
+    "achievements/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 1
+    },
+    "achievements/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 1
+    },
+    "achievements/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 1
+    },
+    "achievements/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 1
+    },
+    "achievements/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 1
+    },
+    "achievements/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 1
+    },
+    "achievements/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 1
+    },
+    "achievements/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 1
+    },
+    "achievements/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 1
+    },
+    "achievements/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 1
+    },
+    "achievements/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 1
+    },
+    "achievements/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 1
+    },
+    "arcana/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 1
+    },
+    "arcana/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 1
+    },
+    "arcana/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 1
+    },
+    "arcana/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 1
+    },
+    "arcana/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 1
+    },
+    "arcana/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 1
+    },
+    "arcana/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 1
+    },
+    "arcana/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 1
+    },
+    "arcana/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 1
+    },
+    "arcana/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 1
+    },
+    "arcana/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 1
+    },
+    "arcana/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 1
+    },
+    "arcana/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 35
+    },
+    "arcana/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 35
+    },
+    "arcana/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 35
+    },
+    "arcana/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 35
+    },
+    "arcana/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 35
+    },
+    "arcana/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 35
+    },
+    "bosses/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 35
+    },
+    "bosses/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 35
+    },
+    "bosses/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 35
+    },
+    "bosses/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 35
+    },
+    "bosses/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 35
+    },
+    "bosses/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 35
+    },
+    "bosses/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 35
+    },
+    "bosses/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 35
+    },
+    "characters/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 35
+    },
+    "characters/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 35
+    },
+    "characters/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 35
+    },
+    "characters/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 35
+    },
+    "characters/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 35
+    },
+    "characters/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 35
+    },
+    "characters/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 35
+    },
+    "characters/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 35
+    },
+    "characters/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 35
+    },
+    "characters/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 35
+    },
+    "characters/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 35
+    },
+    "characters/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 35
+    },
+    "chests/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 35
+    },
+    "chests/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 35
+    },
+    "chests/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 35
+    },
+    "chests/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 35
+    },
+    "chests/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 69
+    },
+    "chests/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 69
+    },
+    "chests/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 69
+    },
+    "chests/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 69
+    },
+    "chests/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 69
+    },
+    "enemies/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 69
+    },
+    "enemies/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 69
+    },
+    "enemies/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 69
+    },
+    "enemies/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 69
+    },
+    "enemies/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 69
+    },
+    "enemies/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 69
+    },
+    "enemies/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 69
+    },
+    "enemies/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 69
+    },
+    "enemies/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 69
+    },
+    "enemies/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 69
+    },
+    "enemies/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 69
+    },
+    "enemies/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 69
+    },
+    "enemies/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 69
+    },
+    "enemies/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 69
+    },
+    "enemies/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 69
+    },
+    "enemies/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 69
+    },
+    "enemies/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 69
+    },
+    "enemies/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 69
+    },
+    "icons/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 69
+    },
+    "icons/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 69
+    },
+    "icons/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 69
+    },
+    "icons/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 69
+    },
+    "icons/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 69
+    },
+    "icons/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 69
+    },
+    "icons/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 69
+    },
+    "icons/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 103
+    },
+    "icons/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 103
+    },
+    "icons/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 103
+    },
+    "icons/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 103
+    },
+    "icons/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 103
+    },
+    "icons/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 103
+    },
+    "icons/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 103
+    },
+    "icons/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 103
+    },
+    "icons/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 103
+    },
+    "icons/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 103
+    },
+    "icons/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 103
+    },
+    "icons/icon-19": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 103
+    },
+    "icons/icon-20": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 103
+    },
+    "icons/icon-21": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 103
+    },
+    "icons/icon-22": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 103
+    },
+    "icons/icon-23": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 103
+    },
+    "icons/icon-24": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 103
+    },
+    "pickups/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 103
+    },
+    "pickups/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 103
+    },
+    "pickups/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 103
+    },
+    "pickups/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 103
+    },
+    "pickups/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 103
+    },
+    "pickups/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 103
+    },
+    "pickups/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 103
+    },
+    "pickups/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 103
+    },
+    "pickups/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 103
+    },
+    "pickups/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 103
+    },
+    "pickups/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 103
+    },
+    "pickups/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 103
+    },
+    "portraits/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 103
+    },
+    "portraits/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 137
+    },
+    "portraits/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 137
+    },
+    "portraits/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 137
+    },
+    "portraits/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 137
+    },
+    "portraits/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 137
+    },
+    "portraits/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 137
+    },
+    "portraits/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 137
+    },
+    "projectiles/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 137
+    },
+    "projectiles/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 137
+    },
+    "projectiles/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 137
+    },
+    "projectiles/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 137
+    },
+    "projectiles/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 137
+    },
+    "projectiles/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 137
+    },
+    "projectiles/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 137
+    },
+    "projectiles/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 137
+    },
+    "projectiles/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 137
+    },
+    "projectiles/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 137
+    },
+    "projectiles/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 137
+    },
+    "projectiles/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 137
+    },
+    "projectiles/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 137
+    },
+    "projectiles/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 137
+    },
+    "projectiles/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 137
+    },
+    "projectiles/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 137
+    },
+    "projectiles/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 137
+    },
+    "projectiles/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 137
+    },
+    "props/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 137
+    },
+    "props/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 137
+    },
+    "props/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 137
+    },
+    "props/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 137
+    },
+    "props/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 137
+    },
+    "props/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 171
+    },
+    "props/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 171
+    },
+    "props/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 171
+    },
+    "props/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 171
+    },
+    "props/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 171
+    },
+    "props/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 171
+    },
+    "props/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 171
+    },
+    "scenery/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 171
+    },
+    "scenery/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 171
+    },
+    "scenery/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 171
+    },
+    "scenery/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 171
+    },
+    "scenery/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 171
+    },
+    "scenery/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 171
+    },
+    "scenery/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 171
+    },
+    "scenery/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 171
+    },
+    "scenery/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 171
+    },
+    "scenery/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 171
+    },
+    "scenery/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 171
+    },
+    "scenery/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 171
+    },
+    "tiles/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 171
+    },
+    "tiles/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 171
+    },
+    "tiles/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 171
+    },
+    "tiles/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 171
+    },
+    "tiles/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 171
+    },
+    "tiles/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 171
+    },
+    "tiles/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 171
+    },
+    "tiles/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 171
+    },
+    "tiles/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 171
+    },
+    "tiles/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 171
+    },
+    "tiles/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 171
+    },
+    "tiles/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 205
+    },
+    "ui-parts-2/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 205
+    },
+    "ui-parts-2/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 205
+    },
+    "ui-parts-2/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 205
+    },
+    "ui-parts-2/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 953,
+      "y": 205
+    },
+    "ui-parts-2/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 987,
+      "y": 205
+    },
+    "ui-parts-2/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 1,
+      "y": 239
+    },
+    "ui-parts-2/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 239
+    },
+    "ui-parts-2/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 239
+    },
+    "ui-parts-2/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 239
+    },
+    "ui-parts-2/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 239
+    },
+    "ui-parts-2/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 239
+    },
+    "ui-parts-2/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 239
+    },
+    "ui-parts-2/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 239
+    },
+    "ui-parts-2/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 239
+    },
+    "ui-parts-2/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 239
+    },
+    "ui-parts/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 35,
+      "y": 205
+    },
+    "ui-parts/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 69,
+      "y": 205
+    },
+    "ui-parts/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 103,
+      "y": 205
+    },
+    "ui-parts/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 137,
+      "y": 205
+    },
+    "ui-parts/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 171,
+      "y": 205
+    },
+    "ui-parts/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 205,
+      "y": 205
+    },
+    "ui-parts/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 239,
+      "y": 205
+    },
+    "ui-parts/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 273,
+      "y": 205
+    },
+    "ui-parts/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 307,
+      "y": 205
+    },
+    "ui-parts/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 205
+    },
+    "ui-parts/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 205
+    },
+    "ui-parts/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 205
+    },
+    "ui-parts/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 205
+    },
+    "ui-parts/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 205
+    },
+    "ui-parts/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 205
+    },
+    "ui-parts/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 205
+    },
+    "ui-parts/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 205
+    },
+    "ui-parts/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 205
+    },
+    "ui-parts/icon-19": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 205
+    },
+    "ui-parts/icon-20": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 205
+    },
+    "ui-parts/icon-21": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 205
+    },
+    "ui-parts/icon-22": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 205
+    },
+    "ui-parts/icon-23": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 205
+    },
+    "ui-parts/icon-24": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 205
+    },
+    "weapons/icon-01": {
+      "h": 32,
+      "w": 32,
+      "x": 341,
+      "y": 239
+    },
+    "weapons/icon-02": {
+      "h": 32,
+      "w": 32,
+      "x": 375,
+      "y": 239
+    },
+    "weapons/icon-03": {
+      "h": 32,
+      "w": 32,
+      "x": 409,
+      "y": 239
+    },
+    "weapons/icon-04": {
+      "h": 32,
+      "w": 32,
+      "x": 443,
+      "y": 239
+    },
+    "weapons/icon-05": {
+      "h": 32,
+      "w": 32,
+      "x": 477,
+      "y": 239
+    },
+    "weapons/icon-06": {
+      "h": 32,
+      "w": 32,
+      "x": 511,
+      "y": 239
+    },
+    "weapons/icon-07": {
+      "h": 32,
+      "w": 32,
+      "x": 545,
+      "y": 239
+    },
+    "weapons/icon-08": {
+      "h": 32,
+      "w": 32,
+      "x": 579,
+      "y": 239
+    },
+    "weapons/icon-09": {
+      "h": 32,
+      "w": 32,
+      "x": 613,
+      "y": 239
+    },
+    "weapons/icon-10": {
+      "h": 32,
+      "w": 32,
+      "x": 647,
+      "y": 239
+    },
+    "weapons/icon-11": {
+      "h": 32,
+      "w": 32,
+      "x": 681,
+      "y": 239
+    },
+    "weapons/icon-12": {
+      "h": 32,
+      "w": 32,
+      "x": 715,
+      "y": 239
+    },
+    "weapons/icon-13": {
+      "h": 32,
+      "w": 32,
+      "x": 749,
+      "y": 239
+    },
+    "weapons/icon-14": {
+      "h": 32,
+      "w": 32,
+      "x": 783,
+      "y": 239
+    },
+    "weapons/icon-15": {
+      "h": 32,
+      "w": 32,
+      "x": 817,
+      "y": 239
+    },
+    "weapons/icon-16": {
+      "h": 32,
+      "w": 32,
+      "x": 851,
+      "y": 239
+    },
+    "weapons/icon-17": {
+      "h": 32,
+      "w": 32,
+      "x": 885,
+      "y": 239
+    },
+    "weapons/icon-18": {
+      "h": 32,
+      "w": 32,
+      "x": 919,
+      "y": 239
+    }
+  },
+  "gutter": 1,
+  "height": 512,
+  "sets": {
+    "achievements": [
+      "achievements/icon-01",
+      "achievements/icon-02",
+      "achievements/icon-03",
+      "achievements/icon-04",
+      "achievements/icon-05",
+      "achievements/icon-06",
+      "achievements/icon-07",
+      "achievements/icon-08",
+      "achievements/icon-09",
+      "achievements/icon-10",
+      "achievements/icon-11",
+      "achievements/icon-12",
+      "achievements/icon-13",
+      "achievements/icon-14",
+      "achievements/icon-15",
+      "achievements/icon-16",
+      "achievements/icon-17",
+      "achievements/icon-18"
+    ],
+    "arcana": [
+      "arcana/icon-01",
+      "arcana/icon-02",
+      "arcana/icon-03",
+      "arcana/icon-04",
+      "arcana/icon-05",
+      "arcana/icon-06",
+      "arcana/icon-07",
+      "arcana/icon-08",
+      "arcana/icon-09",
+      "arcana/icon-10",
+      "arcana/icon-11",
+      "arcana/icon-12",
+      "arcana/icon-13",
+      "arcana/icon-14",
+      "arcana/icon-15",
+      "arcana/icon-16",
+      "arcana/icon-17",
+      "arcana/icon-18"
+    ],
+    "bosses": [
+      "bosses/icon-01",
+      "bosses/icon-02",
+      "bosses/icon-03",
+      "bosses/icon-04",
+      "bosses/icon-05",
+      "bosses/icon-06",
+      "bosses/icon-07",
+      "bosses/icon-08"
+    ],
+    "characters": [
+      "characters/icon-01",
+      "characters/icon-02",
+      "characters/icon-03",
+      "characters/icon-04",
+      "characters/icon-05",
+      "characters/icon-06",
+      "characters/icon-07",
+      "characters/icon-08",
+      "characters/icon-09",
+      "characters/icon-10",
+      "characters/icon-11",
+      "characters/icon-12"
+    ],
+    "chests": [
+      "chests/icon-01",
+      "chests/icon-02",
+      "chests/icon-03",
+      "chests/icon-04",
+      "chests/icon-05",
+      "chests/icon-06",
+      "chests/icon-07",
+      "chests/icon-08",
+      "chests/icon-09"
+    ],
+    "enemies": [
+      "enemies/icon-01",
+      "enemies/icon-02",
+      "enemies/icon-03",
+      "enemies/icon-04",
+      "enemies/icon-05",
+      "enemies/icon-06",
+      "enemies/icon-07",
+      "enemies/icon-08",
+      "enemies/icon-09",
+      "enemies/icon-10",
+      "enemies/icon-11",
+      "enemies/icon-12",
+      "enemies/icon-13",
+      "enemies/icon-14",
+      "enemies/icon-15",
+      "enemies/icon-16",
+      "enemies/icon-17",
+      "enemies/icon-18"
+    ],
+    "icons": [
+      "icons/icon-01",
+      "icons/icon-02",
+      "icons/icon-03",
+      "icons/icon-04",
+      "icons/icon-05",
+      "icons/icon-06",
+      "icons/icon-07",
+      "icons/icon-08",
+      "icons/icon-09",
+      "icons/icon-10",
+      "icons/icon-11",
+      "icons/icon-12",
+      "icons/icon-13",
+      "icons/icon-14",
+      "icons/icon-15",
+      "icons/icon-16",
+      "icons/icon-17",
+      "icons/icon-18",
+      "icons/icon-19",
+      "icons/icon-20",
+      "icons/icon-21",
+      "icons/icon-22",
+      "icons/icon-23",
+      "icons/icon-24"
+    ],
+    "pickups": [
+      "pickups/icon-01",
+      "pickups/icon-02",
+      "pickups/icon-03",
+      "pickups/icon-04",
+      "pickups/icon-05",
+      "pickups/icon-06",
+      "pickups/icon-07",
+      "pickups/icon-08",
+      "pickups/icon-09",
+      "pickups/icon-10",
+      "pickups/icon-11",
+      "pickups/icon-12"
+    ],
+    "portraits": [
+      "portraits/icon-01",
+      "portraits/icon-02",
+      "portraits/icon-03",
+      "portraits/icon-04",
+      "portraits/icon-05",
+      "portraits/icon-06",
+      "portraits/icon-07",
+      "portraits/icon-08"
+    ],
+    "projectiles": [
+      "projectiles/icon-01",
+      "projectiles/icon-02",
+      "projectiles/icon-03",
+      "projectiles/icon-04",
+      "projectiles/icon-05",
+      "projectiles/icon-06",
+      "projectiles/icon-07",
+      "projectiles/icon-08",
+      "projectiles/icon-09",
+      "projectiles/icon-10",
+      "projectiles/icon-11",
+      "projectiles/icon-12",
+      "projectiles/icon-13",
+      "projectiles/icon-14",
+      "projectiles/icon-15",
+      "projectiles/icon-16",
+      "projectiles/icon-17",
+      "projectiles/icon-18"
+    ],
+    "props": [
+      "props/icon-01",
+      "props/icon-02",
+      "props/icon-03",
+      "props/icon-04",
+      "props/icon-05",
+      "props/icon-06",
+      "props/icon-07",
+      "props/icon-08",
+      "props/icon-09",
+      "props/icon-10",
+      "props/icon-11",
+      "props/icon-12"
+    ],
+    "scenery": [
+      "scenery/icon-01",
+      "scenery/icon-02",
+      "scenery/icon-03",
+      "scenery/icon-04",
+      "scenery/icon-05",
+      "scenery/icon-06",
+      "scenery/icon-07",
+      "scenery/icon-08",
+      "scenery/icon-09",
+      "scenery/icon-10",
+      "scenery/icon-11",
+      "scenery/icon-12"
+    ],
+    "tiles": [
+      "tiles/icon-01",
+      "tiles/icon-02",
+      "tiles/icon-03",
+      "tiles/icon-04",
+      "tiles/icon-05",
+      "tiles/icon-06",
+      "tiles/icon-07",
+      "tiles/icon-08",
+      "tiles/icon-09",
+      "tiles/icon-10",
+      "tiles/icon-11",
+      "tiles/icon-12"
+    ],
+    "ui-parts": [
+      "ui-parts/icon-01",
+      "ui-parts/icon-02",
+      "ui-parts/icon-03",
+      "ui-parts/icon-04",
+      "ui-parts/icon-05",
+      "ui-parts/icon-06",
+      "ui-parts/icon-07",
+      "ui-parts/icon-08",
+      "ui-parts/icon-09",
+      "ui-parts/icon-10",
+      "ui-parts/icon-11",
+      "ui-parts/icon-12",
+      "ui-parts/icon-13",
+      "ui-parts/icon-14",
+      "ui-parts/icon-15",
+      "ui-parts/icon-16",
+      "ui-parts/icon-17",
+      "ui-parts/icon-18",
+      "ui-parts/icon-19",
+      "ui-parts/icon-20",
+      "ui-parts/icon-21",
+      "ui-parts/icon-22",
+      "ui-parts/icon-23",
+      "ui-parts/icon-24"
+    ],
+    "ui-parts-2": [
+      "ui-parts-2/icon-01",
+      "ui-parts-2/icon-02",
+      "ui-parts-2/icon-03",
+      "ui-parts-2/icon-04",
+      "ui-parts-2/icon-05",
+      "ui-parts-2/icon-06",
+      "ui-parts-2/icon-07",
+      "ui-parts-2/icon-08",
+      "ui-parts-2/icon-09",
+      "ui-parts-2/icon-10",
+      "ui-parts-2/icon-11",
+      "ui-parts-2/icon-12",
+      "ui-parts-2/icon-13",
+      "ui-parts-2/icon-14",
+      "ui-parts-2/icon-15"
+    ],
+    "weapons": [
+      "weapons/icon-01",
+      "weapons/icon-02",
+      "weapons/icon-03",
+      "weapons/icon-04",
+      "weapons/icon-05",
+      "weapons/icon-06",
+      "weapons/icon-07",
+      "weapons/icon-08",
+      "weapons/icon-09",
+      "weapons/icon-10",
+      "weapons/icon-11",
+      "weapons/icon-12",
+      "weapons/icon-13",
+      "weapons/icon-14",
+      "weapons/icon-15",
+      "weapons/icon-16",
+      "weapons/icon-17",
+      "weapons/icon-18"
+    ]
+  },
+  "width": 1024
+}
