@@ -55,6 +55,29 @@ export const ENEMY_FRAME: Readonly<Record<string, string>> = {
   hound: "enemies/icon-11",
   wisp: "enemies/icon-06",
   gravewarden: "bosses/icon-04",
+  // The rest of the crowd, taking the cells of the enemy sheet nobody had claimed. Twenty-six rows
+  // against twenty-six drawn cells: the table has to cover the roster exactly, and no two rows may
+  // wear the same picture, or two different monsters would be indistinguishable mid-crowd.
+  crawler: "enemies/icon-04",
+  bloatfly: "enemies/icon-05",
+  pallbearer: "enemies/icon-07",
+  graveling: "enemies/icon-08",
+  shrieker: "enemies/icon-09",
+  ripper: "enemies/icon-10",
+  tomblurker: "enemies/icon-12",
+  gravemoth: "enemies/icon-13",
+  bonehound: "enemies/icon-14",
+  rotswine: "enemies/icon-15",
+  wightling: "enemies/icon-16",
+  marrowbeetle: "enemies/icon-17",
+  nightcap: "enemies/icon-18",
+  bellmaster: "bosses/icon-01",
+  carrionKing: "bosses/icon-02",
+  hollowMother: "bosses/icon-03",
+  ossuaryTitan: "bosses/icon-05",
+  dirgeWarden: "bosses/icon-06",
+  plagueChoir: "bosses/icon-07",
+  graveTyrant: "bosses/icon-08",
 };
 
 /**

@@ -3264,3 +3264,46 @@ units, and the untouchable window written in the wrong units. All eight were cau
 One new painted sheet of four portraits, cut to size with the same tools and the same locked palette as
 the first eight. The in-run bodies needed no new painting — the character sheet had four cells nobody had
 claimed. The picture sheet the game loads is now 246 pictures on one 1024x512 texture, 28% full.
+
+## Twenty-six enemies
+
+Eighteen things that walk at you and eight named fights, up from five and one. Every one has its own
+drawn picture, and no two wear the same picture — two different monsters that look identical in a crowd
+of four hundred is not a monster, it's confusion.
+
+Three new ways of moving, on top of the five that already existed (walks at you, swarms, walls you off,
+charges through, holds its distance):
+
+- **Stands still and waits.** Perfectly still — not a slow creep — until somebody comes within about a
+  phone-width of it, then it chases. It punishes running blindly into ground you haven't looked at,
+  which is exactly what a player does once their weapons are strong.
+- **Slides side to side on the way in.** A straight-line weapon now has to be aimed rather than pointed
+  at these. It still closes on you every sway, so it is a nuisance and not a stalemate.
+- **Circles wide, then dives.** Holds a ring for three seconds while it winds up, comes around to a
+  different side, and then commits in a straight line. The wind-up is the whole tell.
+
+The eight named fights climb in both health and reward in the order the stages will hand them out, so no
+later boss is a smaller fight than an earlier one.
+
+### A detail that will matter later
+
+The side-to-side one sways on a pattern counted straight off its own age in ticks, not with the usual
+maths-library wave. Two phones running the same co-op session can disagree in the last decimal place of
+that maths function, and over a thirty-minute run a whole crowd steered by it would slowly drift into two
+different crowds. Plain arithmetic on a whole number cannot do that. There is a check that runs the same
+enemy twice and demands the two paths match to six decimal places.
+
+### The checks
+
+416 lines of new ones. They cover the roster's shape, the fact that positions in the table are what
+recordings and co-op packets actually carry (the six that shipped first are pinned by hand, so inserting
+a row above them fails immediately), that nothing kills a starting character in a single touch, that
+nothing is both unshovable and faster than you can run, that a tougher body is never worth less than a
+weaker one, that no body is wider than the grid the crowd separates on, and that every named fight is
+unshovable, uncullable and pays out. Then all three new movements are actually simulated and measured.
+
+Twelve deliberate breakages: a row inserted above the originals, a touch made fatal from full health, the
+standing-still one made to creep, the swaying one made to walk straight, the circling one made to skip its
+wind-up, the same one made to never dive, a boss given crowd-sized health, a boss stripped of its
+unshovable flag, a heavy body made faster than a player, a tough body made worth less than a weak one, a
+movement left with only one user, and a body made wider than the grid. All twelve were caught.

@@ -2038,7 +2038,13 @@ simply merge and launch moves later.
   thing that keeps growing as the run goes on, up to a ceiling written on their own card. Ten different
   starting weapons across the twelve, so the roster opens in ten different ways. Four new portraits painted;
   the in-run bodies were already drawn. ~8 arcanas and ~50 achievements are what is left of this line.
-- ~40 enemy types, elites, **bosses** on fixed timestamps.
+- ~~~40 enemy types~~ — **DONE for launch: twenty-six.** Eighteen things that walk at you and eight
+  named fights, every one with its own drawn picture and no two wearing the same one. Three new ways of
+  moving on top of the five that existed: one that stands perfectly still in the field until you walk
+  within reach and then chases, one that slides side to side on the way in so a straight shot has to be
+  aimed rather than pointed, and one that circles wide and then commits to a dive. The eight named fights
+  climb in health and reward in the order the stages hand them out. Elites and the remaining types toward
+  40 move to Phase 5 — they are more rows in the same table, not more systems.
 - **Both test tracks are live and running during this phase** — the Play 14-day closed-test clock burns
   down while content lands, and TestFlight testers cover iPhone/iPad. Cross-store testers also give us
   the real iOS↔Android co-op test.

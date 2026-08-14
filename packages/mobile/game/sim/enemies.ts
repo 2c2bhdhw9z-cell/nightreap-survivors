@@ -39,7 +39,43 @@ export const ENEMY_KIND = {
   circler: 4,
   /** Named wave boss. One at a time, carries a health bar. */
   boss: 5,
+  /**
+   * Closes on the player, but slides side to side on a fixed period on the way in.
+   *
+   * The sway comes off the enemy's own age as a triangle wave, not a sine and not a random number.
+   * A sine would be the obvious choice and is the wrong one: two phones running the same co-op
+   * session can disagree in the last bits of `Math.sin`, and a crowd steered by it would drift apart
+   * over a thirty-minute run. Plain arithmetic on an integer tick count cannot.
+   */
+  weaver: 6,
+  /**
+   * Stands perfectly still in the field until a player comes within `LURKER_WAKE`, then chases.
+   *
+   * A stationary enemy is not a cheaper chaser — it changes what the field means. It punishes running
+   * blindly into unexplored ground, which is the one thing a player does constantly once their weapons
+   * are strong, and it costs nothing to steer while it is asleep.
+   */
+  lurker: 7,
+  /**
+   * Holds a wide ring for its first `FLANKER_CIRCLE_TICKS`, drifting sideways, then dives straight in.
+   *
+   * Deliberately readable: the dive is a function of how long this one has been alive, so a player who
+   * has learnt the timing can pre-empt it, and a player who has not still sees it wind up.
+   */
+  flanker: 8,
 } as const;
+
+/** How close a player has to get before a lurker wakes up, in world units. */
+export const LURKER_WAKE = 96;
+
+/** How long a flanker circles before it commits to its dive, in ticks. */
+export const FLANKER_CIRCLE_TICKS = 180;
+
+/** The ring a flanker holds while it is still circling, in world units. */
+export const FLANKER_RING = 150;
+
+/** Ticks in one full left-right cycle of a weaver's sway. */
+export const WEAVER_PERIOD = 96;
 
 export type EnemyKind = (typeof ENEMY_KIND)[keyof typeof ENEMY_KIND];
 
@@ -85,9 +121,15 @@ export interface EnemyType {
 }
 
 /**
- * The launch enemy roster's first tier. Sixteen sprites exist in the first art sheet; these are the
- * behaviours those sprites hang off. Deliberately small numbers — the difficulty curve comes from
- * the wave table and the Curse multiplier, not from inflating these.
+ * The launch enemy roster: eighteen things that walk at you and eight that are named.
+ *
+ * Deliberately small numbers — the difficulty curve comes from the wave table and the Curse
+ * multiplier, not from inflating these. Every row here has a drawn picture and no picture is worn by
+ * two rows, which `run-art.test.ts` checks in both directions.
+ *
+ * APPEND-ONLY. A wave table names an enemy by id, but `ENEMY_TYPE_BY_ID` resolves that id to a
+ * position and the position is what a replay and a co-op packet carry. Insert a row in the middle and
+ * every recording made before today resolves to the wrong monster.
  */
 export const ENEMY_TYPES: readonly EnemyType[] = [
   {
@@ -159,6 +201,258 @@ export const ENEMY_TYPES: readonly EnemyType[] = [
     speed: 30,
     radius: 18,
     xp: 60,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+
+  {
+    // Arrives in tides and dies to anything. The floor of the difficulty curve.
+    id: "crawler",
+    kind: ENEMY_KIND.swarmer,
+    sprite: "enemy.crawler",
+    health: 5,
+    damage: 3,
+    speed: 60,
+    radius: 5,
+    xp: 1,
+    goldChance: 6,
+    flags: 0,
+  },
+  {
+    // Weaves on the way in, so a straight-line weapon has to be aimed rather than pointed.
+    id: "bloatfly",
+    kind: ENEMY_KIND.weaver,
+    sprite: "enemy.bloatfly",
+    health: 12,
+    damage: 4,
+    speed: 46,
+    radius: 6,
+    xp: 2,
+    goldChance: 18,
+    flags: 0,
+  },
+  {
+    // Walls off an escape route and cannot be shoved out of it.
+    id: "pallbearer",
+    kind: ENEMY_KIND.brute,
+    sprite: "enemy.pallbearer",
+    health: 110,
+    damage: 12,
+    speed: 18,
+    radius: 12,
+    xp: 6,
+    goldChance: 90,
+    flags: ENEMY_FLAG.heavy,
+  },
+  {
+    id: "graveling",
+    kind: ENEMY_KIND.chaser,
+    sprite: "enemy.graveling",
+    health: 22,
+    damage: 5,
+    speed: 38,
+    radius: 7,
+    xp: 2,
+    goldChance: 18,
+    flags: 0,
+  },
+  {
+    // Holds its distance through the crowd, so it has to be gone to rather than waited for.
+    id: "shrieker",
+    kind: ENEMY_KIND.circler,
+    sprite: "enemy.shrieker",
+    health: 26,
+    damage: 6,
+    speed: 48,
+    radius: 6,
+    xp: 3,
+    goldChance: 40,
+    flags: ENEMY_FLAG.phasing,
+  },
+  {
+    // Faster than any character can run, so it is dodged sideways and never outrun. Circles first, which
+    // is the only warning you get.
+    id: "ripper",
+    kind: ENEMY_KIND.flanker,
+    sprite: "enemy.ripper",
+    health: 20,
+    damage: 8,
+    speed: 88,
+    radius: 7,
+    xp: 3,
+    goldChance: 26,
+    flags: ENEMY_FLAG.persistent,
+  },
+  {
+    // Stands still in the dark until somebody walks into it.
+    id: "tomblurker",
+    kind: ENEMY_KIND.lurker,
+    sprite: "enemy.tomblurker",
+    health: 34,
+    damage: 9,
+    speed: 42,
+    radius: 8,
+    xp: 4,
+    goldChance: 45,
+    flags: 0,
+  },
+  {
+    id: "gravemoth",
+    kind: ENEMY_KIND.weaver,
+    sprite: "enemy.gravemoth",
+    health: 16,
+    damage: 5,
+    speed: 54,
+    radius: 6,
+    xp: 2,
+    goldChance: 22,
+    flags: 0,
+  },
+  {
+    // Circles wide, then commits. The wind-up is the tell.
+    id: "bonehound",
+    kind: ENEMY_KIND.flanker,
+    sprite: "enemy.bonehound",
+    health: 30,
+    damage: 7,
+    speed: 66,
+    radius: 7,
+    xp: 4,
+    goldChance: 40,
+    flags: ENEMY_FLAG.persistent,
+  },
+  {
+    // A charge that cannot be shoved off its line.
+    id: "rotswine",
+    kind: ENEMY_KIND.charger,
+    sprite: "enemy.rotswine",
+    health: 70,
+    damage: 11,
+    speed: 70,
+    radius: 10,
+    xp: 5,
+    goldChance: 70,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "wightling",
+    kind: ENEMY_KIND.chaser,
+    sprite: "enemy.wightling",
+    health: 48,
+    damage: 7,
+    speed: 40,
+    radius: 8,
+    xp: 4,
+    goldChance: 45,
+    flags: 0,
+  },
+  {
+    id: "marrowbeetle",
+    kind: ENEMY_KIND.swarmer,
+    sprite: "enemy.marrowbeetle",
+    health: 9,
+    damage: 4,
+    speed: 66,
+    radius: 5,
+    xp: 1,
+    goldChance: 10,
+    flags: 0,
+  },
+  {
+    // The ambush that is worth the fight. Standing still and immovable.
+    id: "nightcap",
+    kind: ENEMY_KIND.lurker,
+    sprite: "enemy.nightcap",
+    health: 90,
+    damage: 13,
+    speed: 34,
+    radius: 9,
+    xp: 7,
+    goldChance: 120,
+    flags: ENEMY_FLAG.heavy,
+  },
+  {
+    // A named fight. One at a time, and it carries the health bar.
+    id: "bellmaster",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.bellmaster",
+    health: 1400,
+    damage: 18,
+    speed: 32,
+    radius: 18,
+    xp: 80,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "carrionKing",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.carrionKing",
+    health: 2200,
+    damage: 20,
+    speed: 34,
+    radius: 19,
+    xp: 110,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "hollowMother",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.hollowMother",
+    health: 3000,
+    damage: 22,
+    speed: 30,
+    radius: 20,
+    xp: 150,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "ossuaryTitan",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.ossuaryTitan",
+    health: 4200,
+    damage: 26,
+    speed: 26,
+    radius: 22,
+    xp: 200,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "dirgeWarden",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.dirgeWarden",
+    health: 5600,
+    damage: 28,
+    speed: 32,
+    radius: 21,
+    xp: 260,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "plagueChoir",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.plagueChoir",
+    health: 7200,
+    damage: 30,
+    speed: 34,
+    radius: 20,
+    xp: 330,
+    goldChance: 1000,
+    flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
+  },
+  {
+    id: "graveTyrant",
+    kind: ENEMY_KIND.boss,
+    sprite: "enemy.graveTyrant",
+    health: 9000,
+    damage: 34,
+    speed: 30,
+    radius: 24,
+    xp: 420,
     goldChance: 1000,
     flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
   },
@@ -446,6 +740,46 @@ export class EnemyStore {
           const tangentY = dx / dist;
           this.vx[s] = ((dx / dist) * radial * 0.6 + tangentX * 0.8) * speed;
           this.vy[s] = ((dy / dist) * radial * 0.6 + tangentY * 0.8) * speed;
+          break;
+        }
+        case ENEMY_KIND.weaver: {
+          // Triangle wave from the tick count: -1 at one edge, +1 at the other, no trigonometry and
+          // no state. `phase` is integer, so every machine computes the identical number.
+          const phase = this.age[s] % WEAVER_PERIOD;
+          const half = WEAVER_PERIOD / 2;
+          const sway = (phase < half ? phase : WEAVER_PERIOD - phase) / half * 2 - 1;
+          const tangentX = -dy / dist;
+          const tangentY = dx / dist;
+          // Weighted so the sway is clearly visible rather than a wobble: measured, a weaver leaves the
+          // straight line from its spawn to the player by tens of units, which is what makes a straight
+          // shot have to be aimed. Forward pull stays the larger term so it still closes every sway.
+          this.vx[s] = ((dx / dist) * 0.65 + tangentX * sway * 1.05) * speed;
+          this.vy[s] = ((dy / dist) * 0.65 + tangentY * sway * 1.05) * speed;
+          break;
+        }
+        case ENEMY_KIND.lurker: {
+          // Asleep is genuinely still — zero velocity, not a slow crawl — so that a player can read
+          // the field and decide to leave it alone.
+          if (dist > LURKER_WAKE) {
+            this.vx[s] = 0;
+            this.vy[s] = 0;
+            break;
+          }
+          this.vx[s] = (dx / dist) * speed;
+          this.vy[s] = (dy / dist) * speed;
+          break;
+        }
+        case ENEMY_KIND.flanker: {
+          if (this.age[s] < FLANKER_CIRCLE_TICKS) {
+            const radial = dist > FLANKER_RING ? 1 : -1;
+            const tangentX = -dy / dist;
+            const tangentY = dx / dist;
+            this.vx[s] = ((dx / dist) * radial * 0.5 + tangentX * 0.9) * speed;
+            this.vy[s] = ((dy / dist) * radial * 0.5 + tangentY * 0.9) * speed;
+            break;
+          }
+          this.vx[s] = (dx / dist) * speed;
+          this.vy[s] = (dy / dist) * speed;
           break;
         }
         case ENEMY_KIND.charger: {
