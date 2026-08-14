@@ -68,12 +68,25 @@ function percentLevels(stat: StatId, perLevel: number, label: string): PassiveLe
 }
 
 /**
- * The six launch passives.
+ * The twenty launch passives.
  *
- * Chosen to cover the shape of the archetypes rather than to be exhaustive: one that raises damage,
- * one that survives, one that moves, one that collects, one that fires faster, one that regenerates.
- * Every later passive is a variation on one of these six, which is why six is enough to prove the
- * system in Phase 1.
+ * The first six came first on purpose: one that raises damage, one that survives, one that moves, one
+ * that collects, one that fires faster, one that regenerates. Those six proved the system, and every
+ * one of the fourteen after them is a variation on one of the six against a different stat.
+ *
+ * WHY TWENTY AND NOT SOME LATER
+ * Passives are the cheapest content in the game — a name, a line of text and a column of numbers — and
+ * they are what evolutions ask for. Shipping only some of them would mean either evolutions that ask for
+ * an item the player cannot yet be offered, or a second pass over every weapon later to repoint it. All
+ * twenty exist now so weapons can ask for any of them from here on.
+ *
+ * WIRE IDS ARE APPEND-ONLY
+ * A wire id is written into save files and sent to other players. New passives take the next free number
+ * and nothing already written down ever moves, so an old save keeps meaning what it meant.
+ *
+ * EVERY LEVEL HAS TO GIVE SOMETHING
+ * A level that reads "no change" on the card is a level that feels like a bug. Passives whose natural
+ * step is too strong to repeat five times alternate between two effects instead of standing still.
  */
 export const PASSIVE_TYPES: readonly PassiveType[] = [
   {
@@ -182,6 +195,182 @@ export const PASSIVE_TYPES: readonly PassiveType[] = [
         deltas: [
           { stat: STAT.maxHealth, add: 40 * STAT_SCALE },
           { stat: STAT.regen, add: 600 },
+        ],
+      },
+    ],
+  },
+
+  // ---------------------------------------------------------------------------------------------
+  // The fourteen that complete the launch set. Same shape, one per remaining stat a player can feel.
+  // ---------------------------------------------------------------------------------------------
+
+  {
+    id: "hollowedCrown",
+    name: "Hollowed Crown",
+    wireId: 7,
+    blurb: "Everything you do reaches wider.",
+    sprite: 6,
+    levels: percentLevels(STAT.area, 80, "Area +8%"),
+  },
+  {
+    id: "splinteredQuiver",
+    name: "Splintered Quiver",
+    wireId: 8,
+    blurb: "What you throw leaves faster.",
+    sprite: 7,
+    levels: percentLevels(STAT.projectileSpeed, 100, "Projectile speed +10%"),
+  },
+  {
+    id: "widowsVeil",
+    name: "Widow's Veil",
+    wireId: 9,
+    blurb: "What you leave behind lingers.",
+    sprite: 8,
+    levels: percentLevels(STAT.duration, 100, "Duration +10%"),
+  },
+  {
+    id: "reapersTally",
+    name: "Reaper's Tally",
+    wireId: 10,
+    // Amount is flat and the strongest number in the game — every weapon fires one more of everything.
+    // Three of them across five levels, with pierce filling the two gaps so no level reads as nothing.
+    blurb: "One more of everything you throw.",
+    sprite: 9,
+    levels: [
+      { text: "Projectiles +1", deltas: [{ stat: STAT.amount, add: 1 }] },
+      { text: "Pierce +1", deltas: [{ stat: STAT.pierce, add: 1 }] },
+      { text: "Projectiles +1", deltas: [{ stat: STAT.amount, add: 1 }] },
+      { text: "Pierce +1", deltas: [{ stat: STAT.pierce, add: 1 }] },
+      { text: "Projectiles +1", deltas: [{ stat: STAT.amount, add: 1 }] },
+    ],
+  },
+  {
+    id: "gildedOssuary",
+    name: "Gilded Ossuary",
+    wireId: 11,
+    blurb: "The dead pay better.",
+    sprite: 10,
+    levels: percentLevels(STAT.goldGain, 150, "Gold +15%"),
+  },
+  {
+    id: "marrowLedger",
+    name: "Marrow Ledger",
+    wireId: 12,
+    blurb: "You learn faster from each one you put down.",
+    sprite: 11,
+    levels: percentLevels(STAT.xpGain, 100, "Experience +10%"),
+  },
+  {
+    id: "blackCatSkull",
+    name: "Black Cat Skull",
+    wireId: 13,
+    blurb: "The rolls lean your way.",
+    sprite: 12,
+    levels: percentLevels(STAT.luck, 100, "Luck +10%"),
+  },
+  {
+    id: "gravediggersWedge",
+    name: "Gravedigger's Wedge",
+    wireId: 14,
+    blurb: "Your shots pass through one more of them.",
+    sprite: 13,
+    levels: [
+      { text: "Pierce +1", deltas: [{ stat: STAT.pierce, add: 1 }] },
+      { text: "Pierce +1", deltas: [{ stat: STAT.pierce, add: 1 }] },
+      { text: "Pierce +1", deltas: [{ stat: STAT.pierce, add: 1 }] },
+      { text: "Pierce +1", deltas: [{ stat: STAT.pierce, add: 1 }] },
+      {
+        text: "Pierce +2, damage +5%",
+        deltas: [
+          { stat: STAT.pierce, add: 2 },
+          { stat: STAT.damage, add: 50 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "ironWake",
+    name: "Iron Wake",
+    wireId: 15,
+    blurb: "They go further when you hit them.",
+    sprite: 14,
+    levels: percentLevels(STAT.knockback, 200, "Knockback +20%"),
+  },
+  {
+    id: "deathlessAsh",
+    name: "Deathless Ash",
+    wireId: 16,
+    // A revive is the single most valuable thing a passive can hand over, so it arrives twice and the
+    // levels between it pay armour instead. Two is the ceiling the run economy is balanced around.
+    blurb: "Death is not always the end of it.",
+    sprite: 15,
+    levels: [
+      { text: "Revive +1", deltas: [{ stat: STAT.revives, add: 1 }] },
+      { text: "Armour +1", deltas: [{ stat: STAT.armor, add: 1 }] },
+      { text: "Armour +1", deltas: [{ stat: STAT.armor, add: 1 }] },
+      { text: "Revive +1", deltas: [{ stat: STAT.revives, add: 1 }] },
+      {
+        text: "Armour +2, max health +30",
+        deltas: [
+          { stat: STAT.armor, add: 2 },
+          { stat: STAT.maxHealth, add: 30 * STAT_SCALE },
+        ],
+      },
+    ],
+  },
+  {
+    id: "butchersMark",
+    name: "Butcher's Mark",
+    wireId: 17,
+    blurb: "Some blows land where it matters.",
+    sprite: 16,
+    levels: percentLevels(STAT.critChance, 40, "Critical chance +4%"),
+  },
+  {
+    id: "ruinousEdge",
+    name: "Ruinous Edge",
+    wireId: 18,
+    blurb: "When it matters, it matters more.",
+    sprite: 17,
+    levels: percentLevels(STAT.critDamage, 150, "Critical damage +15%"),
+  },
+  {
+    id: "shroudOfVigil",
+    name: "Shroud of Vigil",
+    wireId: 19,
+    // iFrames are counted in ticks, not permille: this is a flat window, the same on every device.
+    blurb: "You stay untouchable a moment longer.",
+    sprite: 18,
+    levels: [
+      { text: "Invulnerable longer", deltas: [{ stat: STAT.iFrames, add: 8 }] },
+      { text: "Invulnerable longer", deltas: [{ stat: STAT.iFrames, add: 8 }] },
+      { text: "Invulnerable longer", deltas: [{ stat: STAT.iFrames, add: 8 }] },
+      { text: "Invulnerable longer", deltas: [{ stat: STAT.iFrames, add: 8 }] },
+      {
+        text: "Invulnerable longer, move speed +5%",
+        deltas: [
+          { stat: STAT.iFrames, add: 12 },
+          { stat: STAT.moveSpeed, add: 50 },
+        ],
+      },
+    ],
+  },
+  {
+    id: "paleFeast",
+    name: "Pale Feast",
+    wireId: 20,
+    blurb: "There is more of you to lose.",
+    sprite: 19,
+    levels: [
+      { text: "Max health +25", deltas: [{ stat: STAT.maxHealth, add: 25 * STAT_SCALE }] },
+      { text: "Max health +25", deltas: [{ stat: STAT.maxHealth, add: 25 * STAT_SCALE }] },
+      { text: "Max health +25", deltas: [{ stat: STAT.maxHealth, add: 25 * STAT_SCALE }] },
+      { text: "Max health +25", deltas: [{ stat: STAT.maxHealth, add: 25 * STAT_SCALE }] },
+      {
+        text: "Max health +50, regeneration +0.2/s",
+        deltas: [
+          { stat: STAT.maxHealth, add: 50 * STAT_SCALE },
+          { stat: STAT.regen, add: 200 },
         ],
       },
     ],

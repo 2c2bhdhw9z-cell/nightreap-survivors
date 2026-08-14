@@ -1578,9 +1578,13 @@ Deliberately early. With 6 weapons netcode bugs are findable; with 40 they aren'
   queued. Remaining piece is the "continue your run?" screen itself, which waits on mock approval.
 - **Found and fixed here:** the replay recorder took its player count from a fixed four-slot character
   array, so every solo run's log claimed four players and no solo run could ever have revalidated.
-- **Known hole, Phase 4:** a run that ends on a *time limit* cannot be revalidated from its log alone,
-  because the limit is not in the header. Timed modes need to carry their limit as mode data like every
-  other rule. Endings that exist today — defeat, White Hand — are fine.
+- ~~**Known hole: a run that ends on a time limit could not be revalidated**~~ — **FIXED** while the
+  passives landed, because finishing the passives is what exposed it: the loadout got strong enough to
+  survive to the clock instead of dying first, and the check that resimulates an interrupted run started
+  refusing an honest run. A run's time limit is now written into its own log, in one of the three spare
+  slots the format has always carried, so no old recording was invalidated and a recording made before
+  today still correctly says "no limit". Both halves are checked, and both were deliberately broken to
+  prove the checks notice.
 - ~~**The co-op session: host-confirmed lockstep**~~ — **DONE.** The layer that turns four phones into
   one game. Nothing about spawns, damage or deaths is ever sent; the host confirms the seventeen bytes
   of input for each tick and every guest replays them, so all four worlds match for free. A late input
@@ -2006,11 +2010,18 @@ the previous best time shown next to the new one.
 
 ### Phase 4 — Content, part 1 (this is the launch content set)
 
-**Status: NOT STARTED.**
+**Status: STARTED.**
 Sized to the launch-smaller recommendation. If you'd rather launch with everything, Phases 4 and 5
 simply merge and launch moves later.
 - **~15 weapons + their evolutions and unions** (weapon level 8 + maxed passive + chest).
-- **20 passives** — all of them; passives are cheap and they gate evolutions.
+- ~~**20 passives**~~ — **DONE.** All twenty items are in, five levels each, a hundred upgrade steps in
+  total: wider reach, faster shots, longer-lasting effects, an extra projectile, more gold, faster
+  learning, better luck, more pierce, harder shoving, a second life, critical hits and their damage, a
+  longer moment of being untouchable, and more health. Every single level gives something — no level
+  reads "no change" — and the numbers on the card are the same numbers the game applies, because they are
+  read from one row. Finishing them found and fixed two real bugs elsewhere: a timed run could not be
+  proved legitimate from its recording, and a co-op check silently stopped proving anything the moment
+  the party survived a full minute.
 - 5 normal stages: real layouts, prop sets, per-stage wave and boss tables (including 15-minute stages).
 - **~12 characters**, ~8 arcanas, ~50 achievements.
 - ~40 enemy types, elites, **bosses** on fixed timestamps.

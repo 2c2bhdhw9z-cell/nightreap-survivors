@@ -44,6 +44,7 @@ import {
   runParty,
   type Party,
 } from "./sim-network";
+import { MOD_DEV_GODMODE } from "../sim/modifiers";
 import { HASH_SEED } from "./state-hash";
 
 let failures = 0;
@@ -137,7 +138,17 @@ function testAgreement(): void {
 
   for (const playerCount of [2, 3, 4]) {
     const started = nowMs();
-    const party = makeParty({ playerCount, seed: 9100 + playerCount, conditions: DEFAULT_CONDITIONS });
+    // Godmode is on for one reason: this section is about whether two to four worlds agree for a solid
+    // minute, and a party that dies at fifty-five seconds stops simulating and stops proving anything.
+    // Whether that seed's card picks are strong enough to survive is a balance question, not a
+    // networking one, so it is taken off the table. Every peer gets the same modifier, so the thing
+    // being measured — that all of them reach the same numbers — is untouched.
+    const party = makeParty({
+      playerCount,
+      seed: 9100 + playerCount,
+      conditions: DEFAULT_CONDITIONS,
+      modifiers: [MOD_DEV_GODMODE],
+    });
     const ticks = 3600;
     const diverged = runChecked(party, ticks);
     const ms = Math.round(nowMs() - started);

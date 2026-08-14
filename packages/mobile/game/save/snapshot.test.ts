@@ -253,6 +253,9 @@ class RunSim implements ReplaySim {
       buildId: header.buildId,
       contentVersion: header.contentVersion,
       tainted: header.tainted,
+      // The limit is part of the run, so the replay has to end where the run ended. Without it a timed
+      // run replays straight past its own ending and finishes in a world that is still going.
+      timeLimitTicks: header.timeLimitTicks,
     });
   }
 
@@ -283,7 +286,16 @@ check("resume accepted", restoreRun(resumed, midBytes) === SNAPSHOT_ERROR.NONE);
 drive(resumed, LIMIT * 3);
 check("resumed run played through to an ending", resumed.over, `end ${resumed.end} at tick ${resumed.ticks}`);
 
-const verdict = validateForLadder(resumed.recorder.encode(), new RunSim());
+const resumedLog = resumed.recorder.encode();
+// Checked here rather than taken on trust: this run only ends because it is a timed one, so if the log
+// did not carry its own limit the replay below would simulate past the ending and be refused — which is
+// exactly what used to happen.
+check(
+  "the log remembers the run was on a clock",
+  inspectSnapshot(midBytes).error === SNAPSHOT_ERROR.NONE && resumed.recorder.header.timeLimitTicks === LIMIT,
+  `${resumed.recorder.header.timeLimitTicks} ticks`,
+);
+const verdict = validateForLadder(resumedLog, new RunSim());
 check(
   "the resumed run's replay reproduces exactly and is accepted",
   verdict.accepted,

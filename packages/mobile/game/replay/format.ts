@@ -122,7 +122,8 @@ export function isLadderEligible(tainted: number): boolean {
  *  24  u32  startedAtUnixSec — wall clock, informational only, NEVER hashed
  *  28  u32  tickCount
  *  32  i32  finalStateHash
- *  36  u32  reserved0
+ *  36  u32  timeLimitTicks   — 0 means "no limit", which is what every log written before this field
+ *                              existed meant, so no version bump was needed to add it
  *  40  u32  reserved1
  *  44  u32  reserved2
  *
@@ -130,7 +131,14 @@ export function isLadderEligible(tainted: number): boolean {
  * run-length-encoded input stream.
  *
  * The reserved words are there because bumping the version costs us every log in the wild. Three spare
- * u32s buy several future fields for free.
+ * u32s buy several future fields for free, and this is the first one spent.
+ *
+ * WHY A TIME LIMIT IS PART OF THE RUN AND NOT PART OF THE SIMULATION
+ * A timed mode ends the run the moment the clock runs out, and "the run is over" is state: it stops the
+ * world, seals the result and is inside the state hash. A replay that did not know about the limit would
+ * simulate straight past it and finish in a world that is still running, so the hashes could not match
+ * and an honest timed run would be refused. Storing the limit next to the seed makes the run reproducible
+ * from the log alone, which is the whole promise of the format.
  */
 export const HEADER_BYTES = 48;
 
@@ -147,7 +155,7 @@ export const HDR = {
   STARTED_AT: 24,
   TICK_COUNT: 28,
   FINAL_HASH: 32,
-  RESERVED0: 36,
+  TIME_LIMIT_TICKS: 36,
   RESERVED1: 40,
   RESERVED2: 44,
 } as const;
@@ -167,6 +175,8 @@ export interface RunHeader {
   startedAtUnixSec: number;
   tickCount: number;
   finalStateHash: number;
+  /** Ticks after which the run ends itself. 0 means the run has no limit. */
+  timeLimitTicks: number;
 }
 
 export const MAX_REPLAY_MODIFIERS = 64;
@@ -187,6 +197,7 @@ export function createRunHeader(): RunHeader {
     startedAtUnixSec: 0,
     tickCount: 0,
     finalStateHash: 0,
+    timeLimitTicks: 0,
   };
 }
 

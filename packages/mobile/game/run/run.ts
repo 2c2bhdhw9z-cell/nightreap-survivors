@@ -416,6 +416,7 @@ export class Run {
         modifiers: this.modifierWire,
         modifierCount: count,
         tainted: this.tainted,
+        timeLimitTicks: this.timeLimitTicks,
       });
     }
   }

@@ -462,15 +462,37 @@ section("unlocks");
   }
   check("locked content is not offered", onlyUnlocked);
 
-  const g = makeRun(64);
-  for (let i = 1; i < WEAPON_TYPES.length; i++) g.cards.weaponUnlocked[i] = 0;
-  earnLevels(g, 5);
-  open(g, RUN_FLAG.ignoreUnlocks);
-  let sawLocked = false;
-  for (let i = 0; i < g.cards.offerCount; i++) {
-    if (g.cards.offerKind[i] === CARD_KIND.newWeapon && g.cards.offerType[i] !== 0) sawLocked = true;
+  // Deliberately across many seeds rather than one: a single screen only shows four cards, so with a
+  // large content pool "this seed happened to deal four passives" would fail a working dev flag. What
+  // is actually being claimed is a pool claim, not a deal claim — locked weapons are reachable with
+  // the flag on and unreachable with it off — so both halves are asked of the same list of seeds.
+  const SEEDS = 24;
+  let lockedWeaponDealsWithFlag = 0;
+  let lockedWeaponDealsWithoutFlag = 0;
+  for (let seed = 1; seed <= SEEDS; seed++) {
+    for (const useFlag of [true, false]) {
+      const g = makeRun(seed * 977);
+      for (let i = 1; i < WEAPON_TYPES.length; i++) g.cards.weaponUnlocked[i] = 0;
+      earnLevels(g, 5);
+      open(g, useFlag ? RUN_FLAG.ignoreUnlocks : 0);
+      for (let i = 0; i < g.cards.offerCount; i++) {
+        if (g.cards.offerKind[i] !== CARD_KIND.newWeapon) continue;
+        if (g.cards.offerType[i] === 0) continue;
+        if (useFlag) lockedWeaponDealsWithFlag++;
+        else lockedWeaponDealsWithoutFlag++;
+      }
+    }
   }
-  check("the dev flag opens the whole pool", sawLocked);
+  check(
+    "the dev flag opens the whole pool",
+    lockedWeaponDealsWithFlag > 0,
+    `${lockedWeaponDealsWithFlag} locked weapons dealt across ${SEEDS} screens`,
+  );
+  check(
+    "and without the flag a locked weapon never once appears",
+    lockedWeaponDealsWithoutFlag === 0,
+    `${lockedWeaponDealsWithoutFlag} leaks`,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------

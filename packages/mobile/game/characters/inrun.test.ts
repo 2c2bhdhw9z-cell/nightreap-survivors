@@ -20,6 +20,7 @@
 
 import { Run } from "../run/run";
 import { MOD_DEV_GODMODE, MODIFIERS_BY_WIRE_ID } from "../sim/modifiers";
+import { MAX_PASSIVES, PASSIVE_TYPES } from "../sim/passives";
 import { STAT, STAT_BASE, Stats } from "../sim/stats";
 import { CHARACTERS } from "./roster";
 import {
@@ -183,6 +184,28 @@ section("the ceiling holds");
   );
 }
 
+/**
+ * What the passives this player is actually carrying add to one stat.
+ *
+ * Every owned level folds in, so a passive at level 3 contributes levels 1, 2 and 3 — exactly the way the
+ * loadout is rebuilt. Read from the run's own store rather than from a list written down here, so a test
+ * expectation can never drift from what the run really picked.
+ */
+function passiveContribution(run: Run, stat: number): number {
+  let total = 0;
+  for (let slot = 0; slot < MAX_PASSIVES; slot++) {
+    const type = run.passives.typeIndex[slot];
+    if (type < 0) continue;
+    const level = run.passives.level[slot];
+    for (let li = 0; li < level; li++) {
+      for (const d of PASSIVE_TYPES[type].levels[li].deltas) {
+        if (d.stat === stat) total += d.add ?? 0;
+      }
+    }
+  }
+  return total;
+}
+
 // -------------------------------------------------------------------------------------------------
 section("it survives a card pick");
 
@@ -205,17 +228,20 @@ section("it survives a card pick");
   check("the run really did take cards", run.cards.picksMade > 0, `${run.cards.picksMade} picks`);
   check("the run really did level", run.prog.level > GAMBLER.growth.everyLevels * 2, `level ${run.prog.level}`);
 
-  // Why the gambler and not the starter: no passive item and no weapon in the game touches critical chance,
-  // so after a hundred card picks the crit number is the character's shift plus its growth steps and nothing
-  // else. That makes this an exact equality rather than "at least" — and an exact equality is the only kind
-  // that notices a growth record being quietly dropped by a pick.
+  // This is an exact equality, not an "at least", because an exact equality is the only kind that notices a
+  // growth record being quietly dropped by a pick. Exactness used to rest on "nothing in the game touches
+  // critical chance", which stopped being true the moment the launch passives were finished. So instead of
+  // assuming the run's contents contribute nothing, the contribution is read back off the run's own passives
+  // and added in: the claim is still "the character's shift and every earned step survive a hundred picks",
+  // and it now stays true no matter what content is added later.
   const tier = Math.min(
     Math.floor((run.prog.level - 1) / GAMBLER.growth.everyLevels),
     GAMBLER.growth.maxTiers,
   );
   check("the run reached a level worth several steps", tier >= 2, `${tier} steps`);
   const shift = GAMBLER.shifts.find((s) => s.stat === GAMBLER.growth.stat)?.add ?? 0;
-  const expected = STAT_BASE[GAMBLER.growth.stat] + shift + GAMBLER.growth.add * tier;
+  const fromPassives = passiveContribution(run, GAMBLER.growth.stat);
+  const expected = STAT_BASE[GAMBLER.growth.stat] + shift + GAMBLER.growth.add * tier + fromPassives;
   check(
     "the character's shift and every earned step are still applied",
     run.stats.values[GAMBLER.growth.stat] === expected,

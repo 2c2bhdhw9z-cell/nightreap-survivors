@@ -3132,3 +3132,55 @@ reproducible, so both are now part of the project and both are checked.
   accepting an empty sheet, and the grid check disabled. Two of them survived the first attempt and both
   checks were strengthened until they didn't: one only looked at rows, and one measured how wide the drawing
   was when it should have counted how many pieces it had.
+
+## Phase 4 has started: all twenty passive items are in
+
+Passives are the items you pick up that don't shoot anything — they just make you better. There were six.
+Now there are twenty, which is all of them for launch.
+
+The fourteen new ones: wider reach, faster projectiles, effects that last longer, an extra projectile,
+more gold, faster learning, better luck, shots that punch through more enemies, harder shoving, a second
+life, critical hits, harder critical hits, a longer moment of being untouchable after a hit, and more
+health.
+
+Each one has five levels, so that's a hundred separate upgrade steps. Two rules held throughout:
+
+- **No level is ever a dud.** Every single one of the hundred gives something. Where the natural step was
+  too strong to hand out five times — an extra projectile, a second life — the levels in between pay
+  something else instead of standing still.
+- **The card cannot lie.** The words you read and the effect you get come from the same line, so they
+  can't drift apart.
+
+They're all in now rather than half now and half later, because weapons need them: an evolved weapon asks
+you to own a particular item, and it can't ask for one that doesn't exist yet.
+
+### Finishing them found two real bugs, both now fixed
+
+Neither had anything to do with passives. They were both hidden behind the fact that the old six-item
+loadout was weak.
+
+- **A timed run couldn't prove it was legitimate.** A run that ends because the clock ran out ends
+  differently from a run that ends because you died, and the recording of it didn't mention the clock at
+  all. So when the game replayed that recording to check it, the replay sailed past the ending and
+  finished in a run that was still going — and the check refused an honest run. It had never come up
+  because runs used to die before the clock ran out. The recording now carries its own clock, in a spare
+  slot the format has always had, so nothing recorded before today was invalidated.
+- **A co-op check had quietly stopped proving anything.** The test that four phones agree with each other
+  for a solid minute stopped early once the party got strong enough to survive — no, the opposite: the
+  party *died* at fifty-five seconds, the worlds stopped simulating, and "they agreed" became true for the
+  boring reason. It now runs unkillable, so whether the party survives is a balance question and can't
+  quietly switch the test off.
+
+### And the passives got their own set of checks
+
+They didn't have any of their own before — 394 lines of them now, against 535 lines of the passives
+themselves. They check that no item shares a number or a picture with another, that no level is a dud,
+that a "+1 armour" was never fat-fingered into "+1000 armour", that levels can't be pushed past five, and
+that taking the same items in a different order lands on exactly the same numbers — which is what lets a
+recording and a co-op guest agree.
+
+Then eight deliberate breakages were made to the passives to be sure the checks would notice: a level
+emptied out, an armour number inflated a thousandfold, two items given the same picture, two given the
+same number, the loadout patched instead of rebuilt, only the top level counted, the five-level cap
+loosened, and the item numbering squeezed. All eight were caught. Two more were made to the recording
+format, and both were caught too.

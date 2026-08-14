@@ -217,6 +217,92 @@ section("record and replay");
 
 /* ---- rng bounds: regression guard ------------------------------------------------------------- */
 
+/* ---- a run's time limit is part of its log ------------------------------------------------------ */
+
+section("time limit travels with the log");
+{
+  // A timed mode ends the run when the clock runs out, and "the run has ended" is state: it stops the
+  // world and is inside the state hash. A replay that did not know the limit would simulate past the
+  // ending and finish in a world that is still running, so an honest timed run would be refused by our
+  // own validator. The limit therefore has to survive encode and decode, and it is stored in one of the
+  // header's spare words so old logs — which had no limit — read back 0 and stay valid.
+  const LIMIT = 9_000;
+  const limited = new ReplayRecorder();
+  limited.begin({
+    seed: 4242,
+    stageId: 1,
+    buildId: 7,
+    contentVersion: 1,
+    characterIds: [1],
+    timeLimitTicks: LIMIT,
+  });
+  const limitedSim = new StubSim();
+  limitedSim.resetForReplay(limited.header);
+  const axes = new Int8Array(8);
+  const buttons = new Uint8Array(4);
+  for (let t = 0; t < 120; t++) {
+    limited.recordTick(axes, buttons);
+    limitedSim.tickWithInput(axes, buttons);
+  }
+  limited.end(limitedSim.hashState(HASH_SEED));
+  const limitedBytes = limited.encode();
+  const limitedBack = decodeReplay(limitedBytes);
+  check("a timed log decodes", limitedBack.error === REPLAY_ERROR.NONE, describeReplayError(limitedBack.error));
+  check(
+    "and it still knows when the run was going to end",
+    limitedBack.header.timeLimitTicks === LIMIT,
+    `${limitedBack.header.timeLimitTicks} ticks`,
+  );
+  check("carrying it cost no header space", limitedBytes.byteLength === untimedSize(), `${limitedBytes.byteLength} bytes`);
+
+  const endless = recordRun(120, 1, 4242);
+  check(
+    "a run with no limit says so, rather than inventing one",
+    decodeReplay(endless.bytes).header.timeLimitTicks === 0,
+    `${decodeReplay(endless.bytes).header.timeLimitTicks}`,
+  );
+
+  // A nonsense limit is clamped where it is written rather than trusted into the sim: a negative or
+  // fractional tick count cannot describe any real run, and a replay that inherited one would end at a
+  // tick the recorded run never reached.
+  const silly = new ReplayRecorder();
+  silly.begin({
+    seed: 1,
+    stageId: 1,
+    buildId: 7,
+    contentVersion: 1,
+    characterIds: [1],
+    timeLimitTicks: -50,
+  });
+  check("a negative limit is refused, not stored", silly.header.timeLimitTicks === 0, `${silly.header.timeLimitTicks}`);
+  const fractional = new ReplayRecorder();
+  fractional.begin({
+    seed: 1,
+    stageId: 1,
+    buildId: 7,
+    contentVersion: 1,
+    characterIds: [1],
+    timeLimitTicks: 600.7,
+  });
+  check("a fractional limit becomes whole ticks", fractional.header.timeLimitTicks === 600, `${fractional.header.timeLimitTicks}`);
+}
+
+/** Byte length of the same 120-tick solo log recorded without a limit, so the two can be compared. */
+function untimedSize(): number {
+  const r = new ReplayRecorder();
+  r.begin({ seed: 4242, stageId: 1, buildId: 7, contentVersion: 1, characterIds: [1] });
+  const sim = new StubSim();
+  sim.resetForReplay(r.header);
+  const axes = new Int8Array(8);
+  const buttons = new Uint8Array(4);
+  for (let t = 0; t < 120; t++) {
+    r.recordTick(axes, buttons);
+    sim.tickWithInput(axes, buttons);
+  }
+  r.end(sim.hashState(HASH_SEED));
+  return r.encode().byteLength;
+}
+
 section("rng bounds");
 {
   // Regression: `nextInt` computed its rejection limit as `(2**32 - 2**32 % bound) >>> 0`. When `bound`

@@ -85,6 +85,8 @@ export class ReplayRecorder {
     modifierCount?: number;
     startedAtUnixSec?: number;
     tainted?: number;
+    /** Ticks after which the run ends itself, or 0 for no limit. Part of the run, so part of the log. */
+    timeLimitTicks?: number;
   }): void {
     const h = this.header;
     h.replayVersion = REPLAY_VERSION;
@@ -93,6 +95,7 @@ export class ReplayRecorder {
     h.seed = options.seed;
     h.tainted = options.tainted ?? 0;
     h.stageId = options.stageId;
+    h.timeLimitTicks = Math.max(0, Math.trunc(options.timeLimitTicks ?? 0));
     const declared = options.playerCount ?? options.characterIds.length;
     h.characterCount = Math.min(Math.max(1, declared | 0), MAX_REPLAY_PLAYERS);
     for (let i = 0; i < h.characterCount; i++) h.characterIds[i] = options.characterIds[i] ?? 0;
@@ -298,7 +301,7 @@ export class ReplayRecorder {
     view.setUint32(HDR.STARTED_AT, h.startedAtUnixSec >>> 0, true);
     view.setUint32(HDR.TICK_COUNT, h.tickCount >>> 0, true);
     view.setInt32(HDR.FINAL_HASH, h.finalStateHash | 0, true);
-    view.setUint32(HDR.RESERVED0, 0, true);
+    view.setUint32(HDR.TIME_LIMIT_TICKS, h.timeLimitTicks >>> 0, true);
     view.setUint32(HDR.RESERVED1, 0, true);
     view.setUint32(HDR.RESERVED2, 0, true);
 
@@ -355,6 +358,8 @@ export function decodeReplay(bytes: Uint8Array, into?: RunHeader): DecodedReplay
   header.startedAtUnixSec = view.getUint32(HDR.STARTED_AT, true);
   header.tickCount = view.getUint32(HDR.TICK_COUNT, true);
   header.finalStateHash = view.getInt32(HDR.FINAL_HASH, true);
+  // Reads 0 out of any log written before this field was spent, which is exactly what those runs had.
+  header.timeLimitTicks = view.getUint32(HDR.TIME_LIMIT_TICKS, true);
 
   if (header.characterCount < 1 || header.characterCount > MAX_REPLAY_PLAYERS) {
     return fail(REPLAY_ERROR.BAD_PLAYER_COUNT);
