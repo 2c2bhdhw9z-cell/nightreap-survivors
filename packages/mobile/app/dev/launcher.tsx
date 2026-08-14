@@ -2,8 +2,9 @@
  * Dev launcher. This is an instrument panel, not player-facing UI, so it is deliberately plain and
  * is not subject to the mock-first rule — no title screen, no art, nothing here ships.
  *
- * It exists for one reason: opening the preview used to land on the template's stock "Welcome"
- * screen with no route into the benchmark, which reads as "the app did nothing".
+ * It used to be the app's front door, which meant the first thing anybody saw on a phone was a list of
+ * instruments. The title screen has that job now, and this page moved behind a hidden tap on the version
+ * line at the bottom of it — reachable in two seconds if you know, invisible if you do not.
  */
 
 import { StyleSheet, Text, View } from "react-native";
@@ -19,12 +20,12 @@ const STEPS = [
   "Screenshot the panel once WARM reads ready.",
 ] as const;
 
-export default function Index() {
+export default function DevLauncher() {
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.kicker}>NIGHTREAP SURVIVORS</Text>
-        <Text style={styles.title}>Phase 1 — The Run</Text>
+        <Text style={styles.title}>Dev launcher</Text>
       </View>
 
       {/* The game itself. Everything else on this screen is an instrument. */}

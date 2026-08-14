@@ -215,7 +215,7 @@ export function defaultSettings(): SaveSettings {
   return {
     masterVolume: 80,
     musicVolume: 70,
-    sfxVolume: 85,
+    sfxVolume: 80,
     colorblindMode: 0,
     vfxLevel: 0,
     damageNumbers: 100,
