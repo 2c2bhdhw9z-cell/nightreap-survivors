@@ -741,6 +741,74 @@ function testCost(): void {
   check("it was actually breaking things the whole time", field.totalBroken > 15, `${field.totalBroken} broken`);
 }
 
+// ---------------------------------------------------------------------------
+// 11. How cluttered a stage is
+// ---------------------------------------------------------------------------
+
+/**
+ * Every stage says how much scenery it wants. The marsh is meant to be choked with it and the gallows
+ * is meant to be bare, and this is the only way the simulation can tell one floor from another.
+ */
+function testClutter(): void {
+  section("11. How cluttered a stage is");
+
+  function cellsWithProps(chance: number | undefined): number {
+    let hits = 0;
+    for (let cy = 0; cy < 80; cy++) {
+      for (let cx = 0; cx < 80; cx++) {
+        if (chance === undefined ? cellHasProp(SEED, cx, cy) : cellHasProp(SEED, cx, cy, chance)) hits++;
+      }
+    }
+    return hits;
+  }
+
+  const dflt = cellsWithProps(undefined);
+  const same = cellsWithProps(PROP_CHANCE_PER_1024);
+  check("leaving the clutter out means the old default", dflt === same, `${dflt}`);
+
+  const bare = cellsWithProps(60);
+  const choked = cellsWithProps(600);
+  check("a bare floor has far less scenery", bare < dflt, `${bare} vs ${dflt}`);
+  check("a choked one has far more", choked > dflt, `${choked} vs ${dflt}`);
+  check("nothing at all means nothing at all", cellsWithProps(0) === 0, `${cellsWithProps(0)}`);
+  check("everything means everything", cellsWithProps(1024) === 6400, `${cellsWithProps(1024)}`);
+  check(
+    "the share asked for is the share delivered",
+    Math.abs(choked / 6400 - 600 / 1024) < 0.03,
+    `${Math.round((choked / 6400) * 1024)} per 1024, wanted 600`,
+  );
+
+  const field = new PropField();
+  field.setSeed(SEED);
+  check("a field left alone uses the default", field.propChance === PROP_CHANCE_PER_1024, `${field.propChance}`);
+  field.setSeed(SEED, 500);
+  check("a field told otherwise remembers it", field.propChance === 500, `${field.propChance}`);
+
+  // A live-ops table shipping nonsense must not put a crate in every cell of an endless floor.
+  field.setSeed(SEED, 9999);
+  check("a silly high number is clamped", field.propChance === 1024, `${field.propChance}`);
+  field.setSeed(SEED, -40);
+  check("and a negative one is clamped too", field.propChance === 0, `${field.propChance}`);
+
+  const bareField = new PropField();
+  bareField.setSeed(SEED, 40);
+  bareField.stream(0, 0);
+  const chokedField = new PropField();
+  chokedField.setSeed(SEED, 700);
+  chokedField.stream(0, 0);
+  check(
+    "and the field actually streams in what it was told to",
+    chokedField.count > bareField.count,
+    `${bareField.count} bare vs ${chokedField.count} choked`,
+  );
+  check("an empty stage streams in nothing", (() => {
+    const empty = new PropField();
+    empty.setSeed(SEED, 0);
+    empty.stream(0, 0);
+    return empty.count === 0;
+  })());
+}
+
 testContent();
 testLayout();
 testStreaming();
@@ -751,6 +819,7 @@ testPayout();
 testLuck();
 testHash();
 testCost();
+testClutter();
 
 console.log(`\n${failures === 0 ? "PASS — destructible scenery" : `FAIL — ${failures} check${failures === 1 ? "" : "s"}`}`);
 

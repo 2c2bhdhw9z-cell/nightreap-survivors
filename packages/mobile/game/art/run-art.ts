@@ -197,6 +197,23 @@ export const STAGE_ART: Readonly<Record<string, StageArt>> = {
     floorTint: "#434C45",
     propTint: "#6A7468",
   },
+  // Gallows Row reuses tiles from the crypt and the ossuary under a colder, browner light. Reusing a
+  // tile is not laziness here: the whole game is one 32-pixel sheet, and two stages that share a tile
+  // but not a tint read as two different places on a phone -- which is what the contrast check
+  // measures, and what the eye actually judges.
+  gallows: {
+    floorFrames: ["tiles/icon-02", "tiles/icon-05", "tiles/icon-07", "tiles/icon-11"],
+    propFrames: ["props/icon-04", "props/icon-09", "props/icon-05", "props/icon-02"],
+    floorTint: "#4A4340",
+    propTint: "#6B635C",
+  },
+  belfry: {
+    // Two of these four are the pale bone tiles, so this tint is nearly as heavy as the ossuary's.
+    floorFrames: ["tiles/icon-01", "tiles/icon-03", "tiles/icon-04", "tiles/icon-09"],
+    propFrames: ["props/icon-06", "props/icon-12", "props/icon-08", "props/icon-11"],
+    floorTint: "#403D4C",
+    propTint: "#68627A",
+  },
 };
 
 /**

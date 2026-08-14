@@ -247,9 +247,21 @@ export function propHash(cx: number, cy: number, salt: number): number {
   return h >>> 0;
 }
 
-/** Does this cell carry a prop? */
-export function cellHasProp(seed: number, cx: number, cy: number): boolean {
-  return propHash(cx, cy, seed) % 1024 < PROP_CHANCE_PER_1024;
+/**
+ * Does this cell carry a prop?
+ *
+ * The chance is a parameter rather than the constant it used to be, because a stage owns how cluttered
+ * it is: the marsh is meant to be choked with scenery and the gallows is meant to be bare, and that is
+ * the only difference between them that the simulation can express. Left out, it falls back to the
+ * default, so every existing caller and every existing test still means exactly what it meant before.
+ */
+export function cellHasProp(
+  seed: number,
+  cx: number,
+  cy: number,
+  chancePer1024: number = PROP_CHANCE_PER_1024,
+): boolean {
+  return propHash(cx, cy, seed) % 1024 < chancePer1024;
 }
 
 /**
@@ -328,6 +340,7 @@ export class PropField {
   brokenForgotten = 0;
 
   private seed = 0;
+  private chance = PROP_CHANCE_PER_1024;
 
   /** Ring of broken cells, packed. Written round-robin; oldest entry is the one overwritten. */
   private readonly brokenKeys: Int32Array;
@@ -365,10 +378,22 @@ export class PropField {
     return this.pool.slots;
   }
 
-  /** Point the field at a stage. Clears everything, including what was broken on the last one. */
-  setSeed(seed: number): void {
+  /**
+   * Point the field at a stage. Clears everything, including what was broken on the last one.
+   *
+   * The second number is how often a cell holds something, out of 1024 — the stage's own clutter. It
+   * is clamped rather than trusted: a live-ops table shipping 5000 here would otherwise put a crate in
+   * every cell of an endless floor.
+   */
+  setSeed(seed: number, chancePer1024: number = PROP_CHANCE_PER_1024): void {
     this.seed = seed | 0;
+    this.chance = Math.max(0, Math.min(1024, chancePer1024 | 0));
     this.clear();
+  }
+
+  /** How cluttered the current stage is, out of 1024. */
+  get propChance(): number {
+    return this.chance;
   }
 
   get stageSeed(): number {
@@ -453,7 +478,7 @@ export class PropField {
     const centreY = cellOf(py);
     for (let cy = centreY - reach; cy <= centreY + reach; cy++) {
       for (let cx = centreX - reach; cx <= centreX + reach; cx++) {
-        if (!cellHasProp(this.seed, cx, cy)) continue;
+        if (!cellHasProp(this.seed, cx, cy, this.chance)) continue;
         const wx = cellCentre(cx) + propOffset(this.seed, cx, cy, 0);
         const wy = cellCentre(cy) + propOffset(this.seed, cx, cy, 1);
         const dx = wx - px;

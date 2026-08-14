@@ -76,6 +76,7 @@ import { drawChestScreen, drawChestWorld, type ChestArt } from "@/game/render/ch
 import { CUE } from "@/game/sim/cues";
 import { CHEST_REWARD, MAX_CHEST_REWARDS, rewardLine } from "@/game/sim/chests";
 import { PICKUP } from "@/game/sim/pickups";
+import { STAGE_TYPES, stageAt } from "@/game/sim/stages";
 import { Ground, type FrameSource, type GroundTheme } from "@/game/render/ground";
 import { Run } from "@/game/run/run";
 import { STAT, STAT_SCALE } from "@/game/sim/stats";
@@ -282,8 +283,13 @@ export default function PlayScreen() {
   // Who the player picked on the character screen. A route parameter rather than a saved field, because
   // "the character you last played" is a save migration and this is not it: an unreadable or locked choice
   // falls back to somebody the profile definitely owns rather than refusing to start.
-  const params = useLocalSearchParams<{ character?: string }>();
+  const params = useLocalSearchParams<{ character?: string; stage?: string }>();
   const wanted = Number.parseInt(params.character ?? "", 10);
+  // Which of the five places this run happens in. Also a route parameter, for the same reason as the
+  // character: anything unreadable falls back to the first stage, which every profile can always play.
+  const wantedStage = Number.parseInt(params.stage ?? "", 10);
+  const stageRef = useRef(0);
+  stageRef.current = Number.isSafeInteger(wantedStage) ? Math.max(0, Math.min(STAGE_TYPES.length - 1, wantedStage)) : 0;
   const characterRef = useRef(0);
   characterRef.current = firstPlayable(settings.save, Number.isSafeInteger(wanted) ? wanted : 0);
   const characterModsRef = useRef<RunModifier[]>([]);
@@ -399,7 +405,10 @@ export default function PlayScreen() {
       // bone chips painted into it, and a bone chip repeated across a whole screen is indistinguishable
       // from an experience gem lying on the floor. Knocking the floor back is the only lever available,
       // because a tint can darken and never brighten. `art/floor_contrast_test.py` measures the gap.
-      const stageArt = STAGE_ART.crypt;
+      // Which floor gets drawn is the stage's own business. The stage table names an art set and the
+      // art table owns the pictures; the two are checked against each other by the art tests, so a
+      // stage can never name a set that was never drawn.
+      const stageArt = STAGE_ART[stageAt(stageRef.current).artKey];
       const ground = new Ground(source, {
         ...DEBUG_GROUND,
         floorFrames: stageArt?.floorFrames ?? [],
@@ -1022,6 +1031,7 @@ export default function PlayScreen() {
     run.begin({
       seed: seedRef.current,
       playerCount: partyRef.current,
+      stageId: stageRef.current,
       modifiers: mods,
       powerUps: powerUpsRef.current,
       characters: characterModsRef.current,

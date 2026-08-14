@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { CHARACTERS } from "../characters/roster";
 import { ENEMY_TYPES } from "../sim/enemies";
 import { PICKUP, PICKUP_KIND_COUNT } from "../sim/pickups";
+import { STAGE_TYPES } from "../sim/stages";
 import { WEAPON_TYPES } from "../sim/weapons";
 import {
   BREAKABLE_FRAME,
@@ -177,6 +178,20 @@ for (let i = 0; i < stageNames.length; i++) {
   }
 }
 ok(`no two stages are the same floor twice${identicalStages.length ? ` (${identicalStages.join(", ")})` : ""}`, identicalStages.length === 0);
+
+// --- every place has a floor, and every floor is somebody's place ------------------------------------
+
+// The stage table and the art table are written separately on purpose: the simulation must not import
+// the pictures, or the game would not load on a phone. That separation is only safe if something checks
+// the two agree, which is this. A stage naming a floor nobody drew is a black screen; a floor no stage
+// uses is art that was made and then forgotten about.
+for (const stage of STAGE_TYPES) {
+  ok(`${stage.name} has a floor drawn for it`, STAGE_ART[stage.artKey] !== undefined);
+}
+const usedArtKeys = new Set(STAGE_TYPES.map((s) => s.artKey));
+const orphanArt = stageNames.filter((n) => !usedArtKeys.has(n));
+ok(`no floor was drawn for a place that does not exist${orphanArt.length ? ` (${orphanArt.join(", ")})` : ""}`, orphanArt.length === 0);
+ok("every place has its own floor, no two share one", usedArtKeys.size === STAGE_TYPES.length);
 
 // --- breakables and the white cell -------------------------------------------------------------------
 

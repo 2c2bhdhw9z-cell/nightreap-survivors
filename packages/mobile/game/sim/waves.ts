@@ -134,6 +134,15 @@ export const DEFAULT_WAVES: readonly WaveEntry[] = [
   },
 ];
 
+/**
+ * How many owed named fights are remembered while the floor is busy.
+ *
+ * Deliberately small. If three bosses have stacked up, the player is so far behind the table that
+ * queueing a fourth would mean a wall of named fights the moment they finally win one, which is a
+ * worse outcome than quietly dropping the oldest of them.
+ */
+export const MAX_QUEUED_BOSSES = 3;
+
 /** Run-time seconds at which the Reaper arrives on a standard stage. */
 export const REAPER_SECOND = 30 * 60;
 
@@ -168,6 +177,31 @@ export class WaveDirector {
   /** Spawns refused because the live cap or the pool was full. */
   refusedTotal = 0;
 
+  /**
+   * Named fights that were due but could not be sent in, oldest first.
+   *
+   * Only one boss is ever on the floor at a time — the health bar belongs to one fight, and two of
+   * them at once is unreadable. The first version of this simply skipped a boss whose slot was busy,
+   * and playing the tables headless showed what that really means: a player who is still grinding the
+   * five-minute boss at minute twelve never sees the twelve-minute boss at all. The fight does not
+   * arrive late, it silently never happened, and the run they played is not the run the table
+   * describes.
+   *
+   * So a boss that cannot come in now waits here and comes in the moment the floor is clear. It is a
+   * queue rather than a single slot because a long enough stall can stack two of them, and it is
+   * oldest-first because the fights are meant to be met in the order the stage lists them.
+   */
+  private readonly bossQueue: string[] = [];
+
+  /**
+   * The second the Reaper is due on the stage being played.
+   *
+   * A stage owns this rather than the director, because "how long is a full run here" is part of
+   * what a place is. It is still the same number on all five stages today, deliberately: a time on
+   * one floor has to mean the same thing as a time on another.
+   */
+  private reaperAt = REAPER_SECOND;
+
   get runSeconds(): number {
     return this.runTicks / TICKS_PER_SECOND;
   }
@@ -177,8 +211,9 @@ export class WaveDirector {
   }
 
   /** Reset for a new run. Reused between runs so "restart same seed" allocates nothing. */
-  begin(waves: readonly WaveEntry[] = DEFAULT_WAVES): void {
+  begin(waves: readonly WaveEntry[] = DEFAULT_WAVES, reaperSecond: number = REAPER_SECOND): void {
     this.waves = waves;
+    this.reaperAt = reaperSecond > 0 ? reaperSecond : REAPER_SECOND;
     this.waveIndex = 0;
     this.spawnDebt = 0;
     this.runTicks = 0;
@@ -187,6 +222,7 @@ export class WaveDirector {
     this.reaperSpawned = false;
     this.spawnedTotal = 0;
     this.refusedTotal = 0;
+    this.bossQueue.length = 0;
     this.resolveMix();
   }
 
@@ -218,7 +254,10 @@ export class WaveDirector {
     for (let i = 0; i < this.waves.length; i++) {
       if (this.waves[i].atSecond <= second) this.waveIndex = i;
     }
-    this.reaperSpawned = second < REAPER_SECOND ? false : this.reaperSpawned;
+    this.reaperSpawned = second < this.reaperAt ? false : this.reaperSpawned;
+    // A jump does not simulate the skipped time, so it must not carry a fight that was owed before
+    // the jump into a minute that never asked for it.
+    this.bossQueue.length = 0;
     this.resolveMix();
   }
 
@@ -252,9 +291,13 @@ export class WaveDirector {
       this.waveIndex++;
       this.resolveMix();
       const boss = this.waves[this.waveIndex].boss;
-      if (boss !== undefined && enemies.bossCount() === 0) {
-        this.spawnAtRing(enemies, stats, rng, playerX, playerY, ENEMY_TYPE_BY_ID.get(boss) ?? 0);
-      }
+      if (boss !== undefined && this.bossQueue.length < MAX_QUEUED_BOSSES) this.bossQueue.push(boss);
+    }
+
+    // Whatever fight is owed comes in as soon as the floor is clear, however late that is.
+    if (this.bossQueue.length > 0 && enemies.bossCount() === 0) {
+      const due = this.bossQueue.shift() as string;
+      this.spawnAtRing(enemies, stats, rng, playerX, playerY, ENEMY_TYPE_BY_ID.get(due) ?? 0);
     }
 
     // End of the table. In Endless, loop and raise Curse; otherwise hold on the final wave.
@@ -327,11 +370,16 @@ export class WaveDirector {
     this.spawnedTotal++;
   }
 
+  /** The second the Reaper is due on the stage currently being played. */
+  get reaperSecond(): number {
+    return this.reaperAt;
+  }
+
   /** Whether the Reaper is due. The caller owns the actual sequence. */
   reaperDue(stats: Stats, earlyReaper: boolean): boolean {
     if (this.reaperSpawned) return false;
     void stats;
-    const at = earlyReaper ? REAPER_SECOND / 2 : REAPER_SECOND;
+    const at = earlyReaper ? this.reaperAt / 2 : this.reaperAt;
     return this.runSeconds >= at;
   }
 }

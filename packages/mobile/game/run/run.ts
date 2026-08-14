@@ -65,6 +65,7 @@ import { Progression } from "../sim/progression";
 import { ProjectileStore, type OwnerPositions } from "../sim/projectiles";
 import { RUN_END, RunSummary, summariseRun, type RunEnd, type RunTotals } from "../sim/results";
 import { STAT, STAT_COUNT, STAT_SCALE, Stats } from "../sim/stats";
+import { stageAt, wavesForStage } from "../sim/stages";
 import { TICKS_PER_SECOND, WaveDirector } from "../sim/waves";
 import { WEAPON_BY_ID, WeaponStore } from "../sim/weapons";
 import { RNG_STREAMS, Rng, RngSet, hashName } from "../core/rng";
@@ -321,6 +322,7 @@ export class Run {
 
     this.seed = c.seed >>> 0;
     this.stageId = c.stageId;
+    const stage = stageAt(this.stageId);
     this.tainted = c.tainted;
     this.recording = c.record;
     this.autoPick = c.autoPick;
@@ -364,7 +366,9 @@ export class Run {
     this.pickups.clear();
     // Scenery is derived from the stage seed, so pointing the field at the seed is the whole of
     // placing every crate and gravestone on the map. Nothing about the floor is stored in a save.
-    this.props.setSeed(this.seed | 0);
+    // How cluttered the floor is belongs to the stage: the marsh is choked with scenery and the
+    // gallows is bare, and that is the whole of the difference as far as the simulation is concerned.
+    this.props.setSeed(this.seed | 0, stage.propChance);
     // Streamed once here as well as in the tick, so the first frame the player ever sees already has
     // scenery standing on it instead of popping in a moment later.
     this.props.stream(this.players.x[0], this.players.y[0]);
@@ -372,7 +376,9 @@ export class Run {
     this.passives.reset(playerCount);
     this.prog.reset();
     this.cards.resetRun(this.stats);
-    this.waves.begin();
+    // The stage owns its own monsters, its own pacing and its own named fights. Nothing below this
+    // line asks which stage it is — a stage is a row in a table, not a special case in the code.
+    this.waves.begin(wavesForStage(this.stageId), stage.reaperSecond);
     this.summary.reset();
     this.cues.resetRun();
     this.prevLevel = this.prog.level;

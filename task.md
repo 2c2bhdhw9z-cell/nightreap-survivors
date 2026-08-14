@@ -3380,3 +3380,47 @@ The cut-off point for a reward line was a number picked by eye — twenty-six ch
 the card it was drawn on, twenty-six characters is four characters of text hanging out over the fight.
 It is now worked out from the width of the card instead of guessed at, so redrawing the card can never
 put the text outside it again.
+
+## Five places to play, instead of one
+
+Until now every run happened on the same floor. There are now five, and they are properly different
+places rather than the same place wearing a different colour.
+
+- **Pauper's Crypt** — the opening floor. Open from the start, cluttered, ordinary dead.
+- **The Ossuary** — bone halls, bare underfoot, faster and tighter than the crypt.
+- **Mourner's Marsh** — choked with scenery, slower monsters that arrive in far greater numbers.
+- **Gallows Row** — an open, empty floor with very little to hide behind and hard-hitting crowds.
+- **The Hollow Belfry** — the last of the five and the meanest of them.
+
+Each one is opened by surviving the one before it: fifteen minutes on the crypt opens the ossuary,
+fifteen on the ossuary opens the marsh, twenty on the marsh opens the gallows, twenty on the gallows
+opens the belfry. Nothing else unlocks them, and nothing can be bought to skip a step.
+
+Every stage brings its own list of monsters, its own pacing — how fast they arrive and how many can be
+on the floor at once — its own named fights, and its own amount of scenery to smash. Between them the
+five stages use every one of the eighteen ordinary monsters and every one of the eight named fights, so
+nothing that was drawn goes unseen. Fifty-seven waves and sixteen named fights in total.
+
+Every run is still thirty minutes long, on purpose. If one floor were shorter, surviving twenty minutes
+would mean something different depending on where you did it, and every leaderboard would be nonsense.
+
+### A bug found on the way
+
+Playing all five wave tables through without a screen turned up something that would have been very hard
+to spot by hand. If a named fight came due while you were still fighting the last one, it was thrown away
+— not delayed, not sent in later, just gone for the rest of the run. On a slow fight that quietly deleted
+content from the stage.
+
+Now an owed fight waits its turn and walks in on the first moment the floor is clear, oldest first. Only
+one named fight is ever on the floor at once, because the health bar at the top of the screen belongs to
+one of them. If three of them stack up the game stops queueing more, on the grounds that a wall of bosses
+the moment you finally win one is worse than quietly dropping the oldest.
+
+### How this was proved
+
+The stage table is checked by the game itself, not just by me: ordering, pacing that never eases off, the
+engine's crowd limit, named fights that are actually named fights, unlock rules that point backwards and
+not forwards, and the coverage rule that every monster turns up somewhere. Ten deliberate breakages were
+made to the checker one at a time to prove those checks earn their place. Nine were caught immediately.
+The tenth was not: a named fight could be scheduled to arrive *after* the run was already over and nothing
+would have said a word. That gap now has a check of its own, and all ten are caught.
