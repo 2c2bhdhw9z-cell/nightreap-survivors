@@ -32,17 +32,13 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
-import { Sprite } from "@/components/sprite";
 import { Chunk, StoneText } from "@/components/stone";
 import { Grid, Palette } from "@/constants/theme";
 import appJson from "@/app.json";
-import { ATLAS_CELL } from "@/game/art/frames";
 
 /** How many taps on the version line open the dev launcher, and how long a run of taps stays alive. */
 const DEV_TAPS = 7;
 
-/** The reaper on the title screen. A named cell, not a number, so a repack cannot shuffle it. */
-const CREST_FRAME = "bosses/icon-04";
 const DEV_TAP_WINDOW_MS = 2000;
 
 const VERSION = appJson.expo.version;
@@ -84,15 +80,6 @@ export default function Title() {
         </StoneText>
       </View>
 
-      {/*
-        The crest. One sprite out of the same packed sheet the game draws from, at a whole-number scale
-        like everything else — a title screen with a smoothed-out version of the game's own art on it
-        tells you the art and the game are two different things.
-      */}
-      <View style={styles.crestArt}>
-        <Sprite name={CREST_FRAME} size={ATLAS_CELL * 5} />
-      </View>
-
       <View style={styles.buttons}>
         <Chunk label="PLAY" weight="gold" onPress={() => router.push("/stages")} style={styles.play} />
         <Chunk label="CHARACTERS" weight="stone" onPress={() => router.push("/characters")} />
@@ -123,7 +110,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   crest: { paddingTop: Grid * 6, gap: Grid * 0.5 },
-  crestArt: { alignItems: "center" },
   sub: { marginTop: Grid },
   buttons: { gap: Grid * 1.5, paddingBottom: Grid * 4 },
   play: { paddingVertical: Grid * 2.5 },
