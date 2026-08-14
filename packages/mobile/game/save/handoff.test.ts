@@ -363,6 +363,23 @@ function reportedNames(h: RunHandoff): string[] {
   return out;
 }
 
+/**
+ * Names from one track only.
+ *
+ * A sweep now covers people, places and arcanas at once, and some of them read the same figures — the
+ * same best time can earn a character and an arcana on the same run. Checks about the roster filter
+ * rather than assume every row in a report is a character.
+ */
+function reportedNamesOn(h: RunHandoff, track: number): string[] {
+  const held = h.peek();
+  if (held === null) return [];
+  const out: string[] = [];
+  for (let i = 0; i < held.awards.count; i++) {
+    if (held.awards.tracks[i] === track) out.push(held.awards.names[i]);
+  }
+  return out;
+}
+
 section("a banked run hands out the unlocks it just earned");
 {
   const h = new RunHandoff();
@@ -390,7 +407,19 @@ section("a banked run hands out the unlocks it just earned");
   // And the bits really are in the profile, not just in the report.
   let bitsSet = 0;
   for (let i = 0; i < CHARACTERS.length; i++) if (isHeld(save, TRACK.CHARACTER, i)) bitsSet++;
-  check("the profile holds the starters plus the new ones", bitsSet === starters.length + out.unlocked, `${bitsSet}`);
+  const peopleWon = reportedNamesOn(h, TRACK.CHARACTER).length;
+  check(
+    "the profile holds the starters plus the new ones",
+    bitsSet === starters.length + peopleWon,
+    `${bitsSet} bits, ${starters.length} starters, ${peopleWon} won`,
+  );
+
+  // And the rest of the report really did go somewhere else, rather than the count quietly drifting.
+  check(
+    "every announced row belongs to a track that stored it",
+    peopleWon <= out.unlocked && names.length === out.unlocked,
+    `${peopleWon} people of ${out.unlocked} unlocks`,
+  );
 }
 
 section("the sweep reads the profile the run just changed, not the one before it");

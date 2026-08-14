@@ -3549,3 +3549,42 @@ on, holding more cards than there are slots, needing a second longer than the ca
 needing a second longer than it asks for anywhere, arcanas leaking into the run's recording where modes
 live, an offer that never shuffles, and a place-specific condition quietly satisfied by a long run
 somewhere else.
+
+## The arcana offer, in the game itself
+
+The eight arcanas existed as rules last night but nothing in the game ever showed you one. Now the run
+itself deals them.
+
+What happens when you play: at four minutes, twelve minutes and twenty-two minutes the run stops and
+three cards turn over. Each card shows its symbol, its name and one line saying what it does to you. You
+take one, or you take none — either way that offer is spent and does not come back. The world is frozen
+solid while the cards are up: nothing moves, nothing spawns, nothing hits you, and the clock does not
+tick. Deciding while the crowd closes in is not deciding.
+
+Which cards can appear is your profile's business, not the run's. The run is handed the list of arcanas
+you have actually unlocked when it starts, and it can only deal from that list. A profile that has
+unlocked nothing is simply never offered anything — it does not get handed a free card to fill the
+screen. A card you already hold this run is never offered twice. You can hold three at most.
+
+Two quieter things worth knowing. Taking a card does not patch your numbers — the whole loadout is torn
+down and rebuilt from scratch with the arcana in it, so an arcana can never be silently lost the next
+time you level up, and two phones in co-op cannot end up a point of damage apart. And the list of cards
+you may be offered is read at the moment a run starts, not held from earlier, so an arcana unlocked on
+your last run is available on this one.
+
+### How this was proved
+
+Eighteen deliberate breakages, one at a time, all caught: the run not counting an arcana screen as
+paused, the world carrying on underneath one, an unattended run deadlocking on a screen nobody answers,
+the offer never opening at all, only part of your unlocked list reaching the run, the loadout rebuild
+dropping an arcana, taking a card without re-resolving the numbers, a pick reporting the wrong card,
+"take none" not closing the screen, the run answering zero when asked what behaviour is switched on, a
+stored unlock mark being overridden by a shorter time, a rule marking itself as met, the "anywhere"
+record being guessed at from the per-place records, reading a place off the end of a shortened save,
+locked cards leaking into the pool, a locked card's explanation appearing on an unlocked one, the
+starter arcana being announced as newly earned, and the sweep skipping arcanas entirely.
+
+Fifty-four checks in a new file covering the run's side of it, on top of the ones the arcanas already
+had. One older check had to be corrected while doing this: it assumed everything announced at the end of
+a run was a character, which stopped being true the moment a run could earn you an arcana.
+

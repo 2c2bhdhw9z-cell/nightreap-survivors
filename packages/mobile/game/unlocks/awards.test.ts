@@ -190,6 +190,24 @@ function sweptNames(report: AwardReport): string[] {
   return names;
 }
 
+/**
+ * Names from one track only.
+ *
+ * One sweep now covers people, places and arcanas, and some of them read the same profile figures — a
+ * best survival time both unlocks a character and unlocks an arcana. The checks below are about the
+ * character rules, so they filter rather than assume a sweep of a test roster only ever grants people.
+ */
+function sweptNamesOn(report: AwardReport, track: number): string[] {
+  const names: string[] = [];
+  for (let i = 0; i < report.count; i++) if (report.tracks[i] === track) names.push(report.names[i]);
+  return names;
+}
+
+/** How many of a sweep's grants were on one track. */
+function grantedOn(report: AwardReport, track: number): number {
+  return sweptNamesOn(report, track).length;
+}
+
 {
   const save = createSaveData();
   const report = createAwardReport();
@@ -209,8 +227,13 @@ function sweptNames(report: AwardReport): string[] {
 
   save.runsCompleted = 5;
   save.bestSurvivalSeconds = 900;
-  eq(sweepUnlocks(save, report, ROSTER), 2, "two more fall at once");
-  eq(sweptNames(report).sort().join(","), "Runs Gate,Time Gate", "both are named");
+  sweepUnlocks(save, report, ROSTER);
+  eq(grantedOn(report, TRACK.CHARACTER), 2, "two more fall at once");
+  eq(
+    sweptNamesOn(report, TRACK.CHARACTER).sort().join(","),
+    "Runs Gate,Time Gate",
+    "both are named",
+  );
   eq(bitCount(save.unlockedCharacters), 3, "three bits are held, the starter still unseeded");
 }
 
@@ -310,12 +333,16 @@ function sweptNames(report: AwardReport): string[] {
   save.goldLifetime = 4294967295;
   save.runsCompleted = 100000;
   save.bestSurvivalSeconds = 100000;
-  const all = sweepUnlocks(save, report);
+  sweepUnlocks(save, report);
   let gated = 0;
   for (const character of CHARACTERS) {
     if (character.unlock !== CHAR_UNLOCK.ALWAYS) gated++;
   }
-  eq(all, gated, "a maxed profile earns every gated character on the real roster");
+  eq(
+    grantedOn(report, TRACK.CHARACTER),
+    gated,
+    "a maxed profile earns every gated character on the real roster",
+  );
 }
 
 console.log(`awards.test: ${checks} checks, ${failures} failed`);

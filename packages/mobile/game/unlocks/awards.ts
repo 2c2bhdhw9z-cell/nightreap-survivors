@@ -40,7 +40,9 @@
 
 import { bitGet, bitSet, SAVE_LIMITS, type SaveData } from "../save/schema";
 import { CHAR_UNLOCK, CHARACTERS, type Character } from "../characters/roster";
+import { ARCANA_TYPES } from "../sim/arcanas";
 import { STAGE_TYPES } from "../sim/stages";
+import { arcanaConditionMetFor, arcanaEarnedLine } from "./arcana-records";
 import { stageConditionMet, stageEarnedLine } from "./stage-records";
 
 /**
@@ -322,6 +324,13 @@ export function sweepUnlocks(
     const code = grant(save, TRACK.STAGE, i, STAGE_TYPES[i].name, stageEarnedLine(i), report);
     if (code === AWARD.OK) granted++;
   }
+  // Arcanas, the same way again. The first one is skipped because it is there from the start, and being
+  // congratulated for a card you already had reads as a bug.
+  for (let i = 1; i < ARCANA_TYPES.length; i++) {
+    if (!arcanaConditionMetFor(save, i)) continue;
+    const code = grant(save, TRACK.ARCANA, i, ARCANA_TYPES[i].name, arcanaEarnedLine(i), report);
+    if (code === AWARD.OK) granted++;
+  }
   return granted;
 }
 
@@ -346,6 +355,12 @@ export function contentFaults(list: readonly Character[] = CHARACTERS): readonly
 
   if (STAGE_TYPES.length > capacityOf(TRACK.STAGE)) {
     faults.push(`${STAGE_TYPES.length} stages but the save only stores ${capacityOf(TRACK.STAGE)} bits`);
+  }
+
+  if (ARCANA_TYPES.length > capacityOf(TRACK.ARCANA)) {
+    faults.push(
+      `${ARCANA_TYPES.length} arcanas but the save only stores ${capacityOf(TRACK.ARCANA)} bits`,
+    );
   }
 
   let starters = 0;

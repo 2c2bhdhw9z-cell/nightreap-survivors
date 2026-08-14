@@ -33,6 +33,7 @@
 import { hashByte, hashFloat, hashFloat32Range, hashUint8Range, hashWord } from "../net/state-hash";
 import { quantiseStick } from "../net/input";
 import { ReplayRecorder } from "../replay/recorder";
+import { ArcanaDeck } from "../sim/arcanas";
 import { CardDraw } from "../sim/cards";
 import {
   CHEST_REWARD,
@@ -157,6 +158,15 @@ export interface RunConfig {
   characterGrowth: readonly RunModifier[];
   /** Levels between growth steps for the chosen character. Must be at least 1. */
   characterGrowthEvery: number;
+  /**
+   * Which arcanas this profile has unlocked, as indices into the arcana catalog.
+   *
+   * Indices rather than records, because unlike a mode or a shop rank an arcana is not applied at run
+   * start — it is a pool the run draws offers from, and the run only learns which record it needs when
+   * the player takes a card. Empty is legal and simply means no offer ever opens, which is what a
+   * profile that has unlocked nothing should get rather than a free card it never earned.
+   */
+  arcanaPool: readonly number[];
 }
 
 export const DEFAULT_RUN_CONFIG: RunConfig = {
@@ -176,6 +186,7 @@ export const DEFAULT_RUN_CONFIG: RunConfig = {
   characters: [],
   characterGrowth: [],
   characterGrowthEvery: 1,
+  arcanaPool: [],
 };
 
 export class Run {
@@ -191,6 +202,11 @@ export class Run {
   readonly passives = new PassiveStore(MAX_PLAYERS);
   readonly prog = new Progression();
   readonly cards = new CardDraw();
+  /**
+   * The run's arcanas. One deck per run rather than per player: in co-op the host owns the pick, for
+   * the same reason the host owns the wave table.
+   */
+  readonly arcanas = new ArcanaDeck();
   readonly waves = new WaveDirector();
   readonly summary = new RunSummary();
   /** Last chest's payout. Caller-owned and refilled per chest, so opening one allocates nothing. */
@@ -282,6 +298,7 @@ export class Run {
   private dropRng: Rng;
   private cardRng: Rng;
   private critRng: Rng;
+  private arcanaRng: Rng;
   private chestRng: Rng;
 
   constructor(seed = 1) {
@@ -291,12 +308,13 @@ export class Run {
     this.cardRng = this.rng.get("cardDraw");
     this.chestRng = this.rng.get("chest");
     this.critRng = this.rng.get("crit");
+    this.arcanaRng = this.rng.get("arcana");
     this.owners = { count: 1, x: this.players.x, y: this.players.y };
   }
 
   /** True while a level-up screen is open. The simulation is frozen until it is answered. */
   get paused(): boolean {
-    return this.cards.open;
+    return this.cards.open || this.arcanas.open;
   }
 
   /** Run clock in ticks, which time scale can advance faster than real ticks. */
@@ -376,6 +394,9 @@ export class Run {
     this.passives.reset(playerCount);
     this.prog.reset();
     this.cards.resetRun(this.stats);
+    // The pool is what the profile has earned, decided outside the simulation. An empty pool means no
+    // offer ever opens — the deck never invents a card to fill a screen.
+    this.arcanas.begin(c.arcanaPool);
     // The stage owns its own monsters, its own pacing and its own named fights. Nothing below this
     // line asks which stage it is — a stage is a row in a table, not a special case in the code.
     this.waves.begin(wavesForStage(this.stageId), stage.reaperSecond);
@@ -536,6 +557,13 @@ export class Run {
       return false;
     }
 
+    // An arcana offer freezes the run exactly like a card screen does, and for the same reason: it is a
+    // decision, and a decision taken while the crowd is closing in is not a decision.
+    if (this.arcanas.open) {
+      if (this.autoPick) this.pickArcana(0);
+      return false;
+    }
+
     const stats = this.stats;
     const players = this.players;
 
@@ -630,6 +658,14 @@ export class Run {
       if (this.cards.open) {
         this.cues.emit(CUE.cardScreenOpened, players.x[0], players.y[0], this.cards.picksRemaining);
       }
+    }
+
+    // 11b. Arcana offers are owed by the run clock, not by levelling, so they are checked after the card
+    //      screen rather than inside it — a level-up and an arcana mark landing on the same tick queue up
+    //      one behind the other instead of fighting over the screen. The deck compares with `>=` and
+    //      consumes the mark, so a mark passed during a card screen is still owed rather than skipped.
+    if (!this.cards.open && this.arcanas.update(this.waves.runSeconds, this.arcanaRng)) {
+      this.cues.emit(CUE.cardScreenOpened, players.x[0], players.y[0], this.arcanas.offerCount);
     }
 
     // 12. Players last: movement resolution, regen, contact damage, downs and revives. Contact
@@ -935,6 +971,37 @@ export class Run {
     const tier = this.growthTierAt(this.prog.level);
     this.growthTier = tier;
     if (tier > 0) this.stack.addLoadout(this.growthLadder[tier - 1]);
+    // Arcanas last, and rebuilt with everything else rather than added once when taken: `applyTo` on the
+    // passive store clears the whole loadout, so anything that lives there has to be put back by the one
+    // function that owns what the loadout contains.
+    this.arcanas.applyTo(this.stack);
+  }
+
+  // --- Arcana offers -----------------------------------------------------------------------
+
+  /**
+   * Take the arcana in `slot`. Returns which arcana was taken, or -1 when the slot is not a real offer.
+   *
+   * The loadout is rebuilt and re-resolved rather than patched, for the same reason a card pick and a
+   * snapshot restore rebuild it: a patched stat table can disagree with a freshly derived one, and that
+   * disagreement is invisible until two devices compare state hashes hours later.
+   */
+  pickArcana(slot: number): number {
+    const took = this.arcanas.take(slot);
+    if (took < 0) return -1;
+    this.rebuildLoadout();
+    this.stack.resolve(this.stats);
+    return took;
+  }
+
+  /** Refuse the offer on screen. The mark is spent — an arcana turned down is turned down. */
+  closeArcanaOffer(): void {
+    this.arcanas.close();
+  }
+
+  /** OR of every held arcana's rule bits. The one integer the rest of the simulation reads. */
+  get arcanaFlags(): number {
+    return this.arcanas.flags;
   }
 
   /** How many growth steps a level has earned, clamped to the ladder the character actually has. */

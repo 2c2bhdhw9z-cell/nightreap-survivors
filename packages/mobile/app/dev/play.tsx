@@ -97,6 +97,8 @@ import {
 import { CHARACTERS, firstPlayable } from "@/game/characters/roster";
 import type { RunModifier } from "@/game/sim/modifiers";
 import { OFFERS_PER_SCREEN } from "@/game/sim/cards";
+import { ARCANA_OFFERS, ARCANA_TYPES } from "@/game/sim/arcanas";
+import { openArcanaPool } from "@/game/unlocks/arcana-records";
 import { REAPER_SECOND, TICKS_PER_SECOND } from "@/game/sim/waves";
 import { HudView, createHudInput, readRunInto, touchSummonsStick, type HudFrame } from "@/game/hud/hud";
 import { HudPainter, paintStick } from "@/game/render/hud-draw";
@@ -192,6 +194,22 @@ const CLOSED_CARDS: CardView = {
 };
 
 /**
+ * What the arcana overlay needs.
+ *
+ * A separate view from the card one rather than a shared "offer" shape: an arcana screen has no
+ * reroll, no skip charges and no picks owed, and folding two screens with different rules into one
+ * type is how a reroll button ends up on a screen that cannot reroll.
+ */
+interface ArcanaView {
+  open: boolean;
+  numerals: string[];
+  names: string[];
+  blurbs: string[];
+}
+
+const CLOSED_ARCANA: ArcanaView = { open: false, numerals: [], names: [], blurbs: [] };
+
+/**
  * `Date.now()` cannot measure a 16.7ms budget — it rounds to whole milliseconds and flattened every
  * percentile on the benchmark until it was removed. Frame pacing needs a monotonic high-resolution
  * clock, and the engine must not assume one exists.
@@ -218,6 +236,7 @@ export default function PlayScreen() {
 
   const [readout, setReadout] = useState<Readout>(EMPTY_READOUT);
   const [cards, setCards] = useState<CardView>(CLOSED_CARDS);
+  const [arcana, setArcana] = useState<ArcanaView>(CLOSED_ARCANA);
   const [ended, setEnded] = useState<string | null>(null);
   /**
    * Why the finished run could not be banked, if it could not.
@@ -388,6 +407,7 @@ export default function PlayScreen() {
     setEnded(null);
     setPaused(false);
     setCards(CLOSED_CARDS);
+    setArcana(CLOSED_ARCANA);
   }, []);
 
   const onContextCreate = useCallback(async (gl: ExpoWebGLRenderingContext) => {
@@ -551,6 +571,7 @@ export default function PlayScreen() {
       let lastReport = 0;
       let seenRestart = restartRef.current;
       let cardsWereOpen = false;
+      let arcanaWasOpen = false;
       let reportedEnd: number = RUN_END.running;
 
       const frame = () => {
@@ -572,6 +593,7 @@ export default function PlayScreen() {
             chestRows.length = 0;
             renderer.camera.snapTo(run.players.x[0], run.players.y[0]);
             cardsWereOpen = false;
+            arcanaWasOpen = false;
             reportedEnd = RUN_END.running;
           }
 
@@ -784,6 +806,14 @@ export default function PlayScreen() {
           cardsWereOpen = open;
           setCards(open ? readCards(run) : CLOSED_CARDS);
         }
+        // The same treatment for an arcana offer. It has to be edge-triggered like the card screen is:
+        // rebuilding this view every frame would hand React three fresh strings sixty times a second
+        // for a screen that never changes while it is up.
+        const arcanaOpen = run.arcanas.open;
+        if (arcanaOpen !== arcanaWasOpen) {
+          arcanaWasOpen = arcanaOpen;
+          setArcana(arcanaOpen ? readArcana(run) : CLOSED_ARCANA);
+        }
         if (run.end !== reportedEnd) {
           reportedEnd = run.end;
           if (reportedEnd === RUN_END.running) {
@@ -835,6 +865,20 @@ export default function PlayScreen() {
     if (!run) return;
     run.pickCard(index);
     setCards(run.cards.open ? readCards(run) : CLOSED_CARDS);
+  }, []);
+
+  const takeArcana = useCallback((index: number) => {
+    const run = runRef.current;
+    if (!run) return;
+    run.pickArcana(index);
+    setArcana(run.arcanas.open ? readArcana(run) : CLOSED_ARCANA);
+  }, []);
+
+  const refuseArcana = useCallback(() => {
+    const run = runRef.current;
+    if (!run) return;
+    run.closeArcanaOffer();
+    setArcana(CLOSED_ARCANA);
   }, []);
 
   const reroll = useCallback(() => {
@@ -936,7 +980,30 @@ export default function PlayScreen() {
           </View>
         ) : null}
 
-        {paused && !cards.open && ended === null ? (
+        {arcana.open ? (
+          <View style={styles.overlay}>
+            <Text style={styles.title}>An arcana turns over</Text>
+            {arcana.names.map((name, i) => (
+              <Pressable
+                key={`${name}-${i}`}
+                style={styles.card}
+                onPress={() => takeArcana(i)}
+              >
+                <Text style={styles.cardName}>
+                  {arcana.numerals[i]} · {name}
+                </Text>
+                <Text style={styles.cardText}>{arcana.blurbs[i]}</Text>
+              </Pressable>
+            ))}
+            <View style={styles.controls}>
+              <Pressable style={styles.btn} onPress={refuseArcana}>
+                <Text style={styles.btnText}>take none</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {paused && !cards.open && !arcana.open && ended === null ? (
           <View style={styles.overlay}>
             <Text style={styles.title}>Paused</Text>
             <Text style={styles.row}>
@@ -1043,6 +1110,10 @@ export default function PlayScreen() {
       characterGrowthEvery: CHARACTERS[pick]?.growth.everyLevels ?? 1,
       characterIds: [pick, pick, pick, pick],
       startingWeaponId: characterStartingWeaponId(pick, "reapersLash"),
+      // Which arcanas may be offered is a profile question, not a simulation one, so it is answered
+      // here and handed over as plain indices. Read at the start of every run rather than held, for
+      // the same reason the shop loadout is: a run started right after an unlock must see it.
+      arcanaPool: openArcanaPool(saveRef.current),
       record: false,
     });
     stickRef.current.x = 0;
@@ -1118,6 +1189,27 @@ function readCards(run: Run): CardView {
     skips: c.skipsLeft,
     banishes: c.banishesLeft,
   };
+}
+
+/**
+ * Copy the arcana offer out of the simulation.
+ *
+ * Copied rather than referenced for the same reason the cards are: React holding a live handle into
+ * the sim is how a re-render ends up reading a half-finished tick.
+ */
+function readArcana(run: Run): ArcanaView {
+  const deck = run.arcanas;
+  const numerals: string[] = [];
+  const names: string[] = [];
+  const blurbs: string[] = [];
+  for (let i = 0; i < Math.min(deck.offerCount, ARCANA_OFFERS); i++) {
+    const type = ARCANA_TYPES[deck.offerIndex[i]];
+    if (!type) continue;
+    numerals.push(type.numeral);
+    names.push(type.name);
+    blurbs.push(type.blurb);
+  }
+  return { open: deck.open, numerals, names, blurbs };
 }
 
 function describeEnd(run: Run): string {
