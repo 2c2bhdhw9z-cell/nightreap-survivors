@@ -291,6 +291,48 @@ with tempfile.TemporaryDirectory() as tmp:
     refused = P.main([path, os.path.join(tmp, "wrong"), "--cols", "9", "--rows", "9"])
     check("a mismatched grid is refused", refused == 2, "exit %d" % refused)
 
+    # --single: one drawing made of several separate shapes. The grid detector reads the gaps between the
+    # shapes as extra cells and refuses, which is correct of it; --single says the sheet is one icon.
+    split = np.full((80, 120, 3), (250, 3, 248), dtype=np.uint8)
+    split[20:60, 10:35] = rgb("cyan")
+    split[20:60, 50:75] = rgb("cyan")
+    split[20:60, 90:110] = rgb("cyan")
+    split_path = os.path.join(tmp, "split.png")
+    Image.fromarray(split, mode="RGB").save(split_path)
+
+    check(
+        "three separate shapes are refused as a one-cell grid",
+        P.main([split_path, os.path.join(tmp, "split-grid"), "--cols", "1", "--rows", "1"]) == 2,
+    )
+    single_out = os.path.join(tmp, "single")
+    check(
+        "--single accepts the same sheet",
+        P.main([split_path, single_out, "--size", "16", "--single"]) == 0,
+    )
+    single_made = sorted(f for f in os.listdir(single_out) if f.endswith(".png"))
+    check("--single writes exactly one icon", single_made == ["icon-01.png"], "got %s" % single_made)
+    single_art = np.asarray(Image.open(os.path.join(single_out, "icon-01.png")).convert("RGBA"))
+    # Count the shapes rather than measuring the width: a crop to one shape still fills a plausible number
+    # of columns once it is re-centred, so width alone cannot tell the two apart.
+    drawn_columns = (single_art[:, :, 3] > 0).any(axis=0).tolist()
+    groups = sum(1 for i, on in enumerate(drawn_columns) if on and not (i and drawn_columns[i - 1]))
+    check(
+        "--single keeps all three shapes in the one icon",
+        groups == 3,
+        "read %d separate shapes across the icon" % groups,
+    )
+    check(
+        "--single overrides any grid the caller also passed",
+        P.main([split_path, os.path.join(tmp, "single2"), "--size", "16", "--single", "--cols", "7"]) == 0,
+    )
+    blank_sheet = np.full((40, 40, 3), (250, 3, 248), dtype=np.uint8)
+    blank_path = os.path.join(tmp, "blank.png")
+    Image.fromarray(blank_sheet, mode="RGB").save(blank_path)
+    check(
+        "--single refuses a sheet with nothing drawn on it",
+        P.main([blank_path, os.path.join(tmp, "blank-out"), "--single"]) == 2,
+    )
+
 
 print()
 if FAILURES:

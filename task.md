@@ -3104,3 +3104,31 @@ afterimages, and a dice struck by a red spark.
 
 Every drawn thing the game asks for now exists. The sheet holds 241 hand-drawn pictures plus the one
 generated cell of solid white the health bars are drawn from.
+
+### The tools that turned that sheet into icons are now in the project, with their own checks
+
+The three new icons were cut by two throwaway scripts. Throwaway is how a pipeline stops being
+reproducible, so both are now part of the project and both are checked.
+
+- **The black-background remover.** It finds the background by spreading inwards from the edges of the
+  sheet, not by looking for black, because the outline colour is also nearly black and a colour test eats
+  every outline. It spreads only up, down, left and right: two dark areas that touch at a single corner are
+  separate, and letting it cut that corner would let the background leak inside a closed shape. It refuses
+  outright if what it found doesn't look like a background, because the alternative is three icons that come
+  out as solid squares and look fine in a folder listing.
+- **The limitation is written down as a check, not a comment.** A drawing that is dark all the way out to
+  the black around it cannot be told from the background by anything; that rim is lost. The sheets are drawn
+  as bright shapes on black, so this costs nothing today, and if it ever stops being true the check says so.
+- **"This whole sheet is one picture."** The cutter finds the grid by counting runs of drawn pixels, so a
+  single drawing made of separate pieces — three ghosted figures, a fist with loose rings around it — reads
+  as three cells and gets refused. It now takes an instruction that says the sheet is one picture and skips
+  the counting, rather than making the counting vaguer, because a vaguer counter starts gluing real cells
+  together.
+- **Proved reproducible**: re-running the whole path from the original painted sheet produces the three
+  icons byte for byte identical to the ones in the game.
+- **Eleven more deliberate breakages** across the two tools — mid-grey treated as background, the flood
+  allowed through corners, the refusal removed, the original repainted in place, only two of the four edges
+  looked at, a refused sheet still writing a file, the one-picture instruction cropping to the first shape,
+  accepting an empty sheet, and the grid check disabled. Two of them survived the first attempt and both
+  checks were strengthened until they didn't: one only looked at rows, and one measured how wide the drawing
+  was when it should have counted how many pieces it had.

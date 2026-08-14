@@ -249,7 +249,15 @@ def main(argv):
     ap.add_argument("--size", type=int, default=32)
     ap.add_argument("--cols", type=int, default=6)
     ap.add_argument("--rows", type=int, default=4)
+    # Some sheets hold one drawing made of several separate shapes — three ghosted figures, a fist with
+    # loose force rings around it. Grid detection counts runs of drawn pixels, so it reads those gaps as
+    # extra columns and refuses. --single says "this whole sheet is one icon" and skips the detection
+    # entirely rather than loosening it, because a looser detector would start gluing real cells together.
+    ap.add_argument("--single", action="store_true")
     args = ap.parse_args(argv)
+    if args.single:
+        args.cols = 1
+        args.rows = 1
 
     image = Image.open(args.sheet).convert("RGB")
     rgb = np.asarray(image)
@@ -266,8 +274,16 @@ def main(argv):
         merged = merge_thin(raw)
         return merged if len(merged) == want else raw
 
-    row_bands = best(foreground.sum(axis=1), args.rows)
-    col_bands = best(foreground.sum(axis=0), args.cols)
+    if args.single:
+        if not foreground.any():
+            print("nothing drawn on this sheet", file=sys.stderr)
+            return 2
+        ys, xs = np.where(foreground)
+        row_bands = [(int(ys.min()), int(ys.max()))]
+        col_bands = [(int(xs.min()), int(xs.max()))]
+    else:
+        row_bands = best(foreground.sum(axis=1), args.rows)
+        col_bands = best(foreground.sum(axis=0), args.cols)
     if len(row_bands) != args.rows or len(col_bands) != args.cols:
         print(
             "grid not found: expected %dx%d, read %d rows and %d columns"
