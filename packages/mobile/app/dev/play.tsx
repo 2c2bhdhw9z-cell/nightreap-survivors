@@ -65,6 +65,17 @@ import {
 import { Renderer } from "@/game/render/renderer";
 import { COLOR_WHITE, packHex, withAlpha } from "@/game/render/batcher";
 import { WalkTracker, createStepPose, stepPose } from "@/game/render/step-anim";
+import {
+  SEQUENCE_SECONDS,
+  chestOpenAt,
+  createChestOpenFrame,
+  createChestOpenSpec,
+  createSpark,
+} from "@/game/render/chest-open";
+import { drawChestScreen, drawChestWorld, type ChestArt } from "@/game/render/chest-draw";
+import { CUE } from "@/game/sim/cues";
+import { CHEST_REWARD, MAX_CHEST_REWARDS, rewardLine } from "@/game/sim/chests";
+import { PICKUP } from "@/game/sim/pickups";
 import { Ground, type FrameSource, type GroundTheme } from "@/game/render/ground";
 import { Run } from "@/game/run/run";
 import { STAT, STAT_SCALE } from "@/game/sim/stats";
@@ -410,6 +421,31 @@ export default function PlayScreen() {
       // being able to desync a co-op game.
       const walk = new WalkTracker(MAX_PLAYERS);
       const pose = createStepPose();
+
+      // The chest opening. Everything here is decoration and nothing else: by the time any of it is
+      // drawn the simulation has already handed over the levels, the evolution and the coins, so a
+      // phone that dies halfway through the animation has still been paid.
+      //
+      // One chest at a time. A second chest opened while the first is still playing takes the screen
+      // over rather than queueing — a queue would show a card describing a reward from four seconds
+      // ago while the player is standing somewhere else entirely.
+      const chestSpec = createChestOpenSpec();
+      const chestFrame = createChestOpenFrame();
+      const chestSpark = createSpark();
+      const chestArt: ChestArt = {
+        white,
+        sparkFrames: [
+          pickupFrames[PICKUP.gold] ?? white,
+          pickupFrames[PICKUP.gemSmall] ?? white,
+          pickupFrames[PICKUP.gemMedium] ?? white,
+        ],
+      };
+      const chestRows: string[] = [];
+      // Seconds since the chest opened. Negative means no chest is playing.
+      let chestClock = -1;
+      // How long the card waits on screen after it has landed before it takes itself away. The fight
+      // does not stop while it is up, so it cannot sit there being read at the player's leisure.
+      const CHEST_CARD_HOLD = 2.2;
       let lastPoseClock = nowMs();
       let poseSeconds = 0;
 
@@ -463,7 +499,34 @@ export default function PlayScreen() {
       const loop = new FixedLoop(() => {
         const s = stickRef.current;
         run.setStick(0, s.x, s.y);
+        // Read before the tick, because the counter on screen has to start from what the player had
+        // rather than from what they ended the tick with.
+        const goldBefore = run.prog.gold;
         run.tick();
+
+        // Cues live for exactly one tick, so a chest has to be noticed here and not in the drawing
+        // frame — at thirty frames a second the drawing frame misses half of them.
+        const cue = run.cues.indexOf(CUE.chestOpened);
+        if (cue >= 0 && run.cues.flag[cue] === 0) {
+          const report = run.chestReport;
+          const rows = Math.max(0, Math.min(MAX_CHEST_REWARDS, run.cues.value[cue]));
+          chestRows.length = 0;
+          let evolved = false;
+          for (let r = 0; r < rows && r < report.count; r++) {
+            const line = rewardLine(report, r);
+            if (line.length > 0) chestRows.push(line);
+            if (report.kind[r] === CHEST_REWARD.evolution) evolved = true;
+          }
+          chestSpec.x = run.cues.x[cue];
+          chestSpec.y = run.cues.y[cue];
+          chestSpec.goldFrom = goldBefore;
+          chestSpec.goldTo = run.prog.gold;
+          chestSpec.rows = chestRows.length;
+          chestSpec.evolved = evolved;
+          // The run's own seed, so two phones in a party throw the same coins in the same directions.
+          chestSpec.seed = run.seed;
+          chestClock = 0;
+        }
         // Ticked every time, paused or not: while a card screen is open the player does not move,
         // so the camera converges and interpolation has nothing to smear.
         renderer.camera.tick(run.players.x[0], run.players.y[0]);
@@ -492,6 +555,8 @@ export default function PlayScreen() {
             run.seed = seedRef.current;
             startRun(run);
             walk.reset();
+            chestClock = -1;
+            chestRows.length = 0;
             renderer.camera.snapTo(run.players.x[0], run.players.y[0]);
             cardsWereOpen = false;
             reportedEnd = RUN_END.running;
@@ -510,6 +575,19 @@ export default function PlayScreen() {
           const poseDt = Math.min(0.25, Math.max(0, (now - lastPoseClock) / 1000));
           lastPoseClock = now;
           poseSeconds += poseDt;
+
+          // The chest sequence is a pure function of how long ago the chest opened, so all that is
+          // kept between frames is that one number. A dropped frame lands further along the sequence
+          // instead of replaying the part it missed.
+          if (chestClock >= 0) {
+            if (!pausedRef.current) chestClock += poseDt;
+            if (chestClock > SEQUENCE_SECONDS + CHEST_CARD_HOLD) {
+              chestClock = -1;
+              chestRows.length = 0;
+            }
+          }
+          const chestPlaying = chestClock >= 0;
+          if (chestPlaying) chestOpenAt(chestClock, chestSpec, chestFrame);
 
           // 1. background — the floor and its scenery.
           ground.draw(renderer.layer("background"), renderer.camera);
@@ -616,7 +694,19 @@ export default function PlayScreen() {
             }
           }
 
-          // 7. hud — screen space, and every coordinate in it comes from resolved settings.
+          // 7. overheadFx — the chest opening, drawn over the fight but under the numbers and the HUD.
+          if (chestPlaying) {
+            drawChestWorld(
+              renderer.layer("overheadFx"),
+              chestArt,
+              chestFrame,
+              chestSpec,
+              chestClock,
+              chestSpark,
+            );
+          }
+
+          // 8. hud — screen space, and every coordinate in it comes from resolved settings.
           //
           // The screen's whole job here is three calls: copy the run into an input block, let the HUD
           // rules turn that into a frame, then paint the frame. It decides nothing itself, which is why
@@ -653,6 +743,19 @@ export default function PlayScreen() {
               s.knobY,
               s.active,
             );
+
+            // The flash and the reward card go on last, over the HUD. A flash with a health bar
+            // sitting on top of it is not a flash.
+            if (chestPlaying) {
+              drawChestScreen(
+                b,
+                chestArt,
+                chestFrame,
+                renderer.camera.worldViewW,
+                renderer.camera.worldViewH,
+                chestRows,
+              );
+            }
           }
 
           renderer.endFrame();

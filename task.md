@@ -3307,3 +3307,76 @@ standing-still one made to creep, the swaying one made to walk straight, the cir
 wind-up, the same one made to never dive, a boss given crowd-sized health, a boss stripped of its
 unshovable flag, a heavy body made faster than a player, a tough body made worth less than a weak one, a
 movement left with only one user, and a body made wider than the grid. All twelve were caught.
+
+
+## Opening a chest is now something you watch
+
+Playing on the phone turned up four things wrong. Three were fixed last time round. This is the fourth,
+and it was the least visible and the most annoying: you walked into a treasure chest and *nothing
+happened*. A weapon quietly went up a level, or evolved, or you were paid some coins — all of it real,
+all of it invisible unless you happened to be staring at the right corner of the screen at the right
+moment. The single best moment in a run of this kind was being thrown away.
+
+### What happens now
+
+Two and a half seconds, and every part of it overlaps the next rather than waiting its turn — played
+strictly one after another it reads as a slideshow.
+
+1. A column of light comes up out of the chest.
+2. Coins and gems spray out of the light and tumble down onto the floor.
+3. Your gold counts up over the chest while a bright ribbon orbits it two and a half times.
+4. The screen flashes white. An evolution gets a harder flash than a level, because it is the rarest
+   thing a chest can do.
+5. A four-armed star bursts out of the flash and fades as it grows.
+6. A card slides up from the bottom of the screen listing what you got.
+
+### The decisions that matter
+
+**You are paid before the show starts.** The animation cannot change a level, a weapon or a coin — it is
+decoration and it has no power to do anything else. A phone that dies halfway through the animation has
+still been paid in full.
+
+**The gold counter never lies.** It never shows more than you actually have on the way up, and its last
+frame is the real total exactly. A counter that lands on 146 when the shop says 147 makes the player
+think the game stole from them.
+
+**The card cannot be tapped away until it has landed.** Otherwise the same thumb press that walked you
+into the chest dismisses the card before you have read a word of it. It takes itself away a couple of
+seconds after it arrives rather than sitting there, because the fight does not stop while it is up.
+
+**Every coin flies where the run's own seed says it does**, never by chance. The same chest opens the
+same way on every phone in a party, and the same way again in a replay.
+
+**The whole sequence is worked out from one number: how long ago the chest opened.** Nothing counts down
+frame by frame. That sounds like a detail and is not — an effect built out of counters ticking inside
+the drawing loop cannot be tested, cannot be paused, and slips out of step the moment the phone drops a
+frame. This one lands where it should have been rather than replaying the part it missed, and a test can
+ask it what any moment of it looks like without a phone in the room.
+
+### The checks
+
+Two files, both of them able to be run with no phone and no graphics at all: one that decides what a
+given moment looks like, and one that draws it into a recorder that remembers every rectangle it was
+asked for and exactly where. 181 checks between them, all passing. They cover the things that actually
+go wrong with an effect like this: something still on screen after it should have gone, something drawn
+where the player cannot see it, a card sliding in from nowhere and landing off the edge, a flash that
+misses a corner, a reward line running off the side of its own panel, a gold counter that overshoots.
+
+Twenty-six deliberate breakages were introduced one at a time to prove the checks are worth having: the
+light hung downward instead of rising, coins drawn from their corner instead of centred, the flash
+covering half the screen, the card landing off the bottom, long reward text left uncut, the gold counter
+ignoring its own switch, the ribbon nailed to the chest instead of orbiting, the star with no arms, every
+coin thrown at the same angle, the whole spray turned into a spiral, the finished flag ignored so quads
+leak out over the rest of the run. All twenty-six were caught.
+
+Two of them were not caught the first time, and both were real gaps rather than bad breakages. The ribbon
+could have been nailed to the middle and every check still passed, because nothing had ever looked at
+where it actually was — an orbit that never leaves the middle is a blinking dot. And the painter's own
+"is this still running" guard could be deleted with nothing noticing. Both now have checks of their own.
+
+### One thing found while writing the checks
+
+The cut-off point for a reward line was a number picked by eye — twenty-six characters. Measured against
+the card it was drawn on, twenty-six characters is four characters of text hanging out over the fight.
+It is now worked out from the width of the card instead of guessed at, so redrawing the card can never
+put the text outside it again.
