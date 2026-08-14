@@ -34,7 +34,7 @@ and anything further down disagree, this section wins and the other place is a b
 | **Phase 0** — foundation + renderer go/no-go | **Closed**, with 2 items carried forward (below). Gate A passed on the REVVL. |
 | **Phase 1** — vertical slice + dev menu + modifier stack | **Closed on the engine**, with 2 gate items still unproven (below). |
 | **Phase 2** — co-op | **Closed on the build list.** Save/restore, autosave, lockstep, resync, rooms, matchmaking, the relay process, the client's connection to it, and host migration on the player's side are done and tested, including an end-to-end test where two real simulations agree across a real socket through a drop and a rejoin. Local movement smoothing, the lobby screen, the four-player HUD (rules and drawn), dev menu v2's co-op panels, remote config, and the dev menu wired to it are also done and tested. The networking test-ratio catch-up sweep is **done**, which was the last item on the Phase 2 build list. The only thing still outstanding is relay hosting, which is **decided but not built** (Cloudflare, built when four real phones need it). |
-| **Phase 3** — progression spine | **Started 2026-08-13.** Five items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. The dev-menu shell is built: one screen, ten tabs, search, and every count derived rather than written down. The break-glass admin page is built and driven end to end in a real browser: a fixed list of fifteen things an operator can do, a player's standing worked out from their history rather than read from a total, and lifting a punishment done by undoing the line that made it. Per-feature kill switches are deliberately still outstanding and travel with the stored settings document. A finished run now pays out: the results screen reads every figure off one receipt rather than working anything out itself, and a refused payout leaves nothing behind for it to show. The PowerUps shop is built end to end — 31 upgrades, escalating prices, self-explaining locks, an all-or-nothing purchase, a full refund, and purchases that travel into replays and co-op joins with everything else. All the launch art is in: 238 sprites across characters, enemies, bosses, weapons, effects, floors, arcana symbols, badges, scenery, pickups, chests, props, portraits and menu parts, every one forced onto the locked colours. Character select is built: eight characters with their own starting weapon, their own stat shifts and one quirk each that grows as the run goes on, reaching the simulation through the same mechanism modes and shop purchases use, and re-derived rather than stored so it survives a resume and a co-op resync. Unlocks and syncing are done: a run that earns a character announces it once, unlock marks are only ever set so nothing can take a character back, and two phones merge without either one being able to mint or lose gold. Destructible props and pickups are next. |
+| **Phase 3** — progression spine | **Started 2026-08-13.** Five items done. The guided run is complete: engine, both screens, and the Settings entry — its in-run prompts are decided and scheduled but not yet painted, which waits for the atlas. The append-only event log is complete and live: rules, storage, database table, and admin-only endpoints. An undo can now be undone, with the redo linked back to the undo it fixes and a story walk that reads out the whole chain. The dev-menu shell is built: one screen, ten tabs, search, and every count derived rather than written down. The break-glass admin page is built and driven end to end in a real browser: a fixed list of fifteen things an operator can do, a player's standing worked out from their history rather than read from a total, and lifting a punishment done by undoing the line that made it. Per-feature kill switches are deliberately still outstanding and travel with the stored settings document. A finished run now pays out: the results screen reads every figure off one receipt rather than working anything out itself, and a refused payout leaves nothing behind for it to show. The PowerUps shop is built end to end — 31 upgrades, escalating prices, self-explaining locks, an all-or-nothing purchase, a full refund, and purchases that travel into replays and co-op joins with everything else. All the launch art is in: 238 sprites across characters, enemies, bosses, weapons, effects, floors, arcana symbols, badges, scenery, pickups, chests, props, portraits and menu parts, every one forced onto the locked colours. Character select is built: eight characters with their own starting weapon, their own stat shifts and one quirk each that grows as the run goes on, reaching the simulation through the same mechanism modes and shop purchases use, and re-derived rather than stored so it survives a resume and a co-op resync. Unlocks and syncing are done: a run that earns a character announces it once, unlock marks are only ever set so nothing can take a character back, and two phones merge without either one being able to mint or lose gold. Destructible scenery is in: crates, urns, gravestones, braziers and sarcophagi that stand on the floor, break to weapons, and pay out coins, gems, chickens, bombs, freezes, magnets and chests — worked out from the stage seed rather than saved, so a stage costs nothing to remember and two phones agree about it without sending a byte. Treasure chests and the evolution roll are next. |
 | **Phases 4–8** | Not started. |
 
 ### Carried forward from Phase 0 — real, not blocking
@@ -1875,7 +1875,41 @@ the previous best time shown next to the new one.
   database, and 47 deliberate breakages, every one caught — including pushing before keeping, merging over a
   newer save, forgetting the first merge when a second one happens, and a device secret short enough to
   guess.
-- Destructible props; pickups: floor chicken, bomb, magnet, coins.
+- ~~Destructible props; pickups: floor chicken, bomb, magnet, coins.~~ **DONE 2026-08-14.** The floor now has
+  things on it worth hitting: crates, urns, gravestones, braziers and rare sarcophagi. **None of it is saved.**
+  Where every piece of scenery stands, and which piece it is, is worked out from the stage's number the moment
+  the player gets near it and thrown away when they walk off — so a stage the size of a city costs nothing to
+  remember, and four phones in a co-op run agree about every crate without one byte crossing the network. The
+  one thing that genuinely cannot be worked out — what has already been smashed — is remembered for the last
+  two hundred and fifty six of them, and when something does fall off the end of that list the game *counts*
+  it rather than pretending it did not happen. Walking a long way away and coming back can put a crate back;
+  that is a deliberate trade and it is written down rather than hidden.
+  Scenery comes in at one distance and is handed back at a further one, on purpose. With a single distance a
+  player pacing back and forth over the same spot would make every crate near them appear and disappear on
+  every step, which is exactly the kind of thing that turns into a stutter fifteen minutes into a run. The
+  gap is tested by pacing a hundred crossings and proving nothing arrives or leaves twice.
+  **Loot from scenery can never be lost.** The list of "things broken this instant" has a fixed size, and when
+  it is full a prop *survives on its last hit* and breaks a moment later instead of breaking with nowhere to
+  write down what it owed the player. Dropping the line instead would quietly destroy loot somebody earned —
+  which is the exact mistake this project already made once on the results screen, and is not making twice.
+  Every break is paid for and forgotten inside the same instant, so no drop can ever be handed out twice.
+  What a prop is worth is measured in **hits, not damage**, so a maxed-out weapon does not turn "this takes
+  four hits" into "this takes one", and somebody on their first run is not locked out of the good ones. A
+  weapon parked on top of a prop cannot shred it in a frame either: each prop is briefly immune after a hit,
+  which is what makes the sarcophagus feel like something you had to work at. And a weapon gets extra reach
+  against scenery specifically, because most weapons swing at a fixed distance out from the player, and
+  without it a chicken could sit under the player's feet and be unreachable.
+  Props never block movement and never hurt anybody. What they drop lands **on the floor as something to pick
+  up**, never as an effect that fires where the prop stood — a stray knife must never detonate the screen on
+  the player's behalf. At most one of the loud things per break, tried in a fixed order, so a replay of the
+  same run smashes the same crates and finds the same chicken.
+  Breakable scenery is deliberately a **separate layer** from the decorations already drawn on the floor. The
+  decorations stay decorations forever, so an art pass can never accidentally become a balance change.
+  Proven by a hundred and eight checks — ninety one on the scenery itself and seventeen more on the run loop it lives in, and by
+  sixteen deliberate sabotages of the code — a crate that reappears after being smashed, loot dropped instead
+  of postponed, the memory that never advances, the floor missing from the co-op handshake, scenery that
+  never streams, a run inheriting the last run's rubble, the immunity window removed — every one of which was
+  caught by the tests rather than by a player.
 - Treasure chests with tiered rolls and the **evolution roll** rule.
 - **Anti-cheat v1:** run upload, server-side replay validation, heuristic flags.
 - ~~**Dev menu shell screen** — the tab strip from the approved mock.~~ **DONE 2026-08-13.**

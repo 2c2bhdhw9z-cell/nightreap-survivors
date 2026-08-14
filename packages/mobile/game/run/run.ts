@@ -45,6 +45,14 @@ import {
   rollDrops,
 } from "../sim/pickups";
 import { PassiveStore } from "../sim/passives";
+import {
+  MAX_PROP_RADIUS,
+  PROP_HIT_COOLDOWN,
+  PROP_HIT_PAD,
+  PROP_STREAM_EVERY,
+  PropField,
+  payOutBreaks,
+} from "../sim/props";
 import { MAX_PLAYERS, PlayerStore } from "../sim/player";
 import { Progression } from "../sim/progression";
 import { ProjectileStore, type OwnerPositions } from "../sim/projectiles";
@@ -164,6 +172,7 @@ export class Run {
   readonly enemies = new EnemyStore();
   readonly projectiles = new ProjectileStore();
   readonly pickups = new PickupStore();
+  readonly props = new PropField();
   readonly weapons = new WeaponStore(MAX_PLAYERS);
   readonly passives = new PassiveStore(MAX_PLAYERS);
   readonly prog = new Progression();
@@ -330,6 +339,12 @@ export class Run {
     this.enemies.clear();
     this.projectiles.clear();
     this.pickups.clear();
+    // Scenery is derived from the stage seed, so pointing the field at the seed is the whole of
+    // placing every crate and gravestone on the map. Nothing about the floor is stored in a save.
+    this.props.setSeed(this.seed | 0);
+    // Streamed once here as well as in the tick, so the first frame the player ever sees already has
+    // scenery standing on it instead of popping in a moment later.
+    this.props.stream(this.players.x[0], this.players.y[0]);
     this.weapons.reset(playerCount);
     this.passives.reset(playerCount);
     this.prog.reset();
@@ -545,6 +560,12 @@ export class Run {
     );
     this.projectiles.update(this.owners as OwnerPositions, this.enemies, stats, this.critRng);
 
+    // 8b. Scenery. Streamed, smashed by whatever the weapons put on the floor, and paid out. Props
+    //     are not enemies: they do not move, do not block, do not hurt anybody, and are not in the
+    //     enemy grid. They only ever hand out pickups, which is why they can sit at the end of the
+    //     weapon step rather than inside it.
+    this.tickScenery();
+
     // 9. Drain this tick's damage and death events into totals and loot.
     this.drainCombatEvents();
 
@@ -598,6 +619,54 @@ export class Run {
     // 14. Did the run end?
     this.checkEnd();
     return true;
+  }
+
+  /**
+   * Bring scenery in, let the weapons break it, and turn every break into pickups on the floor.
+   *
+   * WHY PROJECTILES AND NOT "WEAPON DAMAGE"
+   * A prop is broken by something visibly touching it, and in this engine everything a weapon puts
+   * into the world is a projectile — a knife, a whip's arc, an aura. Reading positions out of the
+   * projectile store means scenery needs no cooperation from any weapon, so a new weapon breaks
+   * crates on the day it is added without anybody remembering to wire it up.
+   *
+   * WHY THE BREAKS ARE PAID BEFORE THE REPORT IS CLEARED
+   * The break report is a fixed-size list. It is read and paid in the same tick it was written and
+   * cleared immediately afterwards, so a row can never be seen twice and loot can never double.
+   */
+  private tickScenery(): void {
+    const props = this.props;
+    const players = this.players;
+
+    if (this.ticks % PROP_STREAM_EVERY === 0) props.stream(players.x[0], players.y[0]);
+    props.update();
+    props.rebuildGrid();
+
+    const proj = this.projectiles;
+    const pSlots = proj.pool.slots;
+    const pCount = proj.pool.count;
+    for (let i = 0; i < pCount; i++) {
+      const ps = pSlots[i];
+      const px = proj.x[ps];
+      const py = proj.y[ps];
+      const pr = proj.radius[ps];
+      const found = props.queryNear(px, py, pr + MAX_PROP_RADIUS + PROP_HIT_PAD);
+      for (let j = 0; j < found; j++) {
+        const slot = props.neighbourScratch[j];
+        if (props.hitAge[slot] < PROP_HIT_COOLDOWN) continue;
+        const dx = props.x[slot] - px;
+        const dy = props.y[slot] - py;
+        const reach = pr + props.radius[slot] + PROP_HIT_PAD;
+        if (dx * dx + dy * dy > reach * reach) continue;
+        const bx = props.x[slot];
+        const by = props.y[slot];
+        const kind = props.typeIndex[slot];
+        if (props.damageAt(slot, 1)) this.cues.emit(CUE.propBroken, bx, by, kind);
+      }
+    }
+
+    payOutBreaks(props, this.pickups, this.stats, this.dropRng);
+    props.resetBreaks();
   }
 
   /** Spawn the Reaper when it is due, then count down to the White Hand. */
@@ -912,6 +981,11 @@ export class Run {
       h = hashFloat(h, pick.y[s] as number);
       h = hashFloat(h, pick.value[s] as number);
     }
+
+    // Scenery folds in as integers only — which cells are still standing and how many were broken.
+    // Prop positions come out of the stage seed identically on every device, so hashing a float here
+    // would only ever invent a disagreement between two phones that actually agree.
+    h = this.props.hashInto(h);
 
     h = hashWord(h, this.prog.level);
     h = hashWord(h, this.prog.xp);

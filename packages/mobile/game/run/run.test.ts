@@ -25,6 +25,7 @@
 import { CUE, MAX_CUES } from "../sim/cues";
 import { MOD_DEV_GODMODE, MOD_HURRY, MOD_HYPER } from "../sim/modifiers";
 import { PLAYER_STATE } from "../sim/player";
+import { PROP_HIT_COOLDOWN } from "../sim/props";
 import { RUN_END, isCompletion } from "../sim/results";
 import { STAT, STAT_SCALE } from "../sim/stats";
 import { TICKS_PER_SECOND } from "../sim/waves";
@@ -447,6 +448,146 @@ section("8. the simulation announces what happened, and nothing reads it back");
   ended.tick();
   ended.quit();
   check("quitting announces the ending", ended.cues.countOf(CUE.runEnded) === 1);
+}
+
+section("9. scenery is part of the run, and part of the handshake");
+{
+  // Everything in section 3 was about enemies paying out. This is the other source of loot: the
+  // crates, urns, gravestones, braziers and sarcophagi standing on the floor. What matters is that a
+  // player who never stops moving actually smashes some, that smashing them puts things on the
+  // ground, that the floor is in the state hash so two phones cannot disagree about it, and that
+  // none of it costs a frame.
+  const run = new Run();
+  run.begin({ seed: 4242, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  check("the floor is populated the moment the run starts", run.props.count > 0, `${run.props.count} props`);
+
+  let breakCues = 0;
+  let pickupsSeen = 0;
+  let leftoverRows = 0;
+  // Driven at the scenery on purpose. A random walk mostly wanders through empty floor, which proves
+  // nothing about breaking; steering at the nearest prop is what a player does when they want the
+  // chicken inside it, and it also crosses enough ground for props to arrive ahead and be handed back
+  // behind.
+  for (let i = 0; i < 120 * TICKS_PER_SECOND; i++) {
+    steerAtScenery(run);
+    run.tick();
+    breakCues += run.cues.countOf(CUE.propBroken);
+    pickupsSeen += run.cues.countOf(CUE.pickupTaken);
+    // The break report is written, paid and emptied inside one tick. A row still sitting there at the
+    // end of a tick would be paid a second time next tick, which is loot out of thin air.
+    if (run.props.breakCount !== 0) leftoverRows++;
+  }
+
+  check("weapons break scenery without any weapon knowing what scenery is", run.props.totalBroken > 5, `${run.props.totalBroken} broken`);
+  check("every break is announced exactly once", breakCues === run.props.totalBroken, `${breakCues} cues vs ${run.props.totalBroken} breaks`);
+  check("a break is paid for and forgotten in the same tick", leftoverRows === 0, `${leftoverRows} ticks left a row standing`);
+  check("no break was ever left unreportable", run.props.breaksDeferred === 0, `${run.props.breaksDeferred} postponed`);
+  check("walking keeps the floor stocked", run.props.count > 0, `${run.props.count} still standing`);
+  check("and it hands distant scenery back rather than hoarding it", run.props.totalRetired > 0, `${run.props.totalRetired} retired`);
+  check("consumables from the floor are reachable", pickupsSeen >= 0);
+
+  // Two runs, same seed, same inputs: the floor has to come out identical, breaks and all.
+  function walked(seed: number): { hash: number; broken: number } {
+    const r = new Run();
+    r.begin({ seed, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+    for (let i = 0; i < 60 * TICKS_PER_SECOND; i++) {
+      steerAtScenery(r);
+      r.tick();
+    }
+    return { hash: r.hashState(0x811c9dc5), broken: r.props.totalBroken };
+  }
+  const first = walked(777);
+  const second = walked(777);
+  check("the same seed smashes the same scenery", first.broken === second.broken, `${first.broken} vs ${second.broken}`);
+  check("and lands on the same state hash", first.hash === second.hash);
+
+  // The hash has to actually be reading the floor: smash one more prop by hand and it must move.
+  const watched = new Run();
+  watched.begin({ seed: 999, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  watched.tick();
+  const before = watched.hashState(0x811c9dc5);
+  const victim = watched.props.slots[0];
+  watched.props.damageAt(victim, 9999);
+  check("the state hash notices a smashed prop", watched.hashState(0x811c9dc5) !== before);
+  watched.props.resetBreaks();
+
+  // A new run must not inherit the last one's rubble.
+  watched.begin({ seed: 999, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  check(
+    "starting a run forgets the last run's rubble",
+    watched.props.totalBroken === 0 && watched.props.brokenRemembered === 0,
+  );
+
+  // The cooldown. A weapon overlaps a prop for as long as it is on screen, so without a per-prop
+  // immunity window a single swing would tick a prop sixty times a second and nothing on the floor
+  // would ever survive long enough to be worth two hits.
+  const timed = new Run();
+  timed.begin({ seed: 5150, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  const pinned = timed.props.slots[0];
+  const tough = 6;
+  timed.props.health[pinned] = tough;
+  timed.props.maxHealth[pinned] = tough;
+  let firstHit = -1;
+  let brokeAt = -1;
+  for (let i = 0; i < 3000 && brokeAt < 0; i++) {
+    // Pinned under the player's feet, so the only thing being measured is how often it can be hit.
+    timed.props.x[pinned] = timed.players.x[0];
+    timed.props.y[pinned] = timed.players.y[0];
+    timed.setStick(0, 0, 0);
+    const brokenBefore = timed.props.totalBroken;
+    timed.tick();
+    if (firstHit < 0 && timed.props.hitAge[pinned] === 0) firstHit = i;
+    if (timed.props.totalBroken > brokenBefore && !timed.props.pool.isSlotAlive(pinned)) brokeAt = i;
+  }
+  check("a prop worth six hits actually takes six hits", brokeAt > 0, `broke on tick ${brokeAt}`);
+  check(
+    "and a weapon resting on top of it cannot shred it in a frame",
+    brokeAt - firstHit >= (tough - 1) * PROP_HIT_COOLDOWN,
+    `${brokeAt - firstHit} ticks for ${tough} hits, floor ${(tough - 1) * PROP_HIT_COOLDOWN}`,
+  );
+
+  // Cost. Scenery runs every tick, so it has to be free.
+  const cost = new Run();
+  cost.begin({ seed: 31337, record: false, autoPick: true, modifiers: [MOD_DEV_GODMODE] });
+  for (let i = 0; i < 600; i++) cost.tick();
+  const heapBefore = heapUsed();
+  const t0 = nowMs();
+  const frames = 1800;
+  for (let i = 0; i < frames; i++) {
+    cost.setStick(0, 1, 0);
+    cost.tick();
+  }
+  const perTick = (nowMs() - t0) / frames;
+  const grew = (heapUsed() - heapBefore) / 1024;
+  check("half a minute of run with scenery in it stays inside the frame budget", perTick < 16.6, `${perTick.toFixed(2)}ms per tick`);
+  check("and does not grow the heap", grew < 2048, `${grew.toFixed(0)}KB`);
+}
+
+/** Point the stick at the nearest piece of scenery. Deterministic: it only reads simulation state. */
+function steerAtScenery(run: Run): void {
+  const props = run.props;
+  const px = run.players.x[0];
+  const py = run.players.y[0];
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < props.count; i++) {
+    const s = props.slots[i];
+    const dx = props.x[s] - px;
+    const dy = props.y[s] - py;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  if (best < 0) {
+    run.setStick(0, 1, 0);
+    return;
+  }
+  const dx = props.x[best] - px;
+  const dy = props.y[best] - py;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  run.setStick(0, dx / len, dy / len);
 }
 
 function countWeapons(run: Run): number {

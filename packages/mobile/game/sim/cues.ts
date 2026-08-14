@@ -76,6 +76,8 @@ export const CUE = {
   bellTolled: 17,
   /** The run ended. `value` carries the `RUN_END` reason. */
   runEnded: 18,
+  /** A piece of scenery was smashed. `value` carries the prop's type index. */
+  propBroken: 19,
 } as const;
 
 export type CueId = (typeof CUE)[keyof typeof CUE];
@@ -101,6 +103,7 @@ export const CUE_NAMES: readonly string[] = [
   "reaperArrived",
   "bellTolled",
   "runEnded",
+  "propBroken",
 ];
 
 export const CUE_COUNT = CUE_NAMES.length;

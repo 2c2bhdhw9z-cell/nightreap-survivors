@@ -2822,3 +2822,42 @@ players have reason to trust it. The character portraits on the results screen a
 the sprite atlas is packed.
 
 Next: destructible props and pickups (floor chicken, bomb, magnet, coins).
+
+
+## 2026-08-14 — Destructible scenery (Phase 3, item 8 of the eight)
+
+**Done and pushed.**
+
+The floor is no longer just a picture. Crates, urns, gravestones, braziers and the rare sarcophagus now stand
+on it, break when a weapon touches them, and pay out coins, gems, roast chickens, bombs, freezes, magnets and
+chests.
+
+Plain English on the decisions that matter:
+
+- **Nothing about the floor is saved.** Where each crate is, and what it is, is worked out from the stage's
+  number the instant the player walks near it. That means a stage can be endless and cost nothing to
+  remember, and four phones in a co-op run agree about every crate without sending anything to each other.
+- **What has been smashed is the one thing that has to be remembered**, and only the last 256 of them are.
+  When something older than that falls off the end, the game counts it out loud instead of hiding it. Walk a
+  long way away and back and a crate may be standing again — a deliberate trade, written down.
+- **Scenery arrives at one distance and leaves at a further one.** With one distance, pacing back and forth
+  would make crates flicker in and out on every step. Tested by pacing a hundred crossings.
+- **Loot can never be lost.** If the "just broke" list is full, the prop survives on its last hit and breaks
+  a moment later. It never breaks with nowhere to record what it owed. This project already lost a row like
+  that once on the results screen.
+- **Props are worth hits, not damage**, so a maxed weapon does not trivialise them and a first-timer is not
+  locked out. Each prop is briefly immune after a hit, so a weapon resting on one cannot shred it in a frame.
+- **Weapons reach further against scenery than against enemies**, because most weapons swing at a fixed
+  distance out from the player — otherwise a chicken could sit under the player's feet, unreachable.
+- **Props never block movement and never hurt anybody.** What they drop lands on the floor to be picked up,
+  never as an effect that goes off where the prop stood.
+- **Breakable scenery is a separate layer from the decorations already on the floor.** The decorations stay
+  decorations forever, so an art pass can never turn into a balance change.
+
+Proof: 108 checks — 91 on the scenery module, 17 more in the run loop — and 16 deliberate sabotages of the code, every
+one caught by the tests. Everything else in the game still passes, and lint, typecheck and build are clean.
+
+**Not done yet:** prop art. Nothing on the floor is painted — that waits for the atlas pass with the other
+238 sprites.
+
+Next: treasure chests and the evolution roll.
