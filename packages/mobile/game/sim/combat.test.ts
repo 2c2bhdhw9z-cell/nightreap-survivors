@@ -131,11 +131,22 @@ section("weapon table integrity");
 {
   const offerable = WEAPON_TYPES.filter((w) => w.evolvedFrom === "");
   const evolutions = WEAPON_TYPES.filter((w) => w.evolvedFrom !== "");
-  check("six launch weapons, one per archetype", offerable.length === 6, `${offerable.length} offerable`);
+  check(
+    "fifteen launch weapons, every archetype held by more than one of them",
+    offerable.length === 15,
+    `${offerable.length} offerable`,
+  );
   check(
     "every launch weapon has an evolution waiting behind it",
-    evolutions.length === 6 && offerable.every((w) => w.evolvesTo !== ""),
+    evolutions.length === offerable.length && offerable.every((w) => w.evolvesTo !== ""),
     `${evolutions.length} evolutions`,
+  );
+  // Tied to the count above on purpose. A sixteenth weapon added without its evolution is exactly the
+  // mistake this catches, and counting evolutions against offerable weapons keeps catching it forever
+  // without anyone having to remember to edit a number here.
+  check(
+    "and no two of them ask for the same item to evolve, so chasing two is a real choice",
+    new Set(offerable.map((w) => w.evolveRequires)).size === offerable.length,
   );
   check(
     "an evolution keeps the archetype it grew out of, so it fires the way the player learned it",

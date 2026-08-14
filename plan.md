@@ -2013,7 +2013,13 @@ the previous best time shown next to the new one.
 **Status: STARTED.**
 Sized to the launch-smaller recommendation. If you'd rather launch with everything, Phases 4 and 5
 simply merge and launch moves later.
-- **~15 weapons + their evolutions and unions** (weapon level 8 + maxed passive + chest).
+- ~~**~15 weapons + their evolutions**~~ (weapon level 8 + maxed passive + chest) — **DONE.** Fifteen
+  weapons you can be offered, each with its own evolution behind it: fifteen and fifteen, thirty in all,
+  with two hundred and ten upgrade steps between them. Every one of the six shapes a weapon can take
+  (a swing, a seeker, a straight shot, a lob, a circling blade and an aura you stand in) is now held by
+  at least two different weapons, so no single pick is the only way to ever see one. The fifteen
+  evolutions ask for fifteen *different* items, so chasing two at once is a real choice rather than a
+  coincidence. Finding them found one real bug — see below.
 - ~~**20 passives**~~ — **DONE.** All twenty items are in, five levels each, a hundred upgrade steps in
   total: wider reach, faster shots, longer-lasting effects, an extra projectile, more gold, faster
   learning, better luck, more pierce, harder shoving, a second life, critical hits and their damage, a

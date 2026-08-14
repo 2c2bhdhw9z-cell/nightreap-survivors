@@ -3184,3 +3184,43 @@ emptied out, an armour number inflated a thousandfold, two items given the same 
 same number, the loadout patched instead of rebuilt, only the top level counted, the five-level cap
 loosened, and the item numbering squeezed. All eight were caught. Two more were made to the recording
 format, and both were caught too.
+
+## Fifteen weapons and fifteen evolutions are in
+
+The weapon list went from six you could be offered to fifteen, and each of those fifteen now has its own
+evolution waiting behind it — thirty entries in total, with two hundred and ten upgrade steps across them.
+
+The nine new ones: a lobbed flask that breaks into a fire the horde has to walk through, a bell that
+shoves everything off you, a wheel of bone that rolls out and comes back, a scythe that reaps in a wide
+arc, a choir of shapes that circle you, a long-range shot that punches through a line, a cross that
+returns to your hand, a lance that spears straight ahead, and a storm of nails that falls where you are
+looking. Each has its own evolved form, and each of the fifteen evolutions asks for a *different* one of
+the twenty items, so going after two of them at once is a real decision.
+
+### One real bug, caught by a check rather than by playing
+
+Two of the new circling weapons orbited so far out that they missed anything standing on top of you —
+0 damage over four hundred ticks against a crowd pressed right against the player. The cause was the
+stat that is *supposed* to make a circling weapon better: widening the blade also pushed the whole ring
+outward, so the ring drifted past the crowd instead of grinding through it. Both rings were pulled in
+close enough to always touch a body at arm's length, and there is now a check that measures every
+circling weapon against a body standing on the player, in both directions — too far out, and too far in
+where it would stop being a circling weapon at all.
+
+### And the weapons got their own set of checks
+
+360 lines of them, on top of the combat tests. They check the list is fifteen and fifteen with no
+repeated name or number; that the numbers saved into recordings and co-op packets are an unbroken run
+that still fits in a single byte, and that the twelve weapons that shipped first still hold the exact
+numbers they shipped with; that every level-up says something *and* changes something, and that a card
+promising "+6 damage" adds exactly six; that a weapon's numbers match its shape (nothing standing still
+carries travel speed, an aura is big enough to be worth standing in); that its switches can't contradict
+its numbers (a weapon that says it never shoves cannot carry a shove value); that nothing folds into
+nonsense at full level; and that every evolution is strictly an upgrade on the thing it came from.
+
+Then seven deliberate breakages were made to be sure the checks would notice: a shipped weapon's number
+renumbered, a level-up emptied of its numbers, a circling weapon pushed back out of reach, a no-shove
+weapon given a shove, an evolution made weaker than its base, two evolutions pointed at the same item,
+and a standing-still weapon given travel speed. All seven were caught.
+
+Everything else still passes — 56 test files, no failures — and the project builds clean.

@@ -157,7 +157,7 @@ section("the content table holds together");
 
   check(
     "every launch weapon has an evolution waiting behind it",
-    OFFERABLE.length === 6 && OFFERABLE.every((w) => w.evolvesTo !== ""),
+    OFFERABLE.length === 15 && OFFERABLE.every((w) => w.evolvesTo !== ""),
     `${OFFERABLE.length} offerable, ${EVOLUTIONS.length} evolutions`,
   );
   check(

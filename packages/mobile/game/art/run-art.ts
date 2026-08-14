@@ -68,6 +68,28 @@ export const SHOT_FRAME: Readonly<Record<string, string>> = {
   tombfall: "projectiles/icon-18",
   codexOfHollows: "projectiles/icon-05",
   plagueBloom: "projectiles/icon-06",
+  // The nine launch weapons and their evolutions. The projectile set ran out at six spare cells, so the
+  // rest are drawn from the weapon set — a spinning scythe or a thrown cross reads better as the weapon
+  // itself than as an abstract mote anyway. Every one of the thirty is a different picture; the check
+  // below refuses a repeat, because an evolution wearing its old picture is the payoff landing flat.
+  cinderflask: "projectiles/icon-03",
+  hellmouthFlask: "projectiles/icon-08",
+  pallbearersBell: "projectiles/icon-09",
+  dirgeOfTheDeep: "projectiles/icon-10",
+  boneWheel: "projectiles/icon-13",
+  carrionSpiral: "projectiles/icon-14",
+  reapersScythe: "weapons/icon-01",
+  harvestersEdge: "weapons/icon-02",
+  hollowChoir: "weapons/icon-03",
+  chorusOfTheNameless: "weapons/icon-04",
+  graveShot: "weapons/icon-05",
+  funeralVolley: "weapons/icon-06",
+  sepulcherCross: "weapons/icon-07",
+  judgementCross: "weapons/icon-08",
+  wormfangLance: "weapons/icon-09",
+  devourersLance: "weapons/icon-10",
+  stormOfNails: "weapons/icon-11",
+  thousandNails: "weapons/icon-12",
 };
 
 /**
