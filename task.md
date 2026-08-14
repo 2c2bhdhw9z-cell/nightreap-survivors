@@ -2959,3 +2959,40 @@ the tests notice. Two slipped through at first — the arrival line quietly not 
 account's history being able to show another account's runs — and both are caught now.
 
 **Still mine in Phase 3:** the operator screen in the browser for these new run views.
+
+## Anti-cheat v1 — the operator's window onto the runs (2026-08-14)
+
+The server half was already done: runs arrive with the recording they were played from, get judged, and the
+recording is kept either way. This is the part a person actually looks at.
+
+On the page, behind the same operator secret as everything else:
+
+- **What came in, newest first.** Each upload shows whether it was kept or turned away, how long the run
+  lasted, which stage, how many players, how big the recording is, the seed, the build, and the one-line
+  summary the server wrote at the time.
+- **Two switches.** "Only the ones turned away" and "only the ones worth a look". They narrow the list and
+  do nothing else.
+- **The player's id on every row is a link.** Pressing it looks that player up above, so their standing,
+  their whole record, and their upload history all appear together.
+- **One player's uploads**, with a plain count of how many were kept, how many were turned away, and how
+  many were worth a look.
+- **Fetch the recording** — one button per row. It brings back the stored bytes, what the device claimed
+  happened, and what the server decided at the time. It is a separate press on purpose: the recordings are
+  the biggest thing kept about a run and nothing should be dragging them around while somebody scrolls.
+
+What is deliberately not there: no "dealt with" tick, no "clear this flag" button, nothing anywhere that
+marks a run as fine. A run being looked at is not a fact about the run, and a list anybody could quietly
+tidy would be the first thing leaned on. If a run deserves a consequence, it is filed from the buttons above
+the list, where it lands in the record with a name, a reason and a date on it.
+
+Checked by driving a real browser at the real page against the 128 uploads already stored — 26 things read
+off the screen, including that a tab holding no secret sees nothing and a tab holding the wrong secret is
+refused in the same plain way, so the page cannot be used to work out what a real secret looks like. Twelve
+things that could go wrong were then broken on purpose to prove those checks would notice: every run counted
+as kept, the switches doing nothing, the recording fetched for the wrong run, a flagged run left untagged,
+lengths rounded the wrong way, a turned-away run told off for missing the leaderboards. All twelve caught.
+
+**Every Phase 3 item that was mine is now finished.** What remains in Phase 3 needs you: approving the
+out-of-run menus (including the real Settings screen), and getting both test tracks handing the game to real
+testers — Google's closed test wants twelve real people opted in for fourteen days in a row, so about
+eighteen to twenty need recruiting.

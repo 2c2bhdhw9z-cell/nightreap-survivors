@@ -3,7 +3,17 @@ import { Button } from "../components/ui/button";
 import { ActionForm, reasonProblem, type ActionOption } from "../components/admin/action-form";
 import { StandingPanel, type Standing } from "../components/admin/standing";
 import { Timeline, type TimelineRow } from "../components/admin/timeline";
-import { useAccount, useActionCatalogue, useRedoRow, useTakeAction, useUndoRow } from "../queries/admin";
+import { RunFilters, RunList, RunTally, type RunLog, type RunRow } from "../components/admin/runs";
+import {
+  useAccount,
+  useAccountRuns,
+  useActionCatalogue,
+  useRecentRuns,
+  useRedoRow,
+  useRunBlob,
+  useTakeAction,
+  useUndoRow,
+} from "../queries/admin";
 import { getAdminToken, setAdminToken } from "../lib/api";
 
 /**
@@ -66,9 +76,15 @@ function AdminPage() {
   const [actorId, setActorId] = useState("");
   const [reason, setReason] = useState("");
   const [said, setSaid] = useState("");
+  const [onlyRefused, setOnlyRefused] = useState(false);
+  const [onlyFlagged, setOnlyFlagged] = useState(false);
+  const [logForId, setLogForId] = useState(0);
 
   const catalogue = useActionCatalogue(unlocked);
   const account = useAccount(subjectId, unlocked);
+  const runs = useRecentRuns({ limit: 25, onlyFlagged, onlyRefused }, unlocked);
+  const accountRuns = useAccountRuns(subjectId, unlocked);
+  const runLog = useRunBlob(logForId);
   const act = useTakeAction();
   const undo = useUndoRow();
   const redo = useRedoRow();
@@ -241,8 +257,80 @@ function AdminPage() {
                 }}
               />
             </div>
+
+            <div>
+              <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">
+                Runs {subjectId} has sent in
+              </h2>
+              {accountRuns.isLoading ? (
+                <p className="text-sm text-zinc-500">Reading their uploads…</p>
+              ) : accountRuns.isError ? (
+                <p className="rounded border border-red-900 bg-red-950/60 px-3 py-2 text-sm text-red-200">
+                  {messageOf(accountRuns.error)}
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <RunTally
+                    accepted={accountRuns.data?.accepted ?? 0}
+                    refused={accountRuns.data?.refused ?? 0}
+                    flagged={accountRuns.data?.flagged ?? 0}
+                  />
+                  <RunList
+                    rows={(accountRuns.data?.rows ?? []) as RunRow[]}
+                    log={(runLog.data ?? null) as RunLog | null}
+                    logForId={logForId}
+                    logBusy={runLog.isLoading}
+                    logProblem={runLog.isError ? messageOf(runLog.error) : ""}
+                    onFetchLog={(id) => setLogForId(id)}
+                    onLookUp={(id) => {
+                      setTypedId(id);
+                      setSubjectId(id);
+                    }}
+                    empty="They have never sent a run in."
+                  />
+                </div>
+              )}
+            </div>
           </div>
         )}
+
+        <div>
+          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-zinc-500">Runs that came in, newest first</h2>
+          <p className="mb-2 text-xs text-zinc-500">
+            Nothing here can be ticked off. The switches only narrow the list; a run being looked at is not a fact about the run. If a
+            run deserves a consequence, file it from the buttons above, where it gets a name, a reason and a date.
+          </p>
+          <RunFilters
+            onlyRefused={onlyRefused}
+            onlyFlagged={onlyFlagged}
+            showing={runs.data?.rows.length ?? 0}
+            onChange={(next) => {
+              setOnlyRefused(next.onlyRefused);
+              setOnlyFlagged(next.onlyFlagged);
+            }}
+          />
+          <div className="mt-3">
+            {runs.isLoading ? (
+              <p className="text-sm text-zinc-500">Reading what has arrived…</p>
+            ) : runs.isError ? (
+              <p className="rounded border border-red-900 bg-red-950/60 px-3 py-2 text-sm text-red-200">{messageOf(runs.error)}</p>
+            ) : (
+              <RunList
+                rows={(runs.data?.rows ?? []) as RunRow[]}
+                log={(runLog.data ?? null) as RunLog | null}
+                logForId={logForId}
+                logBusy={runLog.isLoading}
+                logProblem={runLog.isError ? messageOf(runLog.error) : ""}
+                onFetchLog={(id) => setLogForId(id)}
+                onLookUp={(id) => {
+                  setTypedId(id);
+                  setSubjectId(id);
+                }}
+                empty="No runs have been sent in yet."
+              />
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );

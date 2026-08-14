@@ -69,3 +69,51 @@ export function useRedoRow() {
   const refresh = useRefresh();
   return useMutation({ ...orpcAdmin.events.restore.mutationOptions(), onSuccess: refresh });
 }
+
+/* ---------------------------------------------------------------------------------------------- */
+/* Runs that came in                                                                               */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The newest uploads, newest first, optionally narrowed to the ones worth a look.
+ *
+ * The two switches are a filter and nothing else. Nothing here marks a run as dealt with, because "dealt
+ * with" is somebody's opinion and opinions belong in the record with a name on them, not in a list on a
+ * screen that anybody can quietly change.
+ */
+export function useRecentRuns(
+  options: { limit: number; onlyFlagged: boolean; onlyRefused: boolean },
+  enabled: boolean,
+) {
+  return useQuery({
+    ...orpcAdmin.runs.recent.queryOptions({ input: options }),
+    enabled,
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/** Every upload one account has ever filed, with how many were kept, turned away, and worth a look. */
+export function useAccountRuns(accountId: string, enabled: boolean) {
+  return useQuery({
+    ...orpcAdmin.runs.forAccount.queryOptions({ input: { accountId, limit: 50 } }),
+    enabled: enabled && accountId.length > 0,
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * The stored recording of one run.
+ *
+ * Asked for on purpose and one at a time. These are by far the biggest thing kept about a run, and a screen
+ * that pulled them while somebody scrolled would be moving megabytes for nothing.
+ */
+export function useRunBlob(id: number) {
+  return useQuery({
+    ...orpcAdmin.runs.blobOf.queryOptions({ input: { id } }),
+    enabled: id > 0,
+    staleTime: 0,
+    retry: false,
+  });
+}
