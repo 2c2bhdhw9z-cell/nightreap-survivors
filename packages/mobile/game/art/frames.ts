@@ -90,6 +90,30 @@ export const PORTRAIT_FRAME: Readonly<Record<string, string>> = Object.freeze({
   calla: "portraits/icon-12", // wide hood, violet eyes, a card in the hood band
 });
 
+/**
+ * Arcana → symbol.
+ *
+ * Keyed by the arcana's own id, same as everything else here, and assigned by looking at the drawn
+ * symbol against what the card actually does rather than by position in the sheet. Eighteen symbols
+ * were drawn and eight are used; the rest are the post-launch arcanas, which is why the check below
+ * proves every id has a symbol rather than proving every symbol has an id.
+ */
+export const ARCANA_FRAME: Readonly<Record<string, string>> = Object.freeze({
+  twinToll: "arcana/icon-01", // paired bells
+  graveBloom: "arcana/icon-02", // flower breaking through stone
+  foolsVigil: "arcana/icon-03", // a single open eye
+  theLongHour: "arcana/icon-04", // a clock face with too many hands
+  paupersPurse: "arcana/icon-05", // cut purse spilling coin
+  ironLitany: "arcana/icon-06", // chained tower shield
+  reapersBargain: "arcana/icon-07", // scythe crossed with an hourglass
+  shatteredReliquary: "arcana/icon-08", // a broken casket, light coming out of it
+});
+
+/** The symbol for an arcana, or the blank socket when the id is not one we know. */
+export function arcanaFrame(id: string): string {
+  return ARCANA_FRAME[id] ?? MISSING_FRAME;
+}
+
 /** Upgrades that knowingly share a picture with another upgrade. Checked, so it can never grow by accident. */
 export const SHARED_POWERUP_ICONS: readonly string[] = Object.freeze([
   // Empty on purpose. Every upgrade has its own icon now, so any repeat in the table above is a mistake
@@ -111,6 +135,7 @@ export function allNamedFrames(): string[] {
   const names = new Set<string>([LOCK_FRAME, MISSING_FRAME]);
   for (const name of Object.values(POWERUP_FRAME)) names.add(name);
   for (const name of Object.values(PORTRAIT_FRAME)) names.add(name);
+  for (const name of Object.values(ARCANA_FRAME)) names.add(name);
   return [...names].sort();
 }
 

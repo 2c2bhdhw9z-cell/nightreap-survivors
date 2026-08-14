@@ -12,7 +12,9 @@ import { readFileSync } from "node:fs";
 
 import { CHARACTERS } from "../characters/roster";
 import { POWERUPS } from "../shop/powerups";
+import { ARCANA_TYPES } from "../sim/arcanas";
 import {
+  ARCANA_FRAME,
   ATLAS_CELL,
   LOCK_FRAME,
   MISSING_FRAME,
@@ -20,6 +22,7 @@ import {
   POWERUP_FRAME,
   SHARED_POWERUP_ICONS,
   allNamedFrames,
+  arcanaFrame,
   looksLikeFrameName,
   portraitFrame,
   powerupFrame,
@@ -119,6 +122,28 @@ check(
   "every upgrade icon comes from the upgrade sheet",
   Object.values(POWERUP_FRAME).every((frame) => frame.startsWith("icons/")),
 );
+
+console.log("every arcana has a symbol");
+const symbolless = ARCANA_TYPES.filter((card) => !(card.id in ARCANA_FRAME)).map((card) => card.id);
+check("no arcana is left without a symbol", symbolless.length === 0, `without: ${symbolless.join(", ")}`);
+check(
+  "the table names no arcana the game does not have",
+  Object.keys(ARCANA_FRAME).every((id) => ARCANA_TYPES.some((card) => card.id === id)),
+);
+check(
+  "no two arcanas wear the same symbol",
+  new Set(Object.values(ARCANA_FRAME)).size === Object.keys(ARCANA_FRAME).length,
+);
+check(
+  "every arcana symbol comes from the arcana sheet",
+  Object.values(ARCANA_FRAME).every((frame) => frame.startsWith("arcana/")),
+);
+check(
+  "every arcana symbol is really in the packed sheet",
+  Object.values(ARCANA_FRAME).every((frame) => frame in manifest.frames),
+);
+check("a known arcana resolves to its own symbol", arcanaFrame("twinToll") === ARCANA_FRAME.twinToll);
+check("an arcana nobody has heard of draws the blank socket", arcanaFrame("nonsense") === MISSING_FRAME);
 
 console.log("looking a name up");
 check("a known upgrade resolves to its own icon", powerupFrame("luck") === POWERUP_FRAME.luck);

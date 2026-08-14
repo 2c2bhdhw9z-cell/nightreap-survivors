@@ -85,6 +85,8 @@ export const MODIFIER_SOURCE = {
   passive: 7,
   /** Ranks bought in the PowerUps shop, carried into every run the account starts. */
   powerUp: 8,
+  /** One arcana taken during the run. Rebuilt from the picks, like a passive. */
+  arcana: 9,
 } as const;
 
 export type ModifierSource = (typeof MODIFIER_SOURCE)[keyof typeof MODIFIER_SOURCE];

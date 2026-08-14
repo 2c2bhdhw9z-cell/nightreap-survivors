@@ -3500,3 +3500,52 @@ opened, letting the opened mark stand in for actually earning it, reading the ne
 of an old save file, ignoring a save file that is too short, letting a locked place start a run, showing a
 never-played place as a time of zero, rounding a survival time up instead of down, skipping places
 entirely when handing out unlocks, and announcing the first place as if you had just earned it.
+
+## The eight arcanas
+
+An arcana is the biggest single decision inside a run. A few minutes in, the run stops and offers three
+of them; you keep one. Three offers over a full run, three kept, and they are all trades — every one
+gives you something real and takes something real away. A card that was only "more damage" would be a
+passive item wearing a bigger frame.
+
+The eight:
+
+- **Twin Toll** — the weapon you started with rings twice, and every weapon swings slower.
+- **Grave Bloom** — you mend three times as fast, mending burns whatever is standing next to you, and
+  your total health is lower.
+- **Fool's Vigil** — at full health every hit is a critical, and your health is halved.
+- **The Long Hour** — your weapons come round far faster, and so does everything hunting you.
+- **Pauper's Purse** — coins are worth double and count as experience, but gems are worth far less.
+- **Iron Litany** — heavy armour and a longer moment of mercy after a hit, and you move much slower.
+- **Reaper's Bargain** — everything dies easily and everything comes at once, forever.
+- **Shattered Reliquary** — large gems break like glass and hurt the room, cards only ever offer weapons,
+  and you level more slowly.
+
+How they are earned: the first is there from the start. Three more come from surviving 10, 20, 25 and 30
+minutes anywhere, and three from surviving a set time in a specific place — which is what ties them to
+the five places rather than to grinding one of them.
+
+How they are built, and why it matters later: an arcana is a list of number changes plus at most one rule
+change. Nothing in the game asks "is this Twin Toll" — it reads the numbers and one switch. That is the
+same shape as a game mode, a character quirk and a shop purchase, which is why they all stack with each
+other without anyone writing the combinations down.
+
+Two things were deliberately handled rather than left to chance. An offer that comes due while you were
+somewhere else is still owed to you, not skipped — the same bug a named fight had. And two arcanas taken
+in the other order land on exactly the same numbers, because two phones in co-op that disagree by one
+point of damage drift apart for the rest of the night.
+
+Each of the eight has its own symbol from the drawn sheet, matched to what the card does rather than to
+its place in the sheet. Eighteen symbols were drawn; the remaining ten are the arcanas that come after
+launch.
+
+### How this was proved
+
+Fourteen deliberate breakages, one at a time, all caught: an offer that redeals itself every moment,
+an offer that only opens if the exact second is hit, offering a card you already hold, letting rubbish
+into the pool of cards you have earned, letting the same card into it twice, putting up an offer screen
+with nothing on it, a card that does not close the screen when taken, a card whose rule never switches
+on, holding more cards than there are slots, needing a second longer than the card asks for in a place,
+needing a second longer than it asks for anywhere, arcanas leaking into the run's recording where modes
+live, an offer that never shuffles, and a place-specific condition quietly satisfied by a long run
+somewhere else.
