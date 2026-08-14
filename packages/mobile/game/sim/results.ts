@@ -278,6 +278,11 @@ export function summariseRun(
 
 /** What a finished run contributes to the profile. Applied by the save layer, not here. */
 export interface ProfileDelta {
+  /**
+   * Which stage the run happened on. Carried so the profile can keep a best time per place, which is
+   * what opens the next stage — a single best time anywhere cannot answer "have they cleared the marsh".
+   */
+  stageId: number;
   gold: number;
   runsStarted: number;
   runsCompleted: number;
@@ -294,6 +299,7 @@ export interface ProfileDelta {
  * `runsCompleted` is reserved for real endings.
  */
 export function profileDeltaFor(summary: RunSummary, out: ProfileDelta): ProfileDelta {
+  out.stageId = summary.stageId;
   out.gold = summary.gold;
   out.runsStarted = 1;
   out.runsCompleted = isCompletion(summary.end) ? 1 : 0;
@@ -305,6 +311,7 @@ export function profileDeltaFor(summary: RunSummary, out: ProfileDelta): Profile
 
 export function createProfileDelta(): ProfileDelta {
   return {
+    stageId: 0,
     gold: 0,
     runsStarted: 0,
     runsCompleted: 0,

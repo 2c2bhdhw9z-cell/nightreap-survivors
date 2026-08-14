@@ -111,6 +111,11 @@ function populated() {
     hudBadgeScale: 150,
     hudStickScale: 60,
   };
+  // Times on three of the five places, and on the very last slot the record has room for, because an
+  // off-by-one at the end of a fixed block is exactly the bug this layout can have.
+  save.stageBestSeconds[0] = 1_805;
+  save.stageBestSeconds[3] = 640;
+  save.stageBestSeconds[SAVE_LIMITS.stageBestCount - 1] = 65_535;
   return save;
 }
 
@@ -136,6 +141,17 @@ section("round trip");
   check("scalars survive", b.gold === a.gold && b.goldLifetime === a.goldLifetime && b.runsStarted === a.runsStarted);
   check("build and content version survive", b.buildId === a.buildId && b.contentVersion === a.contentVersion);
   check("best time survives", b.bestSurvivalSeconds === a.bestSurvivalSeconds);
+  check(
+    "the best time on each stage survives",
+    b.stageBestSeconds[0] === a.stageBestSeconds[0] &&
+      b.stageBestSeconds[3] === a.stageBestSeconds[3] &&
+      b.stageBestSeconds[SAVE_LIMITS.stageBestCount - 1] === a.stageBestSeconds[SAVE_LIMITS.stageBestCount - 1],
+    `${b.stageBestSeconds[0]}/${b.stageBestSeconds[3]}/${b.stageBestSeconds[SAVE_LIMITS.stageBestCount - 1]}`,
+  );
+  check(
+    "and stages nobody has played are still zero",
+    b.stageBestSeconds[7] === 0 && b.stageBestSeconds[11] === 0,
+  );
   check("everTainted survives", b.everTainted === a.everTainted);
 
   const bitsetsMatch =
@@ -505,6 +521,91 @@ section("limits");
   );
 }
 
+/* ---- a version 2 save, which had no per-stage times ----------------------------------------------- */
+
+section("migrating a version 2 save");
+{
+  /**
+   * A v2 blob built by hand, for the same reason the v1 one is: using the current writer to make the
+   * input would prove nothing, because the bug being guarded against is "the writer moved on and the
+   * reader was not told".
+   *
+   * v2 has no per-stage times at all, so the interesting question is what an old profile with a real
+   * record on the clock turns into. The answer has to be: it keeps its overall record, and its per-stage
+   * times start empty — which honestly represents "we do not know where that time was set".
+   */
+  function buildV2(best: number): Uint8Array {
+    const bytes = new Uint8Array(saveBytesFor(2));
+    const view = new DataView(bytes.buffer);
+    const bodyLen = saveBytesFor(2) - 64;
+    view.setUint32(0, 0x5653_524e, true); // "NRSV"
+    view.setUint16(4, 2, true);
+    view.setUint16(6, 5, true);
+    view.setUint32(8, 900, true);
+    view.setUint32(12, 61, true);
+    view.setUint32(16, 1_700_000_500, true);
+    view.setUint32(20, 4_242, true); // gold
+    view.setUint32(24, 9_000, true); // goldLifetime
+    view.setUint32(28, 30, true); // runsStarted
+    view.setUint32(32, 12, true); // runsCompleted
+    view.setUint32(36, 40_000, true); // secondsPlayed
+    view.setUint32(40, best, true); // bestSurvivalSeconds
+    view.setUint32(44, 0, true);
+    view.setUint32(48, bodyLen, true);
+    bytes[64] = 0b0000_0111; // three characters
+    const settingsAt = 64 + bodyLen - 48;
+    bytes[settingsAt] = 80; // masterVolume
+    let h = 0x811c_9dc5;
+    for (let i = 0; i < bytes.length; i++) {
+      const b = i >= 52 && i < 56 ? 0 : (bytes[i] as number);
+      h = (h ^ b) >>> 0;
+      h = Math.imul(h, 0x0100_0193) >>> 0;
+    }
+    view.setUint32(52, h >>> 0, true);
+    return bytes;
+  }
+
+  const v2 = buildV2(1_500);
+  check("a v2 save is shorter than a current one", v2.length < saveBytes(), `${v2.length} vs ${saveBytes()}`);
+  check(
+    "and shorter by exactly the block that was added",
+    saveBytes() - v2.length === SAVE_LIMITS.stageBestCount * 2,
+    `${saveBytes() - v2.length} bytes`,
+  );
+
+  const out = decodeSave(v2);
+  check("it is read, not refused", out.error === SAVE_ERROR.NONE, describeSaveError(out.error));
+  const m = out.save;
+  check("gold crosses over", m.gold === 4_242 && m.goldLifetime === 9_000);
+  check("the overall record crosses over", m.bestSurvivalSeconds === 1_500);
+  check("unlocks cross over", bitGet(m.unlockedCharacters, 0) && bitGet(m.unlockedCharacters, 2));
+  check("settings cross over", m.settings.masterVolume === 80);
+  check("it now calls itself the current version", m.version === SAVE_VERSION && SAVE_VERSION === 3);
+
+  let anyStageTime = 0;
+  for (let i = 0; i < SAVE_LIMITS.stageBestCount; i++) anyStageTime += m.stageBestSeconds[i] as number;
+  check("nobody is credited with a time on a stage we have no record of", anyStageTime === 0, `${anyStageTime}`);
+  check(
+    "the record is the right length even though the file did not have one",
+    m.stageBestSeconds.length === SAVE_LIMITS.stageBestCount,
+  );
+
+  // Rewritten it must be a normal current save, and reading it back must still find the profile.
+  m.stageBestSeconds[1] = 900;
+  const rewritten = encodeSave(m);
+  check("rewriting gives a full-length current save", rewritten.length === saveBytes());
+  const again = decodeSave(rewritten);
+  check("which reads cleanly", again.error === SAVE_ERROR.NONE, describeSaveError(again.error));
+  check("with the same gold", again.save.gold === 4_242);
+  check("and the stage time written since the migration", again.save.stageBestSeconds[1] === 900);
+
+  // A v2 blob at the *current* length is a lie about its own version and must be refused rather than
+  // read as if the missing block were there.
+  const widened = new Uint8Array(saveBytes());
+  widened.set(v2);
+  check("a v2 save padded to the new length is refused", decodeSave(widened).error !== SAVE_ERROR.NONE);
+}
+
 /* ---- an old save is migrated, not thrown away ---------------------------------------------------- */
 
 section("migrating a version 1 save");
@@ -552,7 +653,7 @@ section("migrating a version 1 save");
 
   // Shake and damage numbers on, flash off, telemetry on.
   const v1 = buildV1(1234, (1 << 0) | (1 << 2) | (1 << 3));
-  check("a v1 save is shorter than a v2 one", v1.length < saveBytes(), `${v1.length} vs ${saveBytes()}`);
+  check("a v1 save is shorter than a current one", v1.length < saveBytes(), `${v1.length} vs ${saveBytes()}`);
 
   const out = decodeSave(v1);
   check("it is read, not refused", out.error === SAVE_ERROR.NONE, describeSaveError(out.error));
@@ -562,7 +663,7 @@ section("migrating a version 1 save");
   check("best time crosses over", m.bestSurvivalSeconds === 1830);
   check("unlocks cross over", bitGet(m.unlockedCharacters, 0) && bitGet(m.unlockedCharacters, 1));
   check("generation is read from the old header", out.generation === 42 && m.generation === 42);
-  check("the result calls itself v2", m.version === SAVE_VERSION);
+  check("the result calls itself the current version", m.version === SAVE_VERSION);
 
   const ms = m.settings;
   check("old settings cross over", ms.masterVolume === 55 && ms.colorblindMode === 2 && ms.hudScale === 130);
@@ -582,7 +683,7 @@ section("migrating a version 1 save");
 
   // Rewritten, it must come back as a normal v2 save and be the same profile.
   const rewritten = encodeSave(m);
-  check("rewriting gives a full-length v2 save", rewritten.length === saveBytes());
+  check("rewriting gives a full-length current save", rewritten.length === saveBytes());
   const again = decodeSave(rewritten);
   check("which reads cleanly", again.error === SAVE_ERROR.NONE, describeSaveError(again.error));
   check("with the same gold", again.save.gold === 1234);

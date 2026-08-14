@@ -3424,3 +3424,43 @@ not forwards, and the coverage rule that every monster turns up somewhere. Ten d
 made to the checker one at a time to prove those checks earn their place. Nine were caught immediately.
 The tenth was not: a named fight could be scheduled to arrive *after* the run was already over and nothing
 would have said a word. That gap now has a check of its own, and all ten are caught.
+
+## The game now remembers your best time in each place, not just your best time
+
+Five places to play only means something if the game knows how far you got in *each* of them. Up to now
+the profile kept one number: the longest you had ever survived, anywhere. That number cannot answer the
+question the game has to ask before it opens Mourner's Marsh — "have they survived fifteen minutes in
+The Ossuary?" — because a great run in the crypt would have answered yes.
+
+So the profile now keeps a best time per place, with room for thirty-two of them (five are built; the
+rest is headroom so a new place can be added later without touching anyone's save file).
+
+What it does:
+
+- Finishing a run sets that place's record if you beat it. Beating it means beating it — equalling your
+  old time is not a new record, same as everywhere else in the game.
+- A first run in a new place is that place's record even if it was short. That is the point: a two-minute
+  first attempt in the marsh has to be written down, or the marsh could never open anything.
+- One place's record never touches another's.
+- Your overall best time still works exactly as it did. Nothing about it changed.
+
+Saves and the cloud:
+
+- Old save files still load. They simply have no per-place times yet, so they start empty and fill in as
+  you play — which is honest, because an old save genuinely does not know where those runs happened.
+  Your overall record is in the header and is untouched, so nobody loses their record in the upgrade.
+- Two phones merge the same way everything else does: per place, the better time wins. If you got further
+  in the crypt on your phone and further in the marsh on your tablet, after a sync both stand.
+- A run left going overnight pins at the ceiling instead of wrapping round to nothing.
+- If a refusal happens — a run that fails the honesty checks at the door — the place records are left
+  exactly as they were, like everything else on the profile.
+
+### How this was proved
+
+Nine deliberate breakages were made to this code one at a time to prove the checks earn their place:
+removing the overnight ceiling, letting an equalled time count as a record, removing the guard on a place
+the save has no room for, no longer checking which place a run happened on, getting the save file's size
+wrong, reading the new block out of an old save file that does not have one, dropping the per-place merge,
+dropping the merge's own sanity check, and losing which place the run happened on between the end of the
+run and the profile. Four of the nine got through the first time. Those four now have checks of their own,
+and all nine are caught.

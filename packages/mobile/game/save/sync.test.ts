@@ -81,6 +81,10 @@ function played(over: Partial<SaveData> = {}): SaveData {
   const shortTiers = played();
   shortTiers.ascensionTiers = new Uint16Array(1);
   eq(faultIn(shortTiers), "ascensionTiers", "a short tier array is named");
+
+  const shortStages = played();
+  shortStages.stageBestSeconds = new Uint16Array(1);
+  eq(faultIn(shortStages), "stageBestSeconds", "a short stage-record array is named");
 }
 
 /* ---- unlocks union ------------------------------------------------------------------------------ */
@@ -132,6 +136,10 @@ function played(over: Partial<SaveData> = {}): SaveData {
   remote.masteryLevels[3] = 2;
   local.ascensionTiers[0] = 3;
   remote.ascensionTiers[0] = 11;
+  // Two phones that each played a different place: after the merge both records stand.
+  local.stageBestSeconds[1] = 900;
+  remote.stageBestSeconds[1] = 400;
+  remote.stageBestSeconds[3] = 1200;
 
   eq(mergeSaves(local, remote, out, report), SYNC.OK, "the merge succeeds");
   eq(out.runsStarted, 20, "runs started takes the larger");
@@ -142,6 +150,9 @@ function played(over: Partial<SaveData> = {}): SaveData {
   eq(out.powerUpLevels[1], 6, "a rank the cloud bought arrives");
   eq(out.masteryLevels[3], 7, "mastery takes the larger");
   eq(out.ascensionTiers[0], 11, "ascension takes the larger");
+  eq(out.stageBestSeconds[1], 900, "a stage record this device set survives the cloud's worse one");
+  eq(out.stageBestSeconds[3], 1200, "a stage record only the cloud has arrives");
+  eq(out.stageBestSeconds[2], 0, "a stage neither of them played stays empty");
   ok(out.generation > local.generation && out.generation > remote.generation, "the merge outranks both inputs");
   eq(report.generation, out.generation, "and the report says so");
 }

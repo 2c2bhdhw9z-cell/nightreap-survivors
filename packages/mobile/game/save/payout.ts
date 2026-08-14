@@ -47,6 +47,9 @@ import type { SaveData } from "./schema";
  */
 export const U32_MAX = 4294967295;
 
+/** The ceiling on a per-stage best time, because the codec writes those as u16. Eighteen hours. */
+export const STAGE_BEST_MAX = 65535;
+
 /** Why a payout was refused. Append-only: the numbers reach bug reports. */
 export const PAYOUT = {
   /** Banked. */
@@ -107,6 +110,14 @@ export interface PayoutReceipt {
   bestSecondsBefore: number;
   bestSecondsAfter: number;
 
+  /**
+   * True when this run set a new best time *on the stage it was played on*, which is a different and
+   * usually more interesting fact: it is what opens the next place to play.
+   */
+  newStageBest: boolean;
+  stageBestSecondsBefore: number;
+  stageBestSecondsAfter: number;
+
   runsStartedAfter: number;
   runsCompletedAfter: number;
   secondsPlayedAfter: number;
@@ -127,6 +138,9 @@ export function createPayoutReceipt(): PayoutReceipt {
     newBestTime: false,
     bestSecondsBefore: 0,
     bestSecondsAfter: 0,
+    newStageBest: false,
+    stageBestSecondsBefore: 0,
+    stageBestSecondsAfter: 0,
     runsStartedAfter: 0,
     runsCompletedAfter: 0,
     secondsPlayedAfter: 0,
@@ -154,6 +168,9 @@ function refuse(out: PayoutReceipt, code: PayoutCode, field: string): PayoutRece
   out.newBestTime = false;
   out.bestSecondsBefore = 0;
   out.bestSecondsAfter = 0;
+  out.newStageBest = false;
+  out.stageBestSecondsBefore = 0;
+  out.stageBestSecondsAfter = 0;
   out.runsStartedAfter = 0;
   out.runsCompletedAfter = 0;
   out.secondsPlayedAfter = 0;
@@ -183,6 +200,7 @@ function addCapped(base: number, add: number): { total: number; capped: boolean 
 
 /** The delta fields that must each be a sane whole number, named for the receipt. */
 const DELTA_FIELDS: readonly (keyof ProfileDelta)[] = [
+  "stageId",
   "gold",
   "runsStarted",
   "runsCompleted",
@@ -213,6 +231,7 @@ export function bankRun(save: SaveData, delta: ProfileDelta, out: PayoutReceipt)
   out.lifetimeCapped = false;
   out.timeCapped = false;
   out.newBestTime = false;
+  out.newStageBest = false;
 
   // Check the incoming run first: it is the thing most likely to be wrong.
   for (let i = 0; i < DELTA_FIELDS.length; i++) {
@@ -252,12 +271,24 @@ export function bankRun(save: SaveData, delta: ProfileDelta, out: PayoutReceipt)
   const beatIt = delta.bestSurvivalSeconds > bestBefore;
   const bestAfter = beatIt ? delta.bestSurvivalSeconds : bestBefore;
 
+  // The same high-water mark again, but for the stage this run was played on. A stage id past the end of
+  // the record — a live-ops stage this build does not have room for — is dropped rather than allowed to
+  // write over somebody else's time, and the run still banks everything else it earned.
+  const slot = delta.stageId < save.stageBestSeconds.length ? delta.stageId : -1;
+  const stageBefore = slot >= 0 ? (save.stageBestSeconds[slot] as number) : 0;
+  // Clamped to the u16 the codec writes, so a run left going overnight records eighteen hours rather
+  // than wrapping round to nothing.
+  const stageCandidate = Math.min(STAGE_BEST_MAX, delta.bestSurvivalSeconds);
+  const beatStage = slot >= 0 && stageCandidate > stageBefore;
+  const stageAfter = beatStage ? stageCandidate : stageBefore;
+
   save.gold = gold.total;
   save.goldLifetime = lifetime.total;
   save.runsStarted = started.total;
   save.runsCompleted = completed.total;
   save.secondsPlayed = seconds.total;
   save.bestSurvivalSeconds = bestAfter;
+  if (slot >= 0) save.stageBestSeconds[slot] = stageAfter;
   // Taint accumulates and never clears: it describes the profile's history, not its current state.
   save.everTainted = (save.everTainted | delta.everTainted) >>> 0;
 
@@ -273,6 +304,9 @@ export function bankRun(save: SaveData, delta: ProfileDelta, out: PayoutReceipt)
   out.newBestTime = beatIt;
   out.bestSecondsBefore = bestBefore;
   out.bestSecondsAfter = bestAfter;
+  out.newStageBest = beatStage;
+  out.stageBestSecondsBefore = stageBefore;
+  out.stageBestSecondsAfter = stageAfter;
   out.runsStartedAfter = started.total;
   out.runsCompletedAfter = completed.total;
   out.secondsPlayedAfter = seconds.total;

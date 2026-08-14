@@ -219,6 +219,16 @@ section("what a run earns the profile");
   check("so it counts as a completed run", delta.runsCompleted === 1, `${delta.runsCompleted}`);
   check("and banks the gold and the time", delta.gold === 1200 && delta.secondsPlayed === 1801 && delta.bestSurvivalSeconds === 1801);
 
+  // Which place the run happened on has to survive the trip to the profile, or every stage record
+  // would be filed under the first stage and nothing past it would ever open.
+  summariseRun(summary, RUN_END.defeat, 60 * 480, 0, players, weapons, prog, makeTotals({ stageId: 3 }));
+  check("the summary remembers where the run happened", summary.stageId === 3, `${summary.stageId}`);
+  profileDeltaFor(summary, delta);
+  check("and so does what gets handed to the profile", delta.stageId === 3, `${delta.stageId}`);
+  summariseRun(summary, RUN_END.defeat, 60 * 480, 0, players, weapons, prog, makeTotals({ stageId: 0 }));
+  profileDeltaFor(summary, delta);
+  check("and it goes back to the first place when that is where it was", delta.stageId === 0, `${delta.stageId}`);
+
   summariseRun(summary, RUN_END.defeat, 60 * 300, 0, players, weapons, prog, makeTotals());
   profileDeltaFor(summary, delta);
   check("dying does not count as completing", delta.runsCompleted === 0);

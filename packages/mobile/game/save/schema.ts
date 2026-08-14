@@ -26,7 +26,7 @@
 
 import { TAINT } from "../replay/format";
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 /**
  * Versions this build can still read. A v1 save has a shorter settings block and none of the switches
@@ -54,6 +54,14 @@ export const SAVE_LIMITS = {
   weaponBytes: 64,
   /** Bitset bytes for unlocked stages — 256. */
   stageBytes: 32,
+  /**
+   * Best survival time per stage, one u16 of seconds each — 32 stages.
+   *
+   * Separate from `bestSurvivalSeconds`, which is the one best time anywhere. This is what opens the
+   * next stage and what the stage-select screen prints under each place, and neither question can be
+   * answered by a single number: surviving twenty minutes on the crypt says nothing about the marsh.
+   */
+  stageBestCount: 32,
   /** Bitset bytes for unlocked arcanas — 256. */
   arcanaBytes: 32,
   /** Bitset bytes for achievements — 2048. */
@@ -87,6 +95,11 @@ export interface SaveData {
   unlockedCharacters: Uint8Array;
   unlockedWeapons: Uint8Array;
   unlockedStages: Uint8Array;
+  /**
+   * Longest run survived on each stage, in seconds, indexed by stage. Zero means never survived there.
+   * Capped at a u16 — eighteen hours — because an endless run left on a charger must not wrap to zero.
+   */
+  stageBestSeconds: Uint16Array;
   unlockedArcanas: Uint8Array;
   achievements: Uint8Array;
   powerUpLevels: Uint8Array;
@@ -264,6 +277,7 @@ export function createSaveData(buildId = 0, contentVersion = 1): SaveData {
     unlockedCharacters: new Uint8Array(SAVE_LIMITS.characterBytes),
     unlockedWeapons: new Uint8Array(SAVE_LIMITS.weaponBytes),
     unlockedStages: new Uint8Array(SAVE_LIMITS.stageBytes),
+    stageBestSeconds: new Uint16Array(SAVE_LIMITS.stageBestCount),
     unlockedArcanas: new Uint8Array(SAVE_LIMITS.arcanaBytes),
     achievements: new Uint8Array(SAVE_LIMITS.achievementBytes),
     powerUpLevels: new Uint8Array(SAVE_LIMITS.powerUpCount),

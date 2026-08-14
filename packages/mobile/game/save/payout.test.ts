@@ -17,8 +17,17 @@
  */
 
 import { createProfileDelta, profileDeltaFor, RunSummary, RUN_END } from "../sim/results";
-import { PAYOUT, U32_MAX, bankRun, createPayoutReceipt, describePayout, formatDuration, formatGold } from "./payout";
-import { createSaveData } from "./schema";
+import {
+  PAYOUT,
+  STAGE_BEST_MAX,
+  U32_MAX,
+  bankRun,
+  createPayoutReceipt,
+  describePayout,
+  formatDuration,
+  formatGold,
+} from "./payout";
+import { SAVE_LIMITS, createSaveData } from "./schema";
 
 let failures = 0;
 
@@ -198,7 +207,7 @@ section("a refused receipt carries no numbers for a screen to show");
   for (const key of NUMERIC) {
     check(`  ${key} is wiped back to zero`, reused[key] === 0, `${reused[key]}`);
   }
-  const FLAGS = ["banked", "goldCapped", "lifetimeCapped", "timeCapped", "newBestTime"] as const;
+  const FLAGS = ["banked", "goldCapped", "lifetimeCapped", "timeCapped", "newBestTime", "newStageBest"] as const;
   for (const key of FLAGS) {
     check(`  ${key} is wiped back to false`, reused[key] === false, `${reused[key]}`);
   }
@@ -278,6 +287,97 @@ section("best time is a high-water mark");
   const r3 = bankRun(better, run(10, 601), createPayoutReceipt());
   check("one second more is a record", r3.newBestTime);
   check("and it is stored", better.bestSurvivalSeconds === 601, `${better.bestSurvivalSeconds}`);
+}
+
+// ------------------------------------------------- the best time on each stage
+
+section("each place keeps its own record");
+{
+  const save = profile();
+  const first = run(10, 700);
+  first.stageId = 2;
+  const r1 = bankRun(save, first, createPayoutReceipt());
+  check("a run on a stage sets that stage's record", save.stageBestSeconds[2] === 700, `${save.stageBestSeconds[2]}`);
+  check("and the receipt says so", r1.newStageBest && r1.stageBestSecondsAfter === 700);
+  check("it did not touch any other stage", save.stageBestSeconds[0] === 0 && save.stageBestSeconds[3] === 0);
+  check("the overall record moved too, because 700 beats 600", save.bestSurvivalSeconds === 700);
+
+  const worse = run(10, 400);
+  worse.stageId = 2;
+  const r2 = bankRun(save, worse, createPayoutReceipt());
+  check("a worse run on the same stage does not lower it", save.stageBestSeconds[2] === 700);
+  check("and does not claim a stage record", !r2.newStageBest);
+  check("but the receipt still reports the standing one", r2.stageBestSecondsAfter === 700);
+
+  const equal = run(10, 700);
+  equal.stageId = 2;
+  const r3 = bankRun(save, equal, createPayoutReceipt());
+  check("equalling it is not a new record either", !r3.newStageBest);
+
+  // The interesting one: a *shorter* run on a stage never played before is still that stage's record,
+  // even though it is nowhere near the profile's overall best. This is what opens the next stage.
+  const elsewhere = run(10, 120);
+  elsewhere.stageId = 4;
+  const r4 = bankRun(save, elsewhere, createPayoutReceipt());
+  check("a first run anywhere is that place's record", save.stageBestSeconds[4] === 120, `${save.stageBestSeconds[4]}`);
+  check("even when it is far short of the overall best", r4.newStageBest && save.bestSurvivalSeconds === 700);
+  check("and the other stage is untouched", save.stageBestSeconds[2] === 700);
+}
+
+section("a stage record cannot overflow or land outside the record");
+{
+  const save = profile();
+  const marathon = run(10, 200_000);
+  marathon.stageId = 1;
+  bankRun(save, marathon, createPayoutReceipt());
+  check(
+    "a run longer than the record can hold is clamped, not wrapped",
+    save.stageBestSeconds[1] === STAGE_BEST_MAX,
+    `${save.stageBestSeconds[1]}`,
+  );
+  check("while the overall record takes the real figure", save.bestSurvivalSeconds === 200_000);
+
+  const far = run(10, 900);
+  far.stageId = SAVE_LIMITS.stageBestCount + 5;
+  const goldBefore = save.gold;
+  const receipt = bankRun(save, far, createPayoutReceipt());
+  check("a stage past the end of the record is dropped, not written over somebody else", receipt.banked);
+  check("no stage picked it up", save.stageBestSeconds[0] === 0 && save.stageBestSeconds[1] === STAGE_BEST_MAX);
+  check("and it does not claim a stage record", !receipt.newStageBest);
+  // Reading off the end of the record gives nothing rather than a number, and a screen that showed
+  // "nothing seconds" would be a bug the player sees. The receipt must read a real zero.
+  check(
+    "the receipt still reads as real zeroes, never as nothing at all",
+    receipt.stageBestSecondsBefore === 0 && receipt.stageBestSecondsAfter === 0,
+    `${receipt.stageBestSecondsBefore}/${receipt.stageBestSecondsAfter}`,
+  );
+  check("but the run still banked everything else", save.gold === goldBefore + 10, `${save.gold}`);
+
+  const last = run(10, 300);
+  last.stageId = SAVE_LIMITS.stageBestCount - 1;
+  bankRun(save, last, createPayoutReceipt());
+  check(
+    "the very last slot the record has room for does work",
+    save.stageBestSeconds[SAVE_LIMITS.stageBestCount - 1] === 300,
+  );
+
+  const negative = run(10, 300);
+  negative.stageId = -1;
+  const bad = bankRun(profile(), negative, createPayoutReceipt());
+  check("a negative stage id is refused outright", !bad.banked, describePayout(bad.code));
+}
+
+section("a refused payout leaves the stage records alone");
+{
+  const save = profile();
+  save.stageBestSeconds[2] = 900;
+  const broken = run(10, 1_200);
+  broken.stageId = 2;
+  broken.gold = -5;
+  const receipt = bankRun(save, broken, createPayoutReceipt());
+  check("it refused", !receipt.banked, describePayout(receipt.code));
+  check("the stage record is untouched", save.stageBestSeconds[2] === 900, `${save.stageBestSeconds[2]}`);
+  check("and the receipt claims no stage record", !receipt.newStageBest && receipt.stageBestSecondsAfter === 0);
 }
 
 // -------------------------------------------------------------------- taint

@@ -27,7 +27,11 @@
  *
  * VERSIONS
  * v1 is readable and migrated forward; its settings block is 20 bytes rather than 48. Everything before
- * the settings block is identical in both, which is why the migration is a settings-only special case.
+ * the settings block is identical in both, which is why that migration is a settings-only special case.
+ * v3 inserts the per-stage best times between the ascension tiers and the settings. A v1 or v2 slot has
+ * no such block, so it migrates to all-zeroes: a profile that has never recorded a time on a stage, which
+ * is exactly what an older save honestly knows. The one best time anywhere is kept in the header and is
+ * untouched, so nobody's record disappears in the upgrade — only the per-stage detail starts empty.
  */
 
 import { HASH_SEED, hashByte, hashWord } from "../net/state-hash";
@@ -101,6 +105,7 @@ function bodyBytesFor(version: number): number {
     L.powerUpCount +
     L.masteryCount +
     L.ascensionCount * 2 +
+    (version >= 3 ? L.stageBestCount * 2 : 0) +
     (version === 1 ? SETTINGS_BYTES_V1 : SETTINGS_BYTES)
   );
 }
@@ -275,6 +280,10 @@ export function encodeSave(save: SaveData, out?: Uint8Array): Uint8Array {
     view.setUint16(at, (save.ascensionTiers[i] as number) & 0xffff, true);
     at += 2;
   }
+  for (let i = 0; i < SAVE_LIMITS.stageBestCount; i++) {
+    view.setUint16(at, (save.stageBestSeconds[i] as number) & 0xffff, true);
+    at += 2;
+  }
   packSettings(view, at, save.settings);
 
   view.setUint32(52, checksumOf(bytes), true);
@@ -322,8 +331,8 @@ export function decodeSave(bytes: Uint8Array | undefined): DecodedSave {
   }
 
   const save = createSaveData();
-  // The migrated result is a v2 profile regardless of what it was read from — the next write must not
-  // claim to be v1 with v2 bytes in it.
+  // The migrated result is a current-version profile regardless of what it was read from — the next
+  // write must not claim to be an older version while carrying current bytes.
   save.version = SAVE_VERSION;
   save.contentVersion = view.getUint16(6, true);
   save.buildId = view.getUint32(8, true);
@@ -354,6 +363,14 @@ export function decodeSave(bytes: Uint8Array | undefined): DecodedSave {
   for (let i = 0; i < SAVE_LIMITS.ascensionCount; i++) {
     save.ascensionTiers[i] = view.getUint16(at, true);
     at += 2;
+  }
+  // Older slots simply do not carry this block. `createSaveData` already zeroed it, so the migration is
+  // to read nothing and move on rather than to read whatever bytes happen to sit here.
+  if (version >= 3) {
+    for (let i = 0; i < SAVE_LIMITS.stageBestCount; i++) {
+      save.stageBestSeconds[i] = view.getUint16(at, true);
+      at += 2;
+    }
   }
   save.settings = unpackSettings(view, at, version);
 

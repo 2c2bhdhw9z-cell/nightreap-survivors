@@ -188,6 +188,7 @@ export function faultIn(save: SaveData): string {
   if (save.powerUpLevels.length !== SAVE_LIMITS.powerUpCount) return "powerUpLevels";
   if (save.masteryLevels.length !== SAVE_LIMITS.masteryCount) return "masteryLevels";
   if (save.ascensionTiers.length !== SAVE_LIMITS.ascensionCount) return "ascensionTiers";
+  if (save.stageBestSeconds.length !== SAVE_LIMITS.stageBestCount) return "stageBestSeconds";
   return "";
 }
 
@@ -279,6 +280,9 @@ export function mergeSaves(local: SaveData, remote: SaveData, out: SaveData, rep
   maxIntoBytes(out.powerUpLevels, local.powerUpLevels, remote.powerUpLevels);
   maxIntoBytes(out.masteryLevels, local.masteryLevels, remote.masteryLevels);
   maxIntoWords(out.ascensionTiers, local.ascensionTiers, remote.ascensionTiers);
+  // Best times per stage merge the same way as everything else here: the better time wins, per stage.
+  // Two phones that each opened a different stage end up with both of them open.
+  maxIntoWords(out.stageBestSeconds, local.stageBestSeconds, remote.stageBestSeconds);
 
   out.goldLifetime = capped(Math.max(local.goldLifetime, remote.goldLifetime));
   out.runsStarted = capped(Math.max(local.runsStarted, remote.runsStarted));
