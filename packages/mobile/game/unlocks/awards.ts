@@ -42,6 +42,15 @@ import { bitGet, bitSet, SAVE_LIMITS, type SaveData } from "../save/schema";
 import { CHAR_UNLOCK, CHARACTERS, type Character } from "../characters/roster";
 import { ARCANA_TYPES } from "../sim/arcanas";
 import { STAGE_TYPES } from "../sim/stages";
+import {
+  ACHIEVEMENT_TYPES,
+  type Achievement,
+  achievementContentFaults,
+  achievementEarnedLine,
+  achievementMet,
+  isRunKind,
+  type RunFacts,
+} from "./achievements";
 import { arcanaConditionMetFor, arcanaEarnedLine } from "./arcana-records";
 import { stageConditionMet, stageEarnedLine } from "./stage-records";
 
@@ -334,6 +343,43 @@ export function sweepUnlocks(
   return granted;
 }
 
+/**
+ * Hand out every achievement the profile has just earned.
+ *
+ * Deliberately separate from `sweepUnlocks` and deliberately does NOT empty the report: both sweeps run
+ * one after the other into the same report, so a run that opens a place and earns three badges shows all
+ * four on one screen.
+ *
+ * `run` is the run that just ended, or null when nothing just ended — the settings screen catching up an
+ * old profile, say. With no run in hand the questions about a single run are SKIPPED rather than answered
+ * "no", because a "no" here is indistinguishable from a "not yet" and neither one is written down; the
+ * danger is the opposite mistake, granting a run badge off a profile number that only looks similar.
+ */
+export function sweepAchievements(
+  save: SaveData,
+  report: AwardReport,
+  run: RunFacts | null,
+  list: readonly Achievement[] = ACHIEVEMENT_TYPES,
+): number {
+  let granted = 0;
+  for (let i = 0; i < list.length; i++) {
+    const achievement = list[i];
+    if (run === null && isRunKind(achievement.kind)) continue;
+    if (isHeld(save, TRACK.ACHIEVEMENT, i)) continue;
+    if (!achievementMet(achievement, save, run)) continue;
+    const code = grant(
+      save,
+      TRACK.ACHIEVEMENT,
+      i,
+      achievement.name,
+      achievementEarnedLine(i),
+      report,
+    );
+    if (code === AWARD.OK) granted++;
+  }
+  return granted;
+}
+
 /** How many rows a screen can draw, and how many it has to summarise as "and N more". */
 export function reportRows(report: AwardReport): number {
   return Math.min(report.count, AWARD_LIMIT);
@@ -362,6 +408,13 @@ export function contentFaults(list: readonly Character[] = CHARACTERS): readonly
       `${ARCANA_TYPES.length} arcanas but the save only stores ${capacityOf(TRACK.ARCANA)} bits`,
     );
   }
+
+  if (ACHIEVEMENT_TYPES.length > capacityOf(TRACK.ACHIEVEMENT)) {
+    faults.push(
+      `${ACHIEVEMENT_TYPES.length} achievements but the save only stores ${capacityOf(TRACK.ACHIEVEMENT)} bits`,
+    );
+  }
+  for (const fault of achievementContentFaults()) faults.push(fault);
 
   let starters = 0;
   for (const character of list) {

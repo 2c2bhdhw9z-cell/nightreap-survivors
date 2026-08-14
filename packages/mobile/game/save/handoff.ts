@@ -30,7 +30,14 @@
  * player: it is what their profile says right now.
  */
 
-import { type AwardReport, createAwardReport, resetAwardReport, sweepUnlocks } from "../unlocks/awards";
+import {
+  type AwardReport,
+  createAwardReport,
+  resetAwardReport,
+  sweepAchievements,
+  sweepUnlocks,
+} from "../unlocks/awards";
+import { runFactsOf } from "../unlocks/achievements";
 import { type ProfileDelta, type RunSummary, createProfileDelta, profileDeltaFor } from "../sim/results";
 import { type PayoutReceipt, bankRun, createPayoutReceipt } from "./payout";
 import type { SaveData } from "./schema";
@@ -180,7 +187,11 @@ export class RunHandoff {
     }
     // The sweep runs *after* banking, so it reads the profile this run just changed. Running it first
     // would hand out last run's unlocks and announce them a second time.
-    const unlocked = sweepUnlocks(save, this.report);
+    // Two sweeps, one report. The character/place/card sweep empties the report and fills it; the badge
+    // sweep adds to it, and is handed the run that just ended so it can answer the questions that only a
+    // finished run can answer.
+    const unlocked =
+      sweepUnlocks(save, this.report) + sweepAchievements(save, this.report, runFactsOf(summary));
     this.banked.add(runId);
     this.slot = { runId, view, receipt, awards: this.report };
     return { code: HANDOFF.OK, staged: true, receipt, unlocked };

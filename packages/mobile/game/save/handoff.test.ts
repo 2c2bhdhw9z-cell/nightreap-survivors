@@ -23,6 +23,7 @@
 import { CHARACTERS, CHAR_UNLOCK } from "../characters/roster";
 import { RUN_END, RunSummary } from "../sim/results";
 import { TRACK, isHeld, seedStarters } from "../unlocks/awards";
+import { ACHIEVEMENT_BY_ID, achievementsHeld } from "../unlocks/achievements";
 import { HANDOFF, RunHandoff, describeHandoff, runIdOf, viewOf } from "./handoff";
 import { createSaveData } from "./schema";
 
@@ -477,6 +478,46 @@ section("a refused run leaves no unlocks lying around");
   check("it unlocked nothing", out.unlocked === 0, `${out.unlocked}`);
   check("and the report was wiped", (report?.count ?? -1) === 0, `${report?.count}`);
   check("names included", (report?.names[0] ?? "x") === "", report?.names[0]);
+}
+
+// ------------------------------------------------------------------- badges
+
+section("banking a run hands out the badges that run earned");
+{
+  const h = new RunHandoff();
+  const save = profile();
+  seedStarters(save);
+  // Half an hour, survived. That earns the time ladder, the kill ladder's first rungs and the badge for
+  // clearing this particular place — none of which the profile alone could ever answer.
+  const summary = finished(900, 1800, RUN_END.survived);
+  const out = h.stage(runIdOf(summary), summary, save);
+  check("it staged", out.staged, describeHandoff(out.code));
+
+  const badges = achievementsHeld(save);
+  check("badges were written down", badges > 0, `${badges}`);
+  const five = ACHIEVEMENT_BY_ID.get("fiveMinutes") ?? -1;
+  const hour = ACHIEVEMENT_BY_ID.get("theFullHalfHour") ?? -1;
+  const marsh = ACHIEVEMENT_BY_ID.get("clearMarsh") ?? -1;
+  check("the five-minute badge is held", isHeld(save, TRACK.ACHIEVEMENT, five));
+  check("the half-hour badge is held", isHeld(save, TRACK.ACHIEVEMENT, hour));
+  check("and the badge for clearing that place", isHeld(save, TRACK.ACHIEVEMENT, marsh));
+
+  const badgeRows = reportedNamesOn(h, TRACK.ACHIEVEMENT).length;
+  check("the badges are announced", badgeRows > 0, `${badgeRows} rows`);
+  check(
+    "the unlock count covers both sweeps",
+    out.unlocked >= badgeRows,
+    `${out.unlocked} unlocks, ${badgeRows} badge rows`,
+  );
+
+  // A second, worse run must not take a badge back, and must not announce the same badge twice.
+  const again = finished(10, 30, RUN_END.defeat);
+  again.seed = 999;
+  const out2 = h.take() === null ? null : h.stage(runIdOf(again), again, save);
+  check("the second run staged", out2 !== null && out2.staged, out2 === null ? "no slot" : describeHandoff(out2.code));
+  check("no badge was taken back", achievementsHeld(save) >= badges, `${achievementsHeld(save)} of ${badges}`);
+  const repeated = reportedNamesOn(h, TRACK.ACHIEVEMENT);
+  check("no badge was announced twice", repeated.length === 0, repeated.join(", "));
 }
 
 // ------------------------------------------------------------------- the code names

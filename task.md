@@ -3588,3 +3588,45 @@ Fifty-four checks in a new file covering the run's side of it, on top of the one
 had. One older check had to be corrected while doing this: it assumed everything announced at the end of
 a run was a character, which stopped being true the moment a run could earn you an arcana.
 
+
+## Fifty things to chase, and the rule that they are never taken back
+
+Fifty achievements are in. They are one list, in a fixed order, and each one is a plain question about a
+number: "kill a thousand things in one run", "earn fifty thousand gold in total", "last ten minutes
+without being touched", "clear the marsh". About half are ladders you climb without trying — time, kills,
+gold, levels. A quarter are "have you been everywhere and met everyone". The rest are things you have to
+actually decide to do: finish a run unhurt, finish one with nobody going down, play a four-person run,
+take the ending.
+
+One of them is hidden. Until you earn it, it shows as "???" with no explanation, because the only thing it
+would tell you is how the game ends. Everything else says exactly what it wants whether you have it or
+not — an achievement you cannot read is not a goal, it is a surprise.
+
+Two rules underneath all of them.
+
+The first: an achievement is never taken back. Once the profile has written one down, nothing removes it
+— not a rebalanced target, not a save synced down from a phone with less history, not the numbers being
+wiped. Same promise the characters, places and cards already make.
+
+The second is subtler and is where this sort of thing normally goes wrong. Some of these questions are
+about your profile ("how much gold have you ever earned") and can be answered at any moment. Others are
+about one single run ("did THAT run last twenty minutes") and can only be answered while the run that just
+ended is still in hand. So when nothing has just ended — you are on a menu, catching an old profile up —
+the run questions are skipped entirely rather than answered "no". A "no" gets written down and a skip does
+not, and the alternative mistake is worse: handing you a badge for a run you never played because some
+profile total happened to look similar.
+
+Badges are handed out at the same moment as everything else, right after the run is banked, and appear on
+the results screen next to any character, place or card the same run earned.
+
+### How this was proved
+
+Six hundred and four checks in a new file, plus nine more added to the run hand-off. Then thirty-two
+deliberate breakages, one at a time, every one of them caught: each threshold moved by one in both
+directions, the "clean run" badge ignoring the damage you took, the "nobody went down" badge ignoring the
+clock, an ending badge accepting any ending, clearing a place counting even when you died there, the
+badge for two maxed weapons counting weapons from the previous run's leftovers, a hidden badge showing its
+name early, a list scrolled past its end reading somebody else's row, badges from a bigger build's save
+counting toward this build's totals, a shortened save reading a place it does not hold, the sweep
+answering run questions with no run in hand, the sweep ignoring the run it was given, and the sweep
+reading the wrong list of what you already hold.
