@@ -70,10 +70,36 @@ export const PROJ_FLAG = {
   returns: 1 << 6,
   /** Belongs to an enemy, not a player. Enemy bullets share this whole system. */
   hostile: 1 << 7,
+  /**
+   * Comes down and stays down. Thrown flasks that break into a fire on the floor.
+   *
+   * Without this, a thrown shape keeps falling for its whole life, because gravity never stops pulling
+   * and there is no floor in a top-down game to stop it — it sails off the bottom of the picture while
+   * still doing damage, which is not what "breaks into a fire the horde walks through" describes.
+   */
+  lands: 1 << 8,
 } as const;
 
 /** World units per second, per second, applied to arcing throws. */
 export const GRAVITY = 260;
+
+/**
+ * Half the width of the box a bouncing shot is kept inside, in world units.
+ *
+ * A bouncing shot is supposed to rattle around the fight in front of you, not sail off into the dark
+ * and come back four seconds later. There is no arena wall in this game — the field is open and the
+ * camera follows you — so the thing it bounces off is the edge of what you can see, which is a box
+ * around whoever fired it. Enemies walk in from `SPAWN_RING` at 340 units, so 300 across and 190 up
+ * keeps the bounce just inside the picture on the widest phone.
+ *
+ * This is simulation, not drawing: the box is measured from the owner's position in the game rules,
+ * never from the real camera. A player on a taller screen must not get longer bounces, and two players
+ * in a co-op game must not disagree about where a shot went.
+ */
+export const BOUNCE_HALF_X = 300;
+
+/** Half the height of the same box. See `BOUNCE_HALF_X`. */
+export const BOUNCE_HALF_Y = 190;
 
 /**
  * How many recent victims one projectile remembers.
@@ -477,6 +503,22 @@ export class ProjectileStore {
           break;
         }
         case MOVE.arcing: {
+          // A landing throw stops dead at the halfway point of its life and burns where it fell. Half
+          // its life is the throw and half is the fire, which is why a level that says "burns longer"
+          // is a longer life. Halfway is the same idiom a returning shape uses, and for the same
+          // reason: it needs no extra number stored per shot and it cannot disagree between machines.
+          const landing = (this.flags[s] & PROJ_FLAG.lands) !== 0;
+          if (landing && this.age[s] >= this.life[s] >> 1) {
+            if (this.vx[s] !== 0 || this.vy[s] !== 0) {
+              this.vx[s] = 0;
+              this.vy[s] = 0;
+              this.gravity[s] = 0;
+              // The fire is a new thing standing where the flask broke, so it gets a fresh appetite —
+              // anything the glass clipped on the way down is still going to burn.
+              this.clearHits(s);
+            }
+            break;
+          }
           this.vy[s] += this.gravity[s] * TICK_SECONDS;
           this.x[s] += this.vx[s] * TICK_SECONDS;
           this.y[s] += this.vy[s] * TICK_SECONDS;
@@ -491,6 +533,24 @@ export class ProjectileStore {
           }
           this.x[s] += this.vx[s] * TICK_SECONDS;
           this.y[s] += this.vy[s] * TICK_SECONDS;
+
+          // Bouncing shots turn around at the edge of the fight instead of leaving it. Only the
+          // sideways-moving shapes can bounce; an aura or an orbiter is pinned to a player and has no
+          // edge to meet.
+          //
+          // The turn happens only when the shot is past the edge AND still heading further out. That
+          // one extra condition is what stops a shot that is already outside the box — because its
+          // owner walked the other way — from flipping back and forth every tick and sitting still.
+          // Nothing is teleported back inside either, for the same reason: a shot dragged to the edge
+          // by its owner's movement would visibly snap.
+          if ((this.flags[s] & PROJ_FLAG.bouncy) !== 0 && hasOwner) {
+            const dx = this.x[s] - ox;
+            const dy = this.y[s] - oy;
+            if (dx > BOUNCE_HALF_X && this.vx[s] > 0) this.vx[s] = -this.vx[s];
+            else if (dx < -BOUNCE_HALF_X && this.vx[s] < 0) this.vx[s] = -this.vx[s];
+            if (dy > BOUNCE_HALF_Y && this.vy[s] > 0) this.vy[s] = -this.vy[s];
+            else if (dy < -BOUNCE_HALF_Y && this.vy[s] < 0) this.vy[s] = -this.vy[s];
+          }
           break;
         }
       }

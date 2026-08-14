@@ -41,6 +41,8 @@ import { NULL_HANDLE } from "../core/pool";
 import { ENEMY_FLAG, ENEMY_TYPE_BY_ID, EnemyStore } from "./enemies";
 import { ModifierStack } from "./modifiers";
 import {
+  BOUNCE_HALF_X,
+  BOUNCE_HALF_Y,
   BRAD_FULL,
   createSpawnRequest,
   GRAVITY,
@@ -1178,6 +1180,251 @@ function heapUsed(): number {
   };
   host.gc?.();
   return host.process?.memoryUsage?.().heapUsed ?? 0;
+}
+
+// ---------------------------------------------------------------------------------------------
+section("bouncing shots turn around at the edge of the fight");
+{
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(11);
+
+  // Thrown straight right, hard enough to reach the edge well inside its life.
+  projectiles.spawn(
+    req({ move: MOVE.straight, x: 0, y: 0, vx: 600, damage: 1, radius: 4, ttl: 600, pierce: 99, flags: PROJ_FLAG.bouncy }),
+  );
+  const slot = projectiles.pool.slots[0] ?? 0;
+
+  let furthest = 0;
+  let turned = false;
+  for (let t = 0; t < 300; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+    const x = projectiles.x[slot] ?? 0;
+    if (x > furthest) furthest = x;
+    if ((projectiles.vx[slot] ?? 0) < 0) turned = true;
+  }
+
+  check("a bouncing shot turns around instead of leaving", turned);
+  check(
+    "it turns around at the edge of the fight, not somewhere else",
+    furthest >= BOUNCE_HALF_X && furthest < BOUNCE_HALF_X + 40,
+    `reached ${Math.round(furthest)}, edge ${BOUNCE_HALF_X}`,
+  );
+  check("it is still alive to keep bouncing", projectiles.count === 1);
+  check(
+    "and it has come back toward the player rather than sitting at the wall",
+    (projectiles.x[slot] ?? 0) < furthest - 40,
+    `at ${Math.round(projectiles.x[slot] ?? 0)}`,
+  );
+}
+
+{
+  // The same shot without the flag must be unchanged by any of this.
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(11);
+
+  projectiles.spawn(req({ move: MOVE.straight, x: 0, y: 0, vx: 600, damage: 1, radius: 4, ttl: 600, pierce: 99 }));
+  const slot = projectiles.pool.slots[0] ?? 0;
+  for (let t = 0; t < 120; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+  }
+  check(
+    "an ordinary shot still sails straight past the edge",
+    (projectiles.x[slot] ?? 0) > BOUNCE_HALF_X && (projectiles.vx[slot] ?? 0) > 0,
+  );
+}
+
+{
+  // Vertical bounce, and the box follows the owner rather than sitting at the world origin.
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(13);
+  owners.x[0] = 5000;
+  owners.y[0] = 5000;
+
+  projectiles.spawn(
+    req({ move: MOVE.straight, x: 5000, y: 5000, vx: 600, vy: 600, damage: 1, radius: 4, ttl: 600, pierce: 99, flags: PROJ_FLAG.bouncy }),
+  );
+  const slot = projectiles.pool.slots[0] ?? 0;
+  let furthest = 0;
+  let furthestX = 0;
+  for (let t = 0; t < 200; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+    const d = (projectiles.y[slot] ?? 0) - 5000;
+    if (d > furthest) furthest = d;
+    const dx = (projectiles.x[slot] ?? 0) - 5000;
+    if (dx > furthestX) furthestX = dx;
+  }
+  check(
+    "the bounce box is measured around the player, wherever the player is",
+    furthest >= BOUNCE_HALF_Y && furthest < BOUNCE_HALF_Y + 40,
+    `reached ${Math.round(furthest)}, edge ${BOUNCE_HALF_Y}`,
+  );
+  // Sideways as well as vertically. A shot fired a long way from the world origin must bounce off the
+  // edge of the picture around its owner — measuring from the origin instead would turn it around the
+  // instant it was fired, which this catches.
+  check(
+    "and sideways too, still measured from the player and not from the world origin",
+    furthestX >= BOUNCE_HALF_X && furthestX < BOUNCE_HALF_X + 40,
+    `reached ${Math.round(furthestX)}, edge ${BOUNCE_HALF_X}`,
+  );
+  check("a bouncing shot turns around vertically too", (projectiles.y[slot] ?? 0) < 5000 + furthest - 40);
+}
+
+{
+  // A shot stranded outside the box because its owner walked away must not judder in place.
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(17);
+
+  projectiles.spawn(
+    req({ move: MOVE.straight, x: BOUNCE_HALF_X * 3, y: 0, vx: -100, damage: 1, radius: 4, ttl: 600, pierce: 99, flags: PROJ_FLAG.bouncy }),
+  );
+  const slot = projectiles.pool.slots[0] ?? 0;
+  let flips = 0;
+  let last = projectiles.vx[slot] ?? 0;
+  for (let t = 0; t < 60; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+    const v = projectiles.vx[slot] ?? 0;
+    if (v * last < 0) flips++;
+    last = v;
+  }
+  check("a stranded shot heads home instead of rattling on the spot", flips === 0, `${flips} flips`);
+  check("and it is genuinely closer to the player than it was", (projectiles.x[slot] ?? 0) < BOUNCE_HALF_X * 3);
+}
+
+// ---------------------------------------------------------------------------------------------
+section("thrown flasks land and burn where they fell");
+{
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(23);
+
+  projectiles.spawn(
+    req({
+      move: MOVE.arcing,
+      x: 0,
+      y: 0,
+      vx: 200,
+      vy: -150,
+      gravity: GRAVITY,
+      damage: 3,
+      radius: 20,
+      ttl: 60,
+      pierce: 99,
+      flags: PROJ_FLAG.lands | PROJ_FLAG.reticks,
+      retick: 10,
+    }),
+  );
+  const slot = projectiles.pool.slots[0] ?? 0;
+
+  for (let t = 0; t < 30; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+  }
+  const restX = projectiles.x[slot] ?? 0;
+  const restY = projectiles.y[slot] ?? 0;
+  check("a flask travels before it lands", Math.abs(restX) > 40, `${Math.round(restX)}`);
+  check("a landed flask has stopped moving", projectiles.vx[slot] === 0 && projectiles.vy[slot] === 0);
+
+  for (let t = 0; t < 25; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+  }
+  check(
+    "and it stays exactly where it fell for the rest of its life",
+    projectiles.x[slot] === restX && projectiles.y[slot] === restY,
+    `${Math.round(projectiles.x[slot] ?? 0)},${Math.round(projectiles.y[slot] ?? 0)}`,
+  );
+  check("the fire is still there and has not been killed early", projectiles.count === 1);
+}
+
+{
+  // The fire has to actually burn something standing on it, over and over.
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const tough = toughSpawnStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(29);
+
+  const e = enemies.spawn(TYPE("bonepile"), 100, 0, tough) & 0xffff;
+  const hp = enemies.health[e] ?? 0;
+
+  projectiles.spawn(
+    req({
+      move: MOVE.arcing,
+      x: 100,
+      y: 0,
+      vx: 0,
+      vy: 0,
+      gravity: GRAVITY,
+      damage: 2,
+      radius: 24,
+      ttl: 120,
+      pierce: 99,
+      flags: PROJ_FLAG.lands | PROJ_FLAG.reticks | PROJ_FLAG.noKnockback,
+      retick: 10,
+    }),
+  );
+  for (let t = 0; t < 120; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+  }
+  check("standing in the fire hurts repeatedly", projectiles.totalHits >= 3, `${projectiles.totalHits} hits`);
+  check("and the enemy actually lost health to it", (enemies.health[e] ?? hp) < hp);
+}
+
+{
+  // An arcing throw without the flag keeps falling, exactly as it always did.
+  const enemies = new EnemyStore(8);
+  const projectiles = new ProjectileStore(8);
+  const stats = baseStats();
+  const owners = makeOwners(1);
+  const rng = new Rng(31);
+
+  projectiles.spawn(
+    req({ move: MOVE.arcing, x: 0, y: 0, vx: 200, vy: -150, gravity: GRAVITY, damage: 3, radius: 8, ttl: 60, pierce: 99 }),
+  );
+  const slot = projectiles.pool.slots[0] ?? 0;
+  for (let t = 0; t < 50; t++) {
+    enemies.rebuildGrid();
+    projectiles.update(owners, enemies, stats, rng);
+  }
+  check("an ordinary throw never stops falling", (projectiles.vy[slot] ?? 0) > 0 && (projectiles.vx[slot] ?? 0) !== 0);
+}
+
+{
+  // Both flasks in the weapon table are landing throws, and nothing else claims to be.
+  const landing = WEAPON_TYPES.filter((w) => (w.flags & PROJ_FLAG.lands) !== 0);
+  check("both flasks land", landing.length === 2, landing.map((w) => w.id).join(","));
+  check("everything that lands is a throw", landing.every((w) => w.move === MOVE.arcing));
+  check(
+    "everything that lands keeps burning after it has landed",
+    landing.every((w) => (w.flags & PROJ_FLAG.reticks) !== 0),
+  );
+
+  const bouncing = WEAPON_TYPES.filter((w) => (w.flags & PROJ_FLAG.bouncy) !== 0);
+  check("both wheels bounce", bouncing.length === 2, bouncing.map((w) => w.id).join(","));
+  check(
+    "and a bouncing weapon is one that travels, not one pinned to the player",
+    bouncing.every((w) => w.move !== MOVE.aura && w.move !== MOVE.orbiting && w.move !== MOVE.sweep),
+  );
 }
 
 console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures === 1 ? "" : "s"}`}`);

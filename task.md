@@ -3639,3 +3639,59 @@ a filter for all, earned or locked. The hidden one shows as "???" until it is ea
 never changes your profile: badges are handed out in exactly one place, the moment a run is banked, so a
 list that also handed them out would be a second place for the same decision to be made slightly
 differently.
+
+## Legs that move, and two weapons that were lying
+
+You asked two questions and both had a real answer, so both got fixed.
+
+### Do the legs move
+
+Not before today. The characters bobbed, squashed, leaned and turned to face the way they were going —
+which is most of what makes a body read as walking — but the legs themselves never moved, because every
+character in the game is one drawn picture and a picture has one pair of legs frozen in one position.
+
+They move now, without anyone drawing anything. Each character picture is cut in two along a line at the
+hips, once, when the game loads. The top half is drawn exactly where the whole picture always went. The
+bottom half is drawn a pixel or two to one side, then centred, then a pixel or two to the other side, in
+step with the walk. That is a stride: the legs swing out, plant, and swing back. The legs also lift only
+half as far as the chest does, because in a real step the feet stay near the floor while the body rises
+over them — matching them exactly makes the whole figure hop.
+
+It stops instantly when you stop, for the same reason the bob does: the cycle is driven by how far the
+body has actually travelled, never by the clock. Standing still, the legs sit dead centre.
+
+Drawn walk frames would still be better and are still worth doing later. This is what could be had for
+all twelve characters today, and drawn frames would sit on top of it unchanged.
+
+### Do the weapons do what they say
+
+Twenty-eight of the thirty did. Two did not, and both were weapons whose description promised something
+the game was never doing.
+
+**The Bone Wheel and the Carrion Spiral.** Both say they bounce. Nothing in the game bounced. There is no
+arena wall to bounce off — the field is open and the camera follows you — so they simply rolled away into
+the dark and expired. They now turn around at the edge of what you can see, which is a box measured
+around whoever fired them. Two details worth saying out loud: the box is measured in the game rules from
+the player's position, never from the real camera, so a bigger phone does not get longer bounces and two
+people in a co-op game cannot disagree about where a wheel went; and a wheel left behind because you ran
+the other way heads home instead of rattling on the spot at the edge.
+
+**The Cinder Flask and the Hellmouth Flask.** Both say they break into a fire on the floor. They were
+thrown, and then they kept falling forever, because gravity never stops pulling and there is no floor in
+a top-down game to stop it — the fire sailed off the bottom of the picture while still burning things.
+They now stop dead halfway through their life and burn where they fell for the rest of it, which is why
+the level-up that says "burns longer" is what it says. Anything the glass clipped on the way down still
+burns when it lands.
+
+### How this was proved
+
+Eighty-nine checks on the body cut, most of them about the seam: the two halves are reassembled by hand
+at four different draw sizes and have to line up with the original to nothing, because a one-pixel gap
+across a character's waist is far worse than legs that do not move. Twenty-three more checks on the two
+weapon fixes, including that an ordinary shot and an ordinary throw both behave exactly as they did
+before. Then thirteen deliberate breakages, one at a time, every one caught: the cut landing on the wrong
+row, the legs hung upside down, the halves overlapping, legs that swing while standing still, a stride
+that does not mirror when you walk left, a leg lift landing on half a pixel, a bounce that never triggers,
+a bounce measured from the world origin instead of from the player, a bounce that only works sideways, a
+flask that never lands, a flask that lands but keeps drifting, and both flasks quietly losing the rule
+that makes them land at all.

@@ -66,6 +66,7 @@ import {
 import { Renderer } from "@/game/render/renderer";
 import { COLOR_WHITE, packHex, withAlpha } from "@/game/render/batcher";
 import { WalkTracker, createStepPose, stepPose } from "@/game/render/step-anim";
+import { legLiftY, legOffsetX, splitBody } from "@/game/render/body-split";
 import {
   SEQUENCE_SECONDS,
   chestOpenAt,
@@ -488,6 +489,10 @@ export default function PlayScreen() {
       // Every character on the roster, so the body is right the moment a run restarts as somebody else
       // without re-reading the sheet.
       const bodyFrames = CHARACTERS.map((c) => atlas.need(PLAYER_FRAME[c.id] ?? WHITE_FRAME));
+      // Each character picture cut in two at the hips, once, here — so the legs can be drawn a pixel
+      // or two out of step with the chest and the body reads as striding instead of sliding. Cutting
+      // is arithmetic on a handful of numbers but it allocates, so it never happens inside a frame.
+      const bodyHalves = bodyFrames.map((f) => splitBody(f));
 
       // Looked up once. Packing a colour from a hex string inside a frame would allocate a string
       // per sprite, which is exactly the kind of thing that starved the benchmark of memory.
@@ -705,14 +710,25 @@ export default function PlayScreen() {
               walk.update(i, x, y, poseDt);
               stepPose(walk.distance[i] ?? 0, walk.speed[i] ?? 0, pl.facing[i] ?? 0, poseSeconds, pose);
               // A negative width mirrors the picture. Safe because face culling is off in the batcher.
-              b.drawScaled(
-                bodyFrames[characterIds[i] ?? 0] ?? white,
-                x,
-                y + pose.liftY,
-                PLAYER_DRAW_SCALE * pose.scaleX * (pose.flipX ? -1 : 1),
-                PLAYER_DRAW_SCALE * pose.scaleY,
-                colour,
-              );
+              const mirror = pose.flipX ? -1 : 1;
+              const sx = PLAYER_DRAW_SCALE * pose.scaleX * mirror;
+              const sy = PLAYER_DRAW_SCALE * pose.scaleY;
+              const halves = bodyHalves[characterIds[i] ?? 0];
+              if (halves === undefined || !halves.split) {
+                b.drawScaled(bodyFrames[characterIds[i] ?? 0] ?? white, x, y + pose.liftY, sx, sy, colour);
+              } else {
+                // Chest and head where the whole picture always went, and the legs shifted sideways on
+                // the same cycle. Two quads instead of one, and the legs genuinely swing.
+                b.drawScaled(halves.top, x, y + pose.liftY, sx, sy, colour);
+                b.drawScaled(
+                  halves.legs,
+                  x + legOffsetX(pose.phase, pose.walking, pose.flipX) * PLAYER_DRAW_SCALE,
+                  y + legLiftY(pose.liftY),
+                  sx,
+                  sy,
+                  colour,
+                );
+              }
             }
           }
 
