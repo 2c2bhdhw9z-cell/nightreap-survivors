@@ -414,6 +414,60 @@
         "slate",
         "violet"
       ]
+    },
+    {
+      "name": "icon-25",
+      "row": 4,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 388,
+      "speckledPixelsFixed": 66,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot"
+      ]
+    },
+    {
+      "name": "icon-26",
+      "row": 4,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 550,
+      "speckledPixelsFixed": 38,
+      "colours": [
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "cyan",
+        "outline",
+        "rot",
+        "slate"
+      ]
+    },
+    {
+      "name": "icon-27",
+      "row": 4,
+      "col": 2,
+      "size": 32,
+      "drawnPixels": 461,
+      "speckledPixelsFixed": 42,
+      "colours": [
+        "bloodBright",
+        "bloodDark",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "slate"
+      ]
     }
   ]
 }

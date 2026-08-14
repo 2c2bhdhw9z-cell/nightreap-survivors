@@ -12,11 +12,11 @@
  * shows the wrong picture and no test can tell. A table is longer to read and impossible to be quietly
  * wrong about: a missing entry is a failed check, not a wrong picture.
  *
- * SHARED ICONS ARE DELIBERATE
- * Twenty-six upgrades were drawn against twenty-four icons, so four upgrades share a picture with a
- * relative: raw force shares the fist, invulnerability shares the shield, crit chance shares the dice.
- * Each pair is the same idea, and sharing is honest where inventing a misleading picture is not. The
- * missing ones get drawn in the art flood; when they land, only this table changes.
+ * NO UPGRADE SHARES A PICTURE ANY MORE
+ * For a while three pairs shared one: raw force shared the fist, invulnerability shared the shield, crit
+ * chance shared the dice. The three missing icons have since been drawn, so every one of the twenty-six
+ * upgrades now has its own. The list of knowing shares below is deliberately kept and deliberately empty:
+ * it is what makes an accidental share a failed check instead of a picture nobody notices is repeated.
  *
  * PURE
  * No React, no React Native, no image loading. This is a name table, so it can be checked by a test that
@@ -53,14 +53,14 @@ export const POWERUP_FRAME: Readonly<Record<string, string>> = Object.freeze({
   duration: "icons/icon-05", // hourglass
   amount: "icons/icon-09", // fanned knives
   luck: "icons/icon-12", // clover
-  critChance: "icons/icon-17", // dice — shared with rerolls
+  critChance: "icons/icon-27", // dice struck by a red spark — a gamble that pays double
   critDamage: "icons/icon-15", // cracked skull
   pierce: "icons/icon-22", // key — it passes through
-  knockback: "icons/icon-01", // fist — shared with might
-  iFrames: "icons/icon-02", // shield — shared with armour
+  knockback: "icons/icon-25", // gauntlet fist throwing force rings — shoving, not hitting
+  iFrames: "icons/icon-26", // a figure and its ghosted afterimages — briefly not there to be hit
   gemValue: "icons/icon-13", // cyan gem shard
   revives: "icons/icon-16", // angel wing
-  rerolls: "icons/icon-17", // dice — shared with crit chance
+  rerolls: "icons/icon-17", // dice — ask for a different hand
   skips: "icons/icon-21", // sealed letter — pass it on
   banishes: "icons/icon-19", // open satchel — put it away
   curse: "icons/icon-08", // violet smoke
@@ -86,12 +86,8 @@ export const PORTRAIT_FRAME: Readonly<Record<string, string>> = Object.freeze({
 
 /** Upgrades that knowingly share a picture with another upgrade. Checked, so it can never grow by accident. */
 export const SHARED_POWERUP_ICONS: readonly string[] = Object.freeze([
-  "might",
-  "knockback", // both are raw force: the fist
-  "armor",
-  "iFrames", // both are not being hurt: the shield
-  "rerolls",
-  "critChance", // both are a gamble: the dice
+  // Empty on purpose. Every upgrade has its own icon now, so any repeat in the table above is a mistake
+  // and the check will say so. If a future pair really must share, both ids go here, in the same commit.
 ]);
 
 /** The icon for an upgrade, or the blank socket when the id is not one we know. */

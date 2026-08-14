@@ -3080,3 +3080,27 @@ re-checked.
 **Twelve more deliberate breakages** across the two new tables — a character with no body, two enemies
 wearing the same picture, an evolution throwing its old shot, a stage laying the same tile twice, the sheet
 guard blinded five different ways. All twelve caught.
+
+### The last three upgrades got their own icon — same day
+
+Twenty-six upgrades were drawn against twenty-four pictures, so three of them were wearing a relative's:
+shoving borrowed the fist, the moment-after-being-hit borrowed the shield, and a lucky blow borrowed the
+dice. All three are now drawn: a gauntlet fist throwing force rings, a figure trailing its own ghosted
+afterimages, and a dice struck by a red spark.
+
+- **The list of deliberate sharing is kept, and is now empty.** Deleting it would have been tidier and
+  wrong: an empty list is what turns an accidental repeat — two upgrades pointed at the same picture in a
+  hurry — into a failed check instead of a shop row nobody looks at twice.
+- **The new sheet came back on black, and black is also the outline colour**, so it could not simply be
+  keyed out by colour without eating every outline. The background is found by spreading inwards from the
+  edges of the sheet instead: only black that is connected to the border is background, and black inside a
+  silhouette stays. It refuses if the amount it found doesn't look like a background at all, because the
+  failure it prevents is three icons that come out as solid squares.
+- **Checked by comparing the sheet to the drawn files rather than by looking at it.** Each of the three new
+  cells was cut back out of the packed sheet and compared to the file it was drawn in, pixel for pixel:
+  identical, so nothing was resized or recoloured on the way in.
+- **Three deliberate breakages**: an undeclared share sneaking back in, a picture name that isn't on the
+  sheet, and an upgrade losing its entry. All three caught.
+
+Every drawn thing the game asks for now exists. The sheet holds 241 hand-drawn pictures plus the one
+generated cell of solid white the health bars are drawn from.
