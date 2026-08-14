@@ -146,7 +146,7 @@ const STAGE_ICONS: readonly string[] = [
 ];
 
 /**
- * The launch set. Fifty rows.
+ * The launch set. Fifty-one rows.
  *
  * The shape of the set matters more than any one row: about half are ladders a player climbs without
  * trying (time, kills, gold, levels), a quarter are "have you been everywhere and met everyone", and

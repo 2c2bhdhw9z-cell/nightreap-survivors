@@ -3589,9 +3589,9 @@ had. One older check had to be corrected while doing this: it assumed everything
 a run was a character, which stopped being true the moment a run could earn you an arcana.
 
 
-## Fifty things to chase, and the rule that they are never taken back
+## Fifty-one things to chase, and the rule that they are never taken back
 
-Fifty achievements are in. They are one list, in a fixed order, and each one is a plain question about a
+Fifty-one achievements are in. They are one list, in a fixed order, and each one is a plain question about a
 number: "kill a thousand things in one run", "earn fifty thousand gold in total", "last ten minutes
 without being touched", "clear the marsh". About half are ladders you climb without trying — time, kills,
 gold, levels. A quarter are "have you been everywhere and met everyone". The rest are things you have to
@@ -3630,3 +3630,12 @@ name early, a list scrolled past its end reading somebody else's row, badges fro
 counting toward this build's totals, a shortened save reading a place it does not hold, the sweep
 answering run questions with no run in hand, the sweep ignoring the run it was given, and the sweep
 reading the wrong list of what you already hold.
+
+### The badge screen
+
+There is now a BADGES button on the title screen. It lists every badge with its name, exactly what it
+asks for, and whether you have it — earned ones in gold, locked ones dimmed — with a count at the top and
+a filter for all, earned or locked. The hidden one shows as "???" until it is earned. Opening the screen
+never changes your profile: badges are handed out in exactly one place, the moment a run is banked, so a
+list that also handed them out would be a second place for the same decision to be made slightly
+differently.

@@ -8,8 +8,8 @@
  * WHAT IS ON IT, AND WHY THAT AND NOTHING ELSE
  *
  * One gold button and three stone ones. PLAY is the only thing most people will ever press and it is the
- * only thing drawn in the currency colour, at the size a thumb finds without aiming. Characters and
- * PowerUps are the two screens you visit between runs. Settings is where everything else lives, including
+ * only thing drawn in the currency colour, at the size a thumb finds without aiming. Characters,
+ * PowerUps and Badges are the screens you visit between runs. Settings is where everything else lives, including
  * How to play and backing your profile up — those used to be loose buttons here, and a title screen with
  * six equal buttons on it is a menu, not a title screen.
  *
@@ -97,6 +97,7 @@ export default function Title() {
         <Chunk label="PLAY" weight="gold" onPress={() => router.push("/stages")} style={styles.play} />
         <Chunk label="CHARACTERS" weight="stone" onPress={() => router.push("/characters")} />
         <Chunk label="POWERUPS" weight="stone" onPress={() => router.push("/shop")} />
+        <Chunk label="BADGES" weight="stone" onPress={() => router.push("/achievements")} />
         <Chunk label="SETTINGS" weight="stone" onPress={() => router.push("/settings")} />
       </View>
 
