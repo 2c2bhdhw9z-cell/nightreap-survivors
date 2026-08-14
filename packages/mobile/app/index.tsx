@@ -94,7 +94,7 @@ export default function Title() {
       </View>
 
       <View style={styles.buttons}>
-        <Chunk label="PLAY" weight="gold" onPress={() => router.push("/dev/play")} style={styles.play} />
+        <Chunk label="PLAY" weight="gold" onPress={() => router.push("/stages")} style={styles.play} />
         <Chunk label="CHARACTERS" weight="stone" onPress={() => router.push("/characters")} />
         <Chunk label="POWERUPS" weight="stone" onPress={() => router.push("/shop")} />
         <Chunk label="SETTINGS" weight="stone" onPress={() => router.push("/settings")} />

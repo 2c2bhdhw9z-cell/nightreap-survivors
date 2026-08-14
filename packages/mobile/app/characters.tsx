@@ -27,7 +27,7 @@
 import { useCallback, useState, type ReactNode } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 
 import { Sprite } from "@/components/sprite";
 import { Chunk, Slab, StoneText } from "@/components/stone";
@@ -126,6 +126,11 @@ function weaponName(id: string): string {
 
 export default function CharacterScreen(): ReactNode {
   const router = useRouter();
+  // Which place the run is headed for, chosen on the screen before this one. Carried rather than stored,
+  // and re-checked by the run itself, so an unreadable or locked one simply becomes the first place.
+  const params = useLocalSearchParams<{ stage?: string }>();
+  const stage = Number.parseInt(params.stage ?? "", 10);
+  const stageParam = Number.isSafeInteger(stage) ? stage : 0;
   const { save, loadFailed } = useSettings();
   const [picked, setPicked] = useState(() => firstPlayable(save, 0));
   const [notice, setNotice] = useState("");
@@ -135,8 +140,8 @@ export default function CharacterScreen(): ReactNode {
       setNotice("That one is still locked.");
       return;
     }
-    router.push(`/dev/play?character=${picked}`);
-  }, [picked, router, save]);
+    router.push(`/dev/play?character=${picked}&stage=${stageParam}`);
+  }, [picked, router, save, stageParam]);
 
   const owned = unlockedCount(save);
   const chosen = CHARACTERS[picked];

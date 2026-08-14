@@ -41,6 +41,7 @@ import { Link, useLocalSearchParams, useRouter } from "expo-router";
 
 import { useScreenAwake } from "@/hooks/use-screen-awake";
 import { useSettings } from "@/hooks/use-settings";
+import { firstOpenStage } from "@/game/unlocks/stage-records";
 import { GuideOffer } from "@/components/guide-offer";
 import { recordOfferAnswer, shouldOfferGuide, type OfferAnswer } from "@/game/guide/arming";
 import { saveStore } from "@/hooks/use-settings";
@@ -76,7 +77,7 @@ import { drawChestScreen, drawChestWorld, type ChestArt } from "@/game/render/ch
 import { CUE } from "@/game/sim/cues";
 import { CHEST_REWARD, MAX_CHEST_REWARDS, rewardLine } from "@/game/sim/chests";
 import { PICKUP } from "@/game/sim/pickups";
-import { STAGE_TYPES, stageAt } from "@/game/sim/stages";
+import { stageAt } from "@/game/sim/stages";
 import { Ground, type FrameSource, type GroundTheme } from "@/game/render/ground";
 import { Run } from "@/game/run/run";
 import { STAT, STAT_SCALE } from "@/game/sim/stats";
@@ -289,7 +290,10 @@ export default function PlayScreen() {
   // character: anything unreadable falls back to the first stage, which every profile can always play.
   const wantedStage = Number.parseInt(params.stage ?? "", 10);
   const stageRef = useRef(0);
-  stageRef.current = Number.isSafeInteger(wantedStage) ? Math.max(0, Math.min(STAGE_TYPES.length - 1, wantedStage)) : 0;
+  // Checked against the profile, not just against the list: a link, a stale back-stack entry or a dev
+  // shortcut must not be able to start a run somewhere the player has not opened. Anything that does not
+  // pass falls back to the first place, which every profile can always play.
+  stageRef.current = firstOpenStage(settings.save, wantedStage);
   const characterRef = useRef(0);
   characterRef.current = firstPlayable(settings.save, Number.isSafeInteger(wanted) ? wanted : 0);
   const characterModsRef = useRef<RunModifier[]>([]);

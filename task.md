@@ -3464,3 +3464,39 @@ wrong, reading the new block out of an old save file that does not have one, dro
 dropping the merge's own sanity check, and losing which place the run happened on between the end of the
 run and the profile. Four of the nine got through the first time. Those four now have checks of their own,
 and all nine are caught.
+
+## Choosing where to go
+
+Before this, pressing PLAY sent you straight to picking a character and then into the crypt, because the
+crypt was the only place there was. Now there are five places, so there is a screen between the two.
+
+What you see:
+
+- Five cards, in order. Each one names the place, says in a line what it does to you, tells you how many
+  named fights it holds, how long until the Reaper comes for you, and your best time there.
+- A place you have never played says "Never played" rather than a time of nothing, because those are two
+  different things.
+- Each card carries a small picture of that place's own floor, tinted its own colour, so the list reads at
+  a glance instead of being five identical grey slabs.
+- A place you have not opened yet is dimmed and says exactly what opens it — "Survive 15 minutes in
+  Pauper's Crypt" — rather than just refusing you. Named fights are shown as a count and never by name,
+  so the screen does not spoil what is waiting in there.
+
+What it does:
+
+- Picking a place carries it through to the character screen and into the run, so the run knows where it
+  is happening and the record it sets goes to the right place.
+- Opening a new place is now announced on the results screen the same way a new character or weapon is,
+  instead of quietly appearing in a menu. The crypt is never announced, because it was always open.
+- Once a place is open it stays open. Even if a save file were somehow to lose the time that opened it,
+  the place stays unlocked — nothing takes an opened place back off you.
+- A locked place cannot be started by any route. The run screen checks again on the way in, so a stale
+  link or a back button cannot drop you into somewhere you have not earned.
+
+### How this was proved
+
+Nine deliberate breakages, one at a time, all caught first try: making an opened place forget it was
+opened, letting the opened mark stand in for actually earning it, reading the new save block off the end
+of an old save file, ignoring a save file that is too short, letting a locked place start a run, showing a
+never-played place as a time of zero, rounding a survival time up instead of down, skipping places
+entirely when handing out unlocks, and announcing the first place as if you had just earned it.

@@ -40,6 +40,8 @@
 
 import { bitGet, bitSet, SAVE_LIMITS, type SaveData } from "../save/schema";
 import { CHAR_UNLOCK, CHARACTERS, type Character } from "../characters/roster";
+import { STAGE_TYPES } from "../sim/stages";
+import { stageConditionMet, stageEarnedLine } from "./stage-records";
 
 /**
  * The lists a save keeps unlock bits for.
@@ -312,6 +314,14 @@ export function sweepUnlocks(
     const code = grant(save, TRACK.CHARACTER, i, character.name, earnedLine(character), report);
     if (code === AWARD.OK) granted++;
   }
+  // Places open the same way people do: the profile has plainly earned it, so the bit goes on and the
+  // results screen gets to say so. The first place is skipped for the same reason the starting characters
+  // are — nobody wants to be congratulated for something they had before they pressed play.
+  for (let i = 1; i < STAGE_TYPES.length; i++) {
+    if (!stageConditionMet(save, i)) continue;
+    const code = grant(save, TRACK.STAGE, i, STAGE_TYPES[i].name, stageEarnedLine(i), report);
+    if (code === AWARD.OK) granted++;
+  }
   return granted;
 }
 
@@ -332,6 +342,10 @@ export function contentFaults(list: readonly Character[] = CHARACTERS): readonly
 
   if (list.length > capacityOf(TRACK.CHARACTER)) {
     faults.push(`${list.length} characters but the save only stores ${capacityOf(TRACK.CHARACTER)} bits`);
+  }
+
+  if (STAGE_TYPES.length > capacityOf(TRACK.STAGE)) {
+    faults.push(`${STAGE_TYPES.length} stages but the save only stores ${capacityOf(TRACK.STAGE)} bits`);
   }
 
   let starters = 0;
