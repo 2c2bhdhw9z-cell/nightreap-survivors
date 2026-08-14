@@ -146,6 +146,81 @@
         "slate",
         "violet"
       ]
+    },
+    {
+      "name": "icon-09",
+      "row": 0,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 667,
+      "speckledPixelsFixed": 34,
+      "colours": [
+        "clothDark",
+        "clothLight",
+        "outline",
+        "slate",
+        "violet"
+      ],
+      "sheet": "portraits-02"
+    },
+    {
+      "name": "icon-10",
+      "row": 0,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 729,
+      "speckledPixelsFixed": 61,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ],
+      "sheet": "portraits-02"
+    },
+    {
+      "name": "icon-11",
+      "row": 1,
+      "col": 0,
+      "size": 32,
+      "drawnPixels": 624,
+      "speckledPixelsFixed": 69,
+      "colours": [
+        "bone",
+        "bonePale",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ],
+      "sheet": "portraits-02"
+    },
+    {
+      "name": "icon-12",
+      "row": 1,
+      "col": 1,
+      "size": 32,
+      "drawnPixels": 748,
+      "speckledPixelsFixed": 35,
+      "colours": [
+        "bone",
+        "clothDark",
+        "clothLight",
+        "gold",
+        "leather",
+        "outline",
+        "rot",
+        "slate"
+      ],
+      "sheet": "portraits-02"
     }
   ]
 }

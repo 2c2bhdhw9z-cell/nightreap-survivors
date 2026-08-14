@@ -82,6 +82,12 @@ export const PORTRAIT_FRAME: Readonly<Record<string, string>> = Object.freeze({
   maren: "portraits/icon-06", // broad, capped, heavy
   grust: "portraits/icon-07", // bone helm and chain
   sable: "portraits/icon-08", // wild dark hair, face half hidden
+  // Painted later, in a second sheet of four, and assigned the same way — by looking at the drawing
+  // against the character's own description, never by position.
+  thane: "portraits/icon-09", // slate helm, narrow visor slit, chain at the shoulders
+  hessa: "portraits/icon-10", // leather hood, gold tooth, coins at the throat
+  orin: "portraits/icon-11", // gaunt, eyes closed, throat wrapped in bandages
+  calla: "portraits/icon-12", // wide hood, violet eyes, a card in the hood band
 });
 
 /** Upgrades that knowingly share a picture with another upgrade. Checked, so it can never grow by accident. */

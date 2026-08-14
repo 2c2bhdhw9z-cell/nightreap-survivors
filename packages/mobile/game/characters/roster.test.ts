@@ -2,7 +2,7 @@
  * Character roster self-check. Run headless: `bun packages/mobile/game/characters/roster.test.ts`
  *
  * A roster is a table of numbers, and a wrong number in a table of numbers does not crash — it just makes
- * one character quietly better or worse than the other seven forever. So these checks are mostly about the
+ * one character quietly better or worse than the other eleven forever. So these checks are mostly about the
  * kinds of wrongness that never announce themselves:
  *
  *   1. THE UNITS. `stats.ts` warns that reading a count as a permille is a silent 1000x error. Health is
@@ -74,17 +74,37 @@ const COUNT_STATS = new Set<number>([
   STAT.banishes,
 ]);
 
+/**
+ * The largest a shift on each count stat could sensibly be.
+ *
+ * "A count stays under a hundred" is not enough on its own: 30 armour is a plausible-looking number and
+ * would make a character unkillable, and 40 added to the untouchable window — which is counted in ticks,
+ * sixty to the second — is most of a second of free standing in a crowd. Both would read as an ordinary
+ * typo and neither would look broken. So each count carries its own ceiling, taken from what that number
+ * means in the sim rather than from how big it looks in the table.
+ */
+const COUNT_CEILING = new Map<number, number>([
+  [STAT.amount, 3],
+  [STAT.armor, 6],
+  [STAT.pierce, 5],
+  [STAT.iFrames, 30],
+  [STAT.revives, 3],
+  [STAT.rerolls, 5],
+  [STAT.skips, 5],
+  [STAT.banishes, 5],
+]);
+
 // -------------------------------------------------------------------------------------------------
 section("the shipped roster");
 
-check("has eight characters", CHARACTER_COUNT === 8, `${CHARACTER_COUNT}`);
+check("has twelve characters", CHARACTER_COUNT === 12, `${CHARACTER_COUNT}`);
 check("passes its own content check", contentFaults().length === 0, contentFaults().join("; ") || "clean");
 
 {
   const ids = new Set(CHARACTERS.map((c) => c.id));
   const names = new Set(CHARACTERS.map((c) => c.name));
-  check("has eight distinct ids", ids.size === CHARACTER_COUNT, `${ids.size}`);
-  check("has eight distinct names", names.size === CHARACTER_COUNT, `${names.size}`);
+  check("no two characters share an id", ids.size === CHARACTER_COUNT, `${ids.size}`);
+  check("no two characters share a name", names.size === CHARACTER_COUNT, `${names.size}`);
 }
 
 {
@@ -94,6 +114,76 @@ check("passes its own content check", contentFaults().length === 0, contentFault
     if (!weaponIds.has(c.startingWeaponId)) missing++;
   }
   check("every character starts with a weapon that exists", missing === 0, `${missing} missing`);
+}
+
+{
+  // A character must not start holding an evolved weapon. An evolution is the reward for taking a weapon
+  // to the top and finding the right item; handing one out at second zero would skip that entirely, and
+  // the weapon would also have nothing left to evolve into.
+  const evolved = CHARACTERS.filter((c) => {
+    const w = WEAPON_TYPES.find((row) => row.id === c.startingWeaponId);
+    return w !== undefined && w.evolvedFrom !== "";
+  }).map((c) => c.id);
+  check("nobody starts holding an evolved weapon", evolved.length === 0, evolved.join(", ") || "none do");
+}
+
+{
+  // Twelve characters sharing four starting weapons would be twelve coats of paint on four openings. The
+  // floor is deliberately low — a shared starting weapon with different stats is a real difference — but a
+  // roster this size has to open in more than a handful of ways.
+  const starters = new Set(CHARACTERS.map((c) => c.startingWeaponId));
+  check("the roster opens in at least ten different ways", starters.size >= 10, `${starters.size} starting weapons`);
+}
+
+{
+  // Every character has to be gettable. A pick behind a condition nothing can satisfy is a locked slot the
+  // player will stare at forever, and it would not look broken from the outside.
+  const bad: string[] = [];
+  for (const c of CHARACTERS) {
+    if (c.unlock === CHAR_UNLOCK.ALWAYS) continue;
+    if (c.unlockValue <= 0) bad.push(`${c.id} asks for ${c.unlockValue}`);
+    // A run is thirty minutes at the very most, so a survival unlock above that can never fire.
+    if (c.unlock === CHAR_UNLOCK.BEST_SECONDS && c.unlockValue > 30 * 60) bad.push(`${c.id} wants ${c.unlockValue}s`);
+  }
+  check("every locked character can actually be earned", bad.length === 0, bad.join("; ") || "all reachable");
+}
+
+{
+  // Two characters with the same unlock and the same threshold arrive together, which wastes one of them:
+  // whichever the player notices second feels like nothing happened. Same condition is fine, same number
+  // on the same condition is not.
+  const seen = new Set<string>();
+  const clashes: string[] = [];
+  for (const c of CHARACTERS) {
+    if (c.unlock === CHAR_UNLOCK.ALWAYS) continue;
+    const key = `${c.unlock}:${c.unlockValue}`;
+    if (seen.has(key)) clashes.push(c.id);
+    seen.add(key);
+  }
+  check("no two characters unlock at the same moment", clashes.length === 0, clashes.join(", ") || "all staggered");
+}
+
+{
+  // Two characters with an identical set of shifts and an identical quirk are the same character twice.
+  // Compared as sorted text so the order the shifts happen to be written in cannot hide a duplicate.
+  const shapes = new Map<string, string>();
+  const twins: string[] = [];
+  for (const c of CHARACTERS) {
+    const shifts = c.shifts.map((s) => `${s.stat}=${s.add}`).sort().join(",");
+    const key = `${shifts}|${c.growth.stat}:${c.growth.add}:${c.growth.everyLevels}:${c.growth.maxTiers}`;
+    const already = shapes.get(key);
+    if (already !== undefined) twins.push(`${already} and ${c.id}`);
+    shapes.set(key, c.id);
+  }
+  check("no character is another character twice over", twins.length === 0, twins.join("; ") || "all distinct");
+}
+
+{
+  // Every unlock condition the roster uses has to be one the game measures. A condition nobody counts is a
+  // character that never arrives, and `isCharacterUnlocked` would silently answer no forever.
+  const known = new Set<number>(Object.values(CHAR_UNLOCK));
+  const unknown = CHARACTERS.filter((c) => !known.has(c.unlock)).map((c) => c.id);
+  check("every unlock condition is one the game counts", unknown.length === 0, unknown.join(", ") || "all known");
 }
 
 {
@@ -135,6 +225,8 @@ for (const c of CHARACTERS) {
       // A count shift the size of a permille one is the mistake this check exists for: "+2 armour" written
       // as 2000 would be forty times the game's own armour cap.
       check(`  ${c.id} count shift stays a count`, Math.abs(s.add) <= 100, `${s.add}`);
+      const ceiling = COUNT_CEILING.get(s.stat) ?? 100;
+      check(`  ${c.id} count shift stays inside what that count can mean`, Math.abs(s.add) <= ceiling, `${s.add} vs ${ceiling}`);
     } else {
       // A permille shift smaller than a tenth of a percent cannot have been meant: it is a count written
       // where a permille belongs.
@@ -147,6 +239,9 @@ for (const c of CHARACTERS) {
   }
   if (COUNT_STATS.has(c.growth.stat)) {
     check(`${c.id} growth step stays a count`, c.growth.add <= 100, `${c.growth.add}`);
+    const ceiling = COUNT_CEILING.get(c.growth.stat) ?? 100;
+    const total = growthCeiling(c);
+    check(`  ${c.id} growth quirk stays inside what that count can mean`, total <= ceiling, `${total} vs ${ceiling}`);
   } else {
     check(`${c.id} growth step is permille-sized`, c.growth.add >= STAT_SCALE / 100, `${c.growth.add}`);
   }

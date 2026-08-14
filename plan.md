@@ -2029,7 +2029,15 @@ simply merge and launch moves later.
   proved legitimate from its recording, and a co-op check silently stopped proving anything the moment
   the party survived a full minute.
 - 5 normal stages: real layouts, prop sets, per-stage wave and boss tables (including 15-minute stages).
-- **~12 characters**, ~8 arcanas, ~50 achievements.
+- ~~**~12 characters**~~ — **DONE.** Twelve to pick from: the even-handed one, the one who throws an extra
+  of everything, the enormous slow one, the walking wall, the fast learner made of paper, the one whose
+  effects linger, the fastest and frailest, the gambler who hits ruinously and rarely, plus four new ones —
+  an armoured watchman who shoves the crowd back off himself, a grave-robber who leaves richer than she
+  arrived, a man who gets back up once for free, and a fool who can ask for a different hand twice a run.
+  Nobody is strictly better than anybody: every strength is paid for with a weakness, and everyone has one
+  thing that keeps growing as the run goes on, up to a ceiling written on their own card. Ten different
+  starting weapons across the twelve, so the roster opens in ten different ways. Four new portraits painted;
+  the in-run bodies were already drawn. ~8 arcanas and ~50 achievements are what is left of this line.
 - ~40 enemy types, elites, **bosses** on fixed timestamps.
 - **Both test tracks are live and running during this phase** — the Play 14-day closed-test clock burns
   down while content lands, and TestFlight testers cover iPhone/iPad. Cross-store testers also give us

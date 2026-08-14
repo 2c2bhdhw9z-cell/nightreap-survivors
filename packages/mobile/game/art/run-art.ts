@@ -39,6 +39,12 @@ export const PLAYER_FRAME: Readonly<Record<string, string>> = {
   bram: "characters/icon-05",
   nyx: "characters/icon-09",
   sable: "characters/icon-06",
+  // The four later characters take the four cells of the same sheet nobody had claimed yet, so the
+  // in-run bodies needed no new painting — only the portraits did.
+  thane: "characters/icon-03",
+  hessa: "characters/icon-10",
+  orin: "characters/icon-11",
+  calla: "characters/icon-12",
 };
 
 /** The picture each kind of enemy is drawn as. Keyed by the enemy type's own id. */

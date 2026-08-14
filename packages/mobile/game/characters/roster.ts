@@ -107,7 +107,7 @@ const PCT = STAT_SCALE / 100;
 const HP = STAT_SCALE;
 
 /**
- * The eight launch characters.
+ * The twelve launch characters.
  *
  * Read as: a starting hand that is clearly good at one thing and clearly bad at another, plus one thing that
  * arrives later. Nobody is strictly better than anybody — every positive shift is paid for — because a
@@ -284,6 +284,97 @@ export const CHARACTERS: readonly Character[] = [
     },
     unlock: CHAR_UNLOCK.BEST_SECONDS,
     unlockValue: 900,
+  },
+  {
+    id: "thane",
+    name: "Thane Colm",
+    title: "The Iron Vigil",
+    blurb: "Wears the hit and throws the crowd back off it. Learns slowly.",
+    startingWeaponId: "sepulcherCross",
+    // 3 armour (a flat count), +25% shove, paid for with 15% less experience.
+    shifts: [
+      { stat: STAT.armor, add: 3 },
+      { stat: STAT.knockback, add: 25 * PCT },
+      { stat: STAT.xpGain, add: -15 * PCT },
+    ],
+    growth: {
+      // The untouchable window after a hit is counted in ticks, not percent — 60 ticks is a second. Six
+      // steps of four is under half a second in total, which is deliberately small: this window is what
+      // decides whether standing in a crowd is survivable, and a generous one stops the game being a fight.
+      stat: STAT.iFrames,
+      everyLevels: 8,
+      add: 4,
+      maxTiers: 6,
+      blurb: "A slightly longer moment of being untouchable after a hit, every 8 levels, up to six times.",
+    },
+    unlock: CHAR_UNLOCK.RUNS_COMPLETED,
+    unlockValue: 5,
+  },
+  {
+    id: "hessa",
+    name: "Hessa Marrow",
+    title: "The Gold Tooth",
+    blurb: "Leaves richer than she arrived, and hits like it.",
+    startingWeaponId: "graveShot",
+    // +35% gold, +20% pickup range, -10% damage.
+    shifts: [
+      { stat: STAT.goldGain, add: 35 * PCT },
+      { stat: STAT.magnet, add: 20 * PCT },
+      { stat: STAT.damage, add: -10 * PCT },
+    ],
+    growth: {
+      stat: STAT.goldGain,
+      everyLevels: 5,
+      add: 5 * PCT,
+      maxTiers: 8,
+      blurb: "+5% gold every 5 levels, up to eight times.",
+    },
+    unlock: CHAR_UNLOCK.LIFETIME_GOLD,
+    unlockValue: 20_000,
+  },
+  {
+    id: "orin",
+    name: "Orin Dree",
+    title: "The Second Breath",
+    blurb: "Gets back up once for free. Hits softly for the privilege.",
+    startingWeaponId: "wormfangLance",
+    // 1 extra revive (a flat count), +20 health (permille), -18% damage.
+    shifts: [
+      { stat: STAT.revives, add: 1 },
+      { stat: STAT.maxHealth, add: 20 * HP },
+      { stat: STAT.damage, add: -18 * PCT },
+    ],
+    growth: {
+      stat: STAT.maxHealth,
+      everyLevels: 6,
+      add: 2 * HP,
+      maxTiers: 8,
+      blurb: "+2 health every 6 levels, up to eight times.",
+    },
+    unlock: CHAR_UNLOCK.BEST_SECONDS,
+    unlockValue: 1_200,
+  },
+  {
+    id: "calla",
+    name: "Calla Vane",
+    title: "The Fool's Hand",
+    blurb: "Asks for a different hand twice a run, and gets luckier asking.",
+    startingWeaponId: "stormOfNails",
+    // 2 rerolls (a flat count), +25% luck, paid for with 20% less effect size.
+    shifts: [
+      { stat: STAT.rerolls, add: 2 },
+      { stat: STAT.luck, add: 25 * PCT },
+      { stat: STAT.area, add: -20 * PCT },
+    ],
+    growth: {
+      stat: STAT.luck,
+      everyLevels: 6,
+      add: 3 * PCT,
+      maxTiers: 8,
+      blurb: "+3% luck every 6 levels, up to eight times.",
+    },
+    unlock: CHAR_UNLOCK.RUNS_COMPLETED,
+    unlockValue: 15,
   },
 ];
 

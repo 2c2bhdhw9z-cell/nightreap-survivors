@@ -3224,3 +3224,43 @@ weapon given a shove, an evolution made weaker than its base, two evolutions poi
 and a standing-still weapon given travel speed. All seven were caught.
 
 Everything else still passes — 56 test files, no failures — and the project builds clean.
+
+## Twelve characters
+
+Four more, on the end of the eight — never inserted between them, because a save records who you have
+unlocked by position and reordering the list would relabel everybody's unlocks.
+
+- **The Iron Vigil** — an armoured watchman. Starts with the cross. Wears the hit and throws the crowd
+  back off it, and learns more slowly for it. The longer he lives, the longer the untouchable moment
+  after being hit lasts.
+- **The Gold Tooth** — a grave-robber. Starts with the long shot. Leaves every run richer and pulls
+  pickups in from further away, and hits a little softer. Gets greedier as the run goes on.
+- **The Second Breath** — gets back up once for free and carries more health, and hits noticeably
+  softer for the privilege. Keeps gaining health as he levels.
+- **The Fool's Hand** — can ask for a different hand of cards twice a run and is luckier when asking,
+  paid for with smaller effects. Gets luckier still as the run goes on.
+
+Ten different starting weapons across the twelve, so the roster opens in ten different ways rather than
+being twelve coats of paint on four openings. Nobody starts holding an evolved weapon — that is the
+reward for taking a weapon to the top and finding the right item, not something you begin with. And no
+two characters unlock at the same number, so one of them can't arrive unnoticed behind the other.
+
+### A number of mine was wrong, and a check caught it
+
+The new watchman's growing perk was written as a percentage when the game counts that particular thing in
+ticks of the clock instead — sixty to the second. It would have handed him most of a second of free
+standing in a crowd every eight levels, which is not a perk, it's immunity. It reads as an ordinary typo
+in a table of numbers and nothing would have looked broken. Every one of those counted numbers now has
+its own ceiling in the checks, taken from what the number actually means in the game rather than from
+how big it looks in the table, so the same mistake on any of the others fails immediately.
+
+Then eight deliberate breakages: a character given an evolved weapon to start with, two unlocking at the
+same moment, an unlock nothing could ever reach, one character duplicated shift for shift, an unlock
+condition the game does not count, the roster narrowed to too few openings, armour written in the wrong
+units, and the untouchable window written in the wrong units. All eight were caught.
+
+### Art
+
+One new painted sheet of four portraits, cut to size with the same tools and the same locked palette as
+the first eight. The in-run bodies needed no new painting — the character sheet had four cells nobody had
+claimed. The picture sheet the game loads is now 246 pictures on one 1024x512 texture, 28% full.
