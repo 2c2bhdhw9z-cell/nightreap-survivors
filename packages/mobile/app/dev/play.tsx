@@ -52,8 +52,10 @@ import { loadRunAtlas } from "@/lib/load-atlas";
 import {
   BOSS_DRAW_SCALE,
   ENEMY_DRAW_SCALE,
+  AURA_ALPHA,
   ENEMY_FRAME,
   PLAYER_DRAW_SCALE,
+  PICKUP_DRAW_SCALE,
   PICKUP_FRAME,
   PLAYER_FRAME,
   SHOT_FRAME,
@@ -61,15 +63,16 @@ import {
   WHITE_FRAME,
 } from "@/game/art/run-art";
 import { Renderer } from "@/game/render/renderer";
-import { COLOR_WHITE } from "@/game/render/batcher";
+import { COLOR_WHITE, packHex, withAlpha } from "@/game/render/batcher";
+import { WalkTracker, createStepPose, stepPose } from "@/game/render/step-anim";
 import { Ground, type FrameSource, type GroundTheme } from "@/game/render/ground";
 import { Run } from "@/game/run/run";
 import { STAT, STAT_SCALE } from "@/game/sim/stats";
 import { MOD_HURRY, MOD_HYPER } from "@/game/sim/modifiers";
-import { PICKUP } from "@/game/sim/pickups";
 import { ENEMY_FLAG, ENEMY_TYPES } from "@/game/sim/enemies";
 import { MAX_WEAPONS, WEAPON_TYPES } from "@/game/sim/weapons";
-import { PLAYER_STATE } from "@/game/sim/player";
+import { MOVE } from "@/game/sim/projectiles";
+import { MAX_PLAYERS, PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
 import { describeHandoff, runHandoff, runIdOf } from "@/game/save/handoff";
 import { powerUpLoadout } from "@/game/shop/loadout";
@@ -81,7 +84,6 @@ import {
 import { CHARACTERS, firstPlayable } from "@/game/characters/roster";
 import type { RunModifier } from "@/game/sim/modifiers";
 import { OFFERS_PER_SCREEN } from "@/game/sim/cards";
-import { MAX_PLAYERS } from "@/game/sim/player";
 import { REAPER_SECOND, TICKS_PER_SECOND } from "@/game/sim/waves";
 import { HudView, createHudInput, readRunInto, touchSummonsStick, type HudFrame } from "@/game/hud/hud";
 import { HudPainter, paintStick } from "@/game/render/hud-draw";
@@ -379,14 +381,20 @@ export default function PlayScreen() {
       renderer.resize(gl.drawingBufferWidth, gl.drawingBufferHeight);
 
       const source = frameSourceFor(atlas);
-      // Real drawn floors and scenery, and no tint on either: the art already carries its own colour,
-      // and tinting a drawn picture only muddies it.
+      // Real drawn floors and scenery, tinted down by the stage's own numbers.
+      //
+      // This started out untinted, on the reasoning that the art already carries its colour and tinting
+      // a drawn picture only muddies it. That was wrong for one specific reason: every crypt tile has
+      // bone chips painted into it, and a bone chip repeated across a whole screen is indistinguishable
+      // from an experience gem lying on the floor. Knocking the floor back is the only lever available,
+      // because a tint can darken and never brighten. `art/floor_contrast_test.py` measures the gap.
+      const stageArt = STAGE_ART.crypt;
       const ground = new Ground(source, {
         ...DEBUG_GROUND,
-        floorFrames: STAGE_ART.crypt?.floorFrames ?? [],
-        propFrames: STAGE_ART.crypt?.propFrames ?? [],
-        floorTint: COLOR_WHITE,
-        propTint: COLOR_WHITE,
+        floorFrames: stageArt?.floorFrames ?? [],
+        propFrames: stageArt?.propFrames ?? [],
+        floorTint: packHex(stageArt?.floorTint ?? "#FFFFFF"),
+        propTint: packHex(stageArt?.propTint ?? "#FFFFFF"),
       });
 
       // Every picture this screen will ever draw, looked up once. A frame lookup is a string lookup,
@@ -395,6 +403,19 @@ export default function PlayScreen() {
       const enemyFrames = ENEMY_TYPES.map((t) => atlas.need(ENEMY_FRAME[t.id] ?? WHITE_FRAME));
       const shotFrames = WEAPON_TYPES.map((w) => atlas.need(SHOT_FRAME[w.id] ?? WHITE_FRAME));
       const pickupFrames = PICKUP_FRAME.map((name) => atlas.need(name));
+      const pickupScales = PICKUP_DRAW_SCALE;
+
+      // How far each character has walked, and the pose that distance puts them in. Kept on the
+      // drawing side, never in the simulation: a number that only picks a picture has no business
+      // being able to desync a co-op game.
+      const walk = new WalkTracker(MAX_PLAYERS);
+      const pose = createStepPose();
+      let lastPoseClock = nowMs();
+      let poseSeconds = 0;
+
+      // Which weapons are auras. Looked up once, because deciding it per projectile per frame would
+      // mean a table walk sixty times a second for no new information.
+      const isAuraWeapon = WEAPON_TYPES.map((w) => w.move === MOVE.aura);
       // Every character on the roster, so the body is right the moment a run restarts as somebody else
       // without re-reading the sheet.
       const bodyFrames = CHARACTERS.map((c) => atlas.need(PLAYER_FRAME[c.id] ?? WHITE_FRAME));
@@ -470,6 +491,7 @@ export default function PlayScreen() {
             seenRestart = restartRef.current;
             run.seed = seedRef.current;
             startRun(run);
+            walk.reset();
             renderer.camera.snapTo(run.players.x[0], run.players.y[0]);
             cardsWereOpen = false;
             reportedEnd = RUN_END.running;
@@ -483,10 +505,35 @@ export default function PlayScreen() {
           const alpha = loop.stats.alpha;
           renderer.beginFrame(alpha);
 
+          // The drawing clock. Only the standing-still breath uses it, and it is measured here rather
+          // than inside the pose rules, because nothing under game/render is allowed to read a clock.
+          const poseDt = Math.min(0.25, Math.max(0, (now - lastPoseClock) / 1000));
+          lastPoseClock = now;
+          poseSeconds += poseDt;
+
           // 1. background — the floor and its scenery.
           ground.draw(renderer.layer("background"), renderer.camera);
 
-          // 2. pickups — gems and drops sit under everything that moves.
+          // 2. floorFx — aura weapons, and only aura weapons.
+          //
+          // An aura is a disc centred on the player and usually wider than the player is tall. Drawn on
+          // the layer above them it swallowed the character whole. Down here, under everything that
+          // walks and drawn part-transparent, the cloud still reads as a cloud and you can still see
+          // yourself standing in the middle of it.
+          {
+            const b = renderer.layer("floorFx");
+            const pr = run.projectiles;
+            const slots = pr.pool.slots;
+            const tint = withAlpha(COLOR_WHITE, AURA_ALPHA);
+            for (let i = 0; i < pr.pool.count; i++) {
+              const s = slots[i];
+              if (!isAuraWeapon[pr.weapon[s]]) continue;
+              const scale = Math.max(0.2, (pr.radius[s] * 2) / 32);
+              b.drawScaled(shotFrames[pr.weapon[s]] ?? white, pr.x[s], pr.y[s], scale, scale, tint);
+            }
+          }
+
+          // 3. pickups — gems and drops sit under everything that moves.
           {
             const b = renderer.layer("pickups");
             const p = run.pickups;
@@ -494,12 +541,14 @@ export default function PlayScreen() {
             for (let i = 0; i < p.pool.count; i++) {
               const s = slots[i];
               const kind = p.kind[s];
-              const size = kind === PICKUP.gemLarge ? 0.5 : kind === PICKUP.gemMedium ? 0.38 : 0.28;
+              // One table, shared with the art rules, instead of three numbers written out here. The
+              // gems were raised after the first play test because they were too small to spot.
+              const size = pickupScales[kind] ?? 0.5;
               b.drawScaled(pickupFrames[kind] ?? white, p.x[s], p.y[s], size, size, COLOR_WHITE);
             }
           }
 
-          // 3. enemies — one quad each, tinted by type, gold for anything flagged as a boss.
+          // 4. enemies — one quad each, tinted by type, gold for anything flagged as a boss.
           {
             const b = renderer.layer("enemies");
             const e = run.enemies;
@@ -522,7 +571,7 @@ export default function PlayScreen() {
             }
           }
 
-          // 4. player — interpolated, because this is the one sprite the eye tracks.
+          // 5. player — interpolated, because this is the one sprite the eye tracks.
           {
             const b = renderer.layer("player");
             const pl = run.players;
@@ -537,30 +586,37 @@ export default function PlayScreen() {
                     ? C.invuln
                     : COLOR_WHITE
                   : C.downed;
+              // The stride. Driven by how far the body has actually travelled, never by the clock —
+              // a clock-driven bob keeps jogging on the spot when you stop, and gets move speed,
+              // slows, freezes and knockback wrong for free. Distance gets all of them right for free.
+              walk.update(i, x, y, poseDt);
+              stepPose(walk.distance[i] ?? 0, walk.speed[i] ?? 0, pl.facing[i] ?? 0, poseSeconds, pose);
+              // A negative width mirrors the picture. Safe because face culling is off in the batcher.
               b.drawScaled(
                 bodyFrames[characterIds[i] ?? 0] ?? white,
                 x,
-                y,
-                PLAYER_DRAW_SCALE,
-                PLAYER_DRAW_SCALE,
+                y + pose.liftY,
+                PLAYER_DRAW_SCALE * pose.scaleX * (pose.flipX ? -1 : 1),
+                PLAYER_DRAW_SCALE * pose.scaleY,
                 colour,
               );
             }
           }
 
-          // 5. projectiles — above the crowd so you can read your own build.
+          // 6. projectiles — above the crowd so you can read your own build.
           {
             const b = renderer.layer("projectiles");
             const pr = run.projectiles;
             const slots = pr.pool.slots;
             for (let i = 0; i < pr.pool.count; i++) {
               const s = slots[i];
+              if (isAuraWeapon[pr.weapon[s]]) continue; // already drawn on the floor layer
               const scale = Math.max(0.2, (pr.radius[s] * 2) / 32);
               b.drawScaled(shotFrames[pr.weapon[s]] ?? white, pr.x[s], pr.y[s], scale, scale, COLOR_WHITE);
             }
           }
 
-          // 6. hud — screen space, and every coordinate in it comes from resolved settings.
+          // 7. hud — screen space, and every coordinate in it comes from resolved settings.
           //
           // The screen's whole job here is three calls: copy the run into an input block, let the HUD
           // rules turn that into a frame, then paint the frame. It decides nothing itself, which is why

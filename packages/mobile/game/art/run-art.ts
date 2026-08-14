@@ -151,6 +151,24 @@ export const PICKUP_FRAME: readonly string[] = (() => {
 export interface StageArt {
   readonly floorFrames: readonly string[];
   readonly propFrames: readonly string[];
+  /**
+   * Colour the floor art is multiplied by, as `#rrggbb`.
+   *
+   * WHY THE FLOOR IS TINTED DOWN AT ALL
+   * Every crypt floor tile has bone chips painted into it. One tile on its own looks great. Tiled across
+   * a whole screen, those chips become hundreds of small pale shapes scattered evenly everywhere — and a
+   * small pale shape on the floor is exactly what an experience gem is. Players were losing gems in the
+   * wallpaper. The floor's only job is to prove you are moving; anything on it that competes with a
+   * pickup for attention is a bug, even though it is a beautiful bug.
+   *
+   * Tinting can only darken, never brighten, so this is the lever: knock the floor back until the
+   * brightest thing painted into it is clearly darker than the dimmest gem. `art/floor_contrast_test.py`
+   * measures exactly that against the real packed sheet and fails if a redrawn tile or a lightened tint
+   * ever closes the gap again.
+   */
+  readonly floorTint: string;
+  /** Same idea for the scenery standing on the floor. */
+  readonly propTint: string;
 }
 
 export const STAGE_ART: Readonly<Record<string, StageArt>> = {
@@ -160,16 +178,65 @@ export const STAGE_ART: Readonly<Record<string, StageArt>> = {
   crypt: {
     floorFrames: ["tiles/icon-01", "tiles/icon-05", "tiles/icon-08", "tiles/icon-11"],
     propFrames: ["props/icon-05", "props/icon-06", "props/icon-11", "props/icon-08"],
+    floorTint: "#5A5668",
+    propTint: "#6E6A7C",
   },
   ossuary: {
+    // The bone floors are the brightest art in the game — two of these four tiles are nearly white —
+    // so this stage needs the heaviest hand of the three or it is a snowfield with gems hidden in it.
     floorFrames: ["tiles/icon-03", "tiles/icon-04", "tiles/icon-10", "tiles/icon-02"],
     propFrames: ["props/icon-03", "props/icon-08", "props/icon-12", "props/icon-05"],
+    floorTint: "#3E3B4A",
+    propTint: "#605C6E",
   },
   marsh: {
     floorFrames: ["tiles/icon-06", "tiles/icon-07", "tiles/icon-09", "tiles/icon-12"],
     propFrames: ["props/icon-01", "props/icon-02", "props/icon-10", "props/icon-07"],
+    // The marshes carry the brightest floor of the three -- pale reed clumps painted into two of the
+    // four tiles -- so this tint is heavier than it looks like it should need. Measured, not guessed.
+    floorTint: "#434C45",
+    propTint: "#6A7468",
   },
 };
+
+/**
+ * How big each kind of floor item is drawn, as a multiple of its 32-pixel picture.
+ *
+ * The three gem tiers step up hard on purpose. Size is the first thing the eye resolves at a distance —
+ * long before colour and long before shape — so "is that worth walking for" has to be answerable from
+ * the size alone, with the colour only confirming it once you are closer.
+ *
+ * These were all raised after the first play test: the gems were drawn at roughly a third of their
+ * picture, which on a real phone held at arm's length is a handful of pixels, and they disappeared into
+ * the floor art. Nothing about how much experience a gem is worth changed — only how big it is drawn.
+ */
+export const PICKUP_DRAW_SCALE: readonly number[] = (() => {
+  const s: number[] = Array.from<number>({ length: PICKUP_KIND_COUNT }).fill(0.5);
+  s[PICKUP.gemSmall] = 0.42;
+  s[PICKUP.gemMedium] = 0.58;
+  s[PICKUP.gemLarge] = 0.78;
+  s[PICKUP.gold] = 0.5;
+  s[PICKUP.health] = 0.62;
+  s[PICKUP.chest] = 0.9;
+  s[PICKUP.vacuum] = 0.62;
+  s[PICKUP.bomb] = 0.62;
+  s[PICKUP.freeze] = 0.62;
+  return s;
+})();
+
+/**
+ * How solid an aura weapon is drawn, out of 255.
+ *
+ * An aura is a circle centred on the player that is often wider than the player is tall, and it was
+ * being drawn on the layer above them at full strength — so the character vanished inside a solid disc
+ * the moment the weapon was picked up. You cannot play a game where you cannot see yourself.
+ *
+ * Two things fix it together and both are needed. The disc moves to the layer *under* everything that
+ * walks, so bodies are always on top of it, and it is drawn part-transparent so the floor and the crowd
+ * still read through it. This number is the transparency: low enough to see everything inside the
+ * cloud, high enough that the cloud's edge is still obviously where the damage stops.
+ */
+export const AURA_ALPHA = 92;
 
 /**
  * How big a thing is drawn compared with the picture it is drawn from.
