@@ -24,6 +24,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { client } from "@/lib/api";
+import { cloudIdentity } from "@/lib/cloud-sync";
 import {
   parseConfig,
   RemoteConfigState,
@@ -143,8 +144,32 @@ export async function fetchConfig(): Promise<ApplyCode | undefined> {
 
 /** Cache first, then network. Safe to call more than once; the second call is just a refresh. */
 export async function startRemoteConfig(): Promise<void> {
+  await adoptAccount();
   await loadCachedConfig();
   await fetchConfig();
+}
+
+/**
+ * Give the config an id to bucket this install by, before any document is applied.
+ *
+ * Percentage rollouts need something stable to hash: without an id every one of them answers "no account"
+ * and stays off, which is safe but means a 10%-of-players rollout reaches nobody. The id used is the same
+ * one the cloud locker already invents on first use, so a player's bucket does not move between launches
+ * and a flag turned on for them stays on for them.
+ *
+ * It is deliberately not a sign-in: there is no sign-in, and inventing a second id here would mean the
+ * same install sat in two different buckets depending on which code path asked first.
+ *
+ * A failure is swallowed. No id means rollouts hold off, which is the cautious answer and exactly what
+ * the flag rules already do when asked without one.
+ */
+async function adoptAccount(): Promise<void> {
+  try {
+    const identity = await cloudIdentity();
+    if (identity.accountId !== "") setConfigAccount(identity.accountId);
+  } catch {
+    // No id: every percentage rollout stays off. Better than a bucket that moves each launch.
+  }
 }
 
 /** Refresh only if the held document has gone stale. What the foreground transition calls. */

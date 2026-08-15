@@ -3742,3 +3742,10 @@ Two small clean-ups while there was budget left:
   (frame prediction, world checks, ping) read zero rather than showing a made-up number.
 
 Both checked: code checks pass and the app still bundles clean.
+
+## Gradual rollouts actually work now
+
+The switches that were meant to reach "10% of players" reached nobody, because nothing ever told the
+app who it was. It now uses the same id the cloud backup already makes on first launch, so a player
+stays in the same group every time they open the game — a switch turned on for them stays on. If that
+id can't be read, gradual switches stay off, which is the safe answer.
