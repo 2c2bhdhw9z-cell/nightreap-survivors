@@ -1,5 +1,7 @@
 import { Platform } from "react-native";
 
+import { PARTY_COLOUR } from "@/game/hud/hud";
+
 /**
  * Nightreap Survivors colour tokens. Values come from `design.md` — that file is the
  * source of truth; this is the mobile mapping onto the template's token names.
@@ -39,13 +41,12 @@ export const Palette = {
 /**
  * Co-op player identity. Always paired with a pip count in the UI so identity
  * survives a colourblind palette and a greyscale screenshot.
+ *
+ * Seat colours come straight from the in-run HUD's `PARTY_COLOUR`, so seat two is the same
+ * colour in the lobby, in the run, and on the results screen. Two lists drifted apart once;
+ * there is only one list now.
  */
-export const PlayerColors = [
-  { color: Palette.crimsonLit, pips: 1 },
-  { color: Palette.cyanLit, pips: 2 },
-  { color: Palette.goldLit, pips: 3 },
-  { color: Palette.violetLit, pips: 4 },
-] as const;
+export const PlayerColors = PARTY_COLOUR.map((color, seat) => ({ color, pips: seat + 1 }));
 
 const tokens = {
   background: Palette.crypt,
