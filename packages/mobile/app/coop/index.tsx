@@ -26,6 +26,9 @@ import { JOIN_MODE, isCompleteCode, normalizeCode, webSocketFactory, type JoinMo
 import { FLAG } from "@/game/config/remote-config";
 import { useFlag } from "@/hooks/use-flag";
 import { useSettings } from "@/hooks/use-settings";
+import { lobbyLinkSource } from "@/game/dev/lobby-probe";
+import { PROTOCOL_VERSION } from "@/game/net/protocol";
+import { attachCoopProbe } from "@/lib/coop-lab-host";
 import { relayConfigured, relayUrl } from "@/lib/relay-url";
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -52,6 +55,22 @@ export default function CoopScreen(): ReactNode {
     },
     [],
   );
+
+  // The dev menu's co-op readout, hooked up to this lobby for as long as it exists. It is handed a
+  // function rather than the session itself, so the panel can ask this lobby for numbers and can never
+  // reach in and change it. Detached on teardown: a readout still reporting a party that has gone is
+  // worse than one that says there is nothing to report.
+  useEffect(() => {
+    if (session === null) {
+      attachCoopProbe(null);
+      return;
+    }
+    const openedAt = Date.now();
+    attachCoopProbe(() =>
+      lobbyLinkSource(session.view(), session.diagnostics(), Date.now() - openedAt, PROTOCOL_VERSION),
+    );
+    return () => attachCoopProbe(null);
+  }, [session]);
 
   useEffect(() => {
     if (session === null) return;

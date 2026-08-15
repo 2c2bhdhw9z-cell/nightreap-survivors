@@ -3730,3 +3730,15 @@ The picture you approved is now the real title screen in the app.
 - I lightened the dark fade at the bottom of the screen so the picture shows through behind the buttons instead of being washed out.
 
 Checked: the app builds clean, the code checks pass, and I took a real screenshot of the phone screen to confirm it looks right.
+
+## The co-op debug page now shows something
+
+Two small clean-ups while there was budget left:
+
+- Player colours were kept in two separate lists, so seat two could be one colour in the lobby and a
+  different colour once the run started. There is one list now, and the lobby copies the run.
+- The co-op page in the hidden dev menu used to say "no live session" always, because nothing ever
+  handed it a party to watch. Joining a party now feeds it. Figures a lobby genuinely doesn't have
+  (frame prediction, world checks, ping) read zero rather than showing a made-up number.
+
+Both checked: code checks pass and the app still bundles clean.
