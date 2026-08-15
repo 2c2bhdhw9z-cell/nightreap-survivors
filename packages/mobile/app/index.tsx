@@ -219,8 +219,8 @@ export default function Title() {
         pointerEvents="none"
       />
       <LinearGradient
-        colors={["rgba(4,3,9,0)", "rgba(4,3,9,0.66)", "rgba(4,3,9,0.94)"]}
-        locations={[0, 0.42, 0.78]}
+        colors={["rgba(4,3,9,0)", "rgba(4,3,9,0.42)", "rgba(4,3,9,0.82)"]}
+        locations={[0, 0.5, 0.9]}
         style={styles.bottomWash}
         pointerEvents="none"
       />

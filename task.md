@@ -3720,3 +3720,13 @@ breathes very slightly. Characters, PowerUps, Badges and Settings are stone and 
 fades. That is why it cannot go blurry the way the old reaper did: there is nothing to stretch. It also
 adds nothing to the download, and the screen is on before the save has finished loading — the two top
 corners show a dash until it arrives, so a slow phone never waits on storage to show its own buttons.
+
+## The title screen is finished
+
+The picture you approved is now the real title screen in the app.
+
+- The name is the new gothic lettering — bone white bleeding into blood red.
+- The treasure at the bottom is our chest, our coins, our gems.
+- I lightened the dark fade at the bottom of the screen so the picture shows through behind the buttons instead of being washed out.
+
+Checked: the app builds clean, the code checks pass, and I took a real screenshot of the phone screen to confirm it looks right.
