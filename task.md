@@ -3695,3 +3695,28 @@ that does not mirror when you walk left, a leg lift landing on half a pixel, a b
 a bounce measured from the world origin instead of from the player, a bounce that only works sideways, a
 flask that never lands, a flask that lands but keeps drifting, and both flasks quietly losing the rule
 that makes them land at all.
+
+## A title screen that actually looks like a game
+
+The old one was a diagram: a flat orange ball on a black screen. This one is a scene.
+
+A blood moon low in a sky that goes from black at the top to old blood at the horizon. A soft halo
+around it, built out of eighteen barely-there circles stacked inside each other, because a phone can
+only draw hard-edged circles and that is the only way to get a glow with no visible rim. Stars. Bats
+crossing on their own slow loops.
+
+A hooded reaper stands in front of the moon with a scythe over his shoulder, rimmed in the faintest
+gold on the side the moon is on, eyes fading in and out. Behind him, five church spires with lit
+windows, far off and nearly black. In front of him, a horizon line, a row of leaning headstones and
+crosses, a dead tree, and an iron railing across the very front — so you are standing outside the
+fence looking in. Haze hugs the ground and embers rise the whole height of the screen.
+
+Layout is borrowed on purpose: the gothic painting and carved gold lettering from Vampire Survivors,
+the confident front-page furniture from Survivor.io. Your gold and your runs survived sit in the top
+corners where a phone player already looks for them. One filled gold PLAY button owns the bottom and
+breathes very slightly. Characters, PowerUps, Badges and Settings are stone and half-width.
+
+**Not one pixel of it is a picture file.** Every part is drawn by the phone out of shapes and colour
+fades. That is why it cannot go blurry the way the old reaper did: there is nothing to stretch. It also
+adds nothing to the download, and the screen is on before the save has finished loading — the two top
+corners show a dash until it arrives, so a slow phone never waits on storage to show its own buttons.
