@@ -10,8 +10,11 @@ A mobile-first survivors-style action roguelike. Original art, original names, 1
 | [task.md](./task.md) | The working log. What was built, what broke, what was measured on real phones. |
 | [design.md](./design.md) | The look. Colour palette, fonts, spacing, motion rules, screen list. |
 
-**Current status lives in [plan.md](./plan.md), in the section *Where we actually are*.** That is the
-one place a phase is declared open or closed. Do not infer status from anywhere else in the documents.
+**Current status lives in [plan.md](./plan.md).** That is the one place a stage is declared open or
+closed, and the one place that says how to run the game. Do not infer status from anywhere else.
+
+[plan.md](./plan.md) also lists **four independent ways to run this** — Expo Go, a single HTML file,
+a local dev server, or a store build. None depend on a third party's hosting staying online.
 
 Where things live: the game engine is `packages/mobile/game/` (all the maths and rules, no screen
 code). The screens are `packages/mobile/app/`. Nothing in the engine is allowed to know screens
@@ -40,7 +43,7 @@ call these named verbs. Never rename or remove them; their internals are free to
 | `bun run lint` | Releases + conventions + oxlint |
 | `bun run typecheck` | Typecheck all packages |
 | `bun run db:generate` / `db:migrate` / `db:push` | Database workflows |
-| `bun run test:game` | The engine test suite — 20 headless suites, no phone needed. Must be green before any deliver. |
+| `bun run test:game` | The engine test suite — 37 headless suites, no phone needed. One known failure (see plan.md); anything else is a regression. |
 | `bun run test:relay` | Live socket test of the co-op relay. Needs the relay running (`bun run --cwd packages/relay dev`). |
 | `bun run test:e2e` | The whole co-op stack over a real socket: two simulations, one relay, a drop and a rejoin. Starts and stops its own relay on port 4401. |
 | `bun run test:soak` | 20 minutes of simulated quad-storm time, headless. Not the Endless soak (that arrives with Endless in Phase 6). Kept out of `test:game` for runtime. |

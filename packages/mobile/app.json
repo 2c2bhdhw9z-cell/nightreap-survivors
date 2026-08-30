@@ -21,8 +21,8 @@
       "resizeMode": "cover",
       "backgroundColor": "#141320"
     },
-    "name": "Nightreap Survivors",
-    "slug": "nightreap-survivors",
+    "name": "Nightreap Survivors (Preview)",
+    "slug": "nightreap-survivors-preview",
     "version": "1.0.0",
     "scheme": "nightreap",
     "orientation": "portrait",
@@ -37,6 +37,19 @@
       "expo-asset",
       "expo-font",
       "expo-localization"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "362d2ae3-33ab-4696-beb9-ed1f9fdfb657"
+      }
+    },
+    "owner": "fuckyouniggerbitch",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/362d2ae3-33ab-4696-beb9-ed1f9fdfb657"
+    }
   }
 }

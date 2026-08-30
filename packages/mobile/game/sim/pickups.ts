@@ -110,6 +110,17 @@ export const MAX_PULL_SPEED = 420;
  */
 export const CONSUMABLE_TTL = 60 * 60;
 
+/**
+ * How many of the pool's slots gems may occupy, leaving the rest for coins, chests and consumables.
+ *
+ * Gems are the only pickup that both drops on every kill and never expires, so without a ceiling they
+ * take the entire pool within the first minute and nothing else can ever spawn again. Set against
+ * `POOL_BUDGETS.pickups` (1024): 128 reserved slots is far more than the number of coins, chests and
+ * consumables alive at once in the worst case observed, and a gem refused by this cap loses nothing —
+ * it merges into a neighbour at full value.
+ */
+export const GEM_SLOT_BUDGET = 896;
+
 /** Health restored by one food pickup, in health units. */
 export const HEALTH_PICKUP_AMOUNT = 30;
 
@@ -178,6 +189,14 @@ export class PickupStore {
    * These are exact even when the event buffer overflows.
    */
   xpBanked = 0;
+  /**
+   * Live gems, tracked so `GEM_SLOT_BUDGET` can be enforced without walking the pool on every drop.
+   *
+   * Maintained in exactly two places — `spawn` on a successful gem alloc, and `remove` — so a gem that
+   * is collected, expired or cleared all decrement through the same path.
+   */
+  private gemLive = 0;
+
   goldBanked = 0;
   healBanked = 0;
   chestsTaken = 0;
@@ -234,9 +253,26 @@ export class PickupStore {
    * not need to care: no experience is lost either way.
    */
   spawn(r: DropRequest): number {
-    const handle = this.pool.alloc();
+    // Gems are capped below the pool size so that coins, chests and consumables always have somewhere
+    // to land.
+    //
+    // WHY THIS RESERVE EXISTS
+    // Every kill drops a gem and gems never expire, so within about a minute of a real run the pool is
+    // permanently full of gems. Before this cap, a coin arriving at a full pool was refused — and a
+    // refused coin had nowhere to merge either, because there were no coins on the floor to merge into,
+    // because coins could never win a slot in the first place. The result was a silent economy failure:
+    // measured over a 30-minute run, 215 coins earned and 80 collected, while the cheapest shop rank
+    // costs 200. Reserving slots is what makes the gold a player earns actually reachable.
+    //
+    // Capping gems costs nothing, because a gem refused here merges into a nearby gem and keeps its
+    // full experience value. Gems degrade gracefully; coins did not.
+    const gemsAreFull = IS_GEM[r.kind] === true && this.gemLive >= GEM_SLOT_BUDGET;
+
+    const handle = gemsAreFull ? NULL_HANDLE : this.pool.alloc();
     if (handle === NULL_HANDLE) {
-      // Pool full. Fold the value into a nearby gem rather than dropping it on the floor.
+      // Pool full. Fold the value into a nearby pickup of the same class rather than dropping it on
+      // the floor. Both branches exist because the pool is saturated for most of a real run, so this
+      // is the *common* path for late-run drops, not an edge case.
       if (IS_GEM[r.kind] === true && r.value > 0) {
         const host = this.nearestGem(r.x, r.y);
         if (host >= 0) {
@@ -244,6 +280,16 @@ export class PickupStore {
           // A merged gem reads as the next tier up so the player can see the ground is valuable.
           if (this.value[host] >= GEM_VALUE[PICKUP.gemLarge]) this.kind[host] = PICKUP.gemLarge;
           else if (this.value[host] >= GEM_VALUE[PICKUP.gemMedium]) this.kind[host] = PICKUP.gemMedium;
+          this.totalMerged++;
+          this.totalMergedValue += r.value;
+        }
+      } else if (r.kind === PICKUP.gold && r.value > 0) {
+        // Coins stack into one another. There is no tier to promote, so the coin simply gets richer;
+        // the player still has to walk over it, which keeps the "collect what you earned" tension the
+        // small magnet radius exists to create.
+        const host = this.nearestGold(r.x, r.y);
+        if (host >= 0) {
+          this.value[host] += r.value;
           this.totalMerged++;
           this.totalMergedValue += r.value;
         }
@@ -261,6 +307,7 @@ export class PickupStore {
     this.lockedTo[slot] = NO_OWNER;
     this.age[slot] = 0;
     this.ttl[slot] = IS_GEM[r.kind] === true || r.kind === PICKUP.chest ? 0 : CONSUMABLE_TTL;
+    if (IS_GEM[r.kind] === true) this.gemLive++;
     this.totalSpawned++;
     return slot;
   }
@@ -279,6 +326,7 @@ export class PickupStore {
 
   remove(slot: number): void {
     if (!this.pool.isSlotAlive(slot)) return;
+    if (IS_GEM[this.kind[slot]] === true && this.gemLive > 0) this.gemLive--;
     this.pool.freeSlot(slot);
     this.lockedTo[slot] = NO_OWNER;
   }
@@ -294,6 +342,7 @@ export class PickupStore {
 
   clear(): void {
     this.pool.clear();
+    this.gemLive = 0;
     this.vacuumTicks = 0;
     this.collectCount = 0;
     this.xpBanked = 0;
@@ -486,13 +535,41 @@ export class PickupStore {
    * every tick for a path that fires rarely — costs more in the common case.
    */
   private nearestGem(x: number, y: number): number {
+    return this.nearestOfKind(x, y, true);
+  }
+
+  /**
+   * Closest coin to a point, for merging refused gold.
+   *
+   * Gold needs this for the same reason gems do. The pool is 1024 entries, every kill drops a gem,
+   * and gems never expire — so in a real run the pool saturates within the first minute and stays
+   * saturated. Before this existed, a refused gem merged and kept its value while a refused *coin*
+   * returned -1 and was destroyed. Measured on a 30-minute run: 14,336 kills, 9,449 refused drops,
+   * 215 coins earned, **80 collected.** Roughly two thirds of a run's gold never existed, which is
+   * why the shop looked unfundable at 200 gold for a single rank.
+   */
+  private nearestGold(x: number, y: number): number {
+    return this.nearestOfKind(x, y, false);
+  }
+
+  /**
+   * Closest live pickup of a class to a point. Linear over live pickups.
+   *
+   * This only runs when the pool is already full, i.e. at most once per refused drop, and the pool
+   * is 1024 entries. That is cheap enough, and the alternative — a second spatial grid maintained
+   * every tick for a path that fires rarely — costs more in the common case.
+   */
+  private nearestOfKind(x: number, y: number, wantGem: boolean): number {
     const slots = this.pool.slots;
     const n = this.pool.count;
+    const matches = (s: number): boolean =>
+      wantGem ? IS_GEM[this.kind[s]] === true : this.kind[s] === PICKUP.gold;
+
     let best = -1;
     let bestD2 = MERGE_RADIUS_SQ;
     for (let i = 0; i < n; i++) {
       const s = slots[i];
-      if (IS_GEM[this.kind[s]] !== true) continue;
+      if (!matches(s)) continue;
       const dx = this.x[s] - x;
       const dy = this.y[s] - y;
       const d2 = dx * dx + dy * dy;
@@ -501,11 +578,11 @@ export class PickupStore {
         best = s;
       }
     }
-    // Nothing within reach: fold into any gem at all rather than lose the experience.
+    // Nothing within reach: fold into any of that class at all rather than lose what was earned.
     if (best < 0) {
       for (let i = 0; i < n; i++) {
         const s = slots[i];
-        if (IS_GEM[this.kind[s]] === true) return s;
+        if (matches(s)) return s;
       }
     }
     return best;
