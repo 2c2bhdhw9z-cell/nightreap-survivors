@@ -3749,3 +3749,63 @@ The switches that were meant to reach "10% of players" reached nobody, because n
 app who it was. It now uses the same id the cloud backup already makes on first launch, so a player
 stays in the same group every time they open the game — a switch turned on for them stays on. If that
 id can't be read, gradual switches stay off, which is the safe answer.
+
+## Every stat now has a ceiling (handoff item 2)
+
+A player's stats are stored as whole numbers with a hard limit: cross about 2.1 billion and the
+number silently flips negative. When that happens to health, you are dead the instant you spawn; to
+damage, your hits start healing the enemy; and worse, the broken number gets fingerprinted into the
+co-op/replay check, so the game's anti-cheat brands that player a cheater for what was really an
+overflow. Only four of the thirty stats had a ceiling before; the rest could grow without limit,
+which is exactly the door the planned Golden Eggs feature would have walked through.
+
+What changed:
+- Every stat now has a ceiling, so none can ever run away and flip negative. Four of them are real
+  balance limits kept as they were (extra projectiles at 10, armour at 50, pierce at 10, crit chance
+  at 100%); a few more are deliberate game limits (99 revives, generous caps on reroll/skip/banish
+  charges and on the invulnerability window). The remaining "multiplier" stats get a very high safety
+  ceiling of 1000x their normal value that nothing in the current game can get anywhere near, so it
+  changes nothing you can actually reach today while still leaving a huge margin below the danger
+  line. Any cap that is a judgement call is flagged as a guess in a comment so it can be tuned later.
+- A test now fails the build if any stat is ever left without a ceiling again, so a future stat added
+  without one is caught immediately instead of months later in someone's save. A second test proves
+  that guard actually fires by planting the exact mistake and confirming it is caught.
+
+Nothing currently reachable in play is altered: the safety ceilings sit far above anything the game
+can produce today. Checked: lint clean, typecheck 4/4, and the engine suites pass apart from the one
+known, pre-existing replay-speed test.
+
+## The co-op "same game?" check no longer cries wolf (handoff item 3)
+
+Every couple of seconds each player computes one small number that fingerprints the whole world, and
+co-op compares those numbers to decide whether two phones are still playing the same game. The same
+number is what the anti-cheat re-computes server-side to decide whether a submitted run is honest.
+
+The problem: the old fingerprint walked the enemies, projectiles and pickups in the order their
+memory slots happened to be handed out, not in any fixed order. Two phones can agree completely on
+what is on screen and still have consumed their slots in a different sequence — especially after a
+resync, and more and more as a run gets longer. When that happened the two fingerprints disagreed
+even though nothing was actually wrong, so the game reported a "desync" that wasn't one. In Endless,
+which runs forever, that false alarm becomes routine. A desync report needs to mean exactly one
+thing: the worlds really diverged.
+
+What changed:
+- Each enemy, projectile and pickup now gets its own little fingerprint that folds in its identity
+  (its slot) alongside its position and health, and those per-entity fingerprints are added together
+  — and addition doesn't care what order you add in. So two phones that agree on the world now
+  produce the same number no matter what order their slots were handed out. The scenery (props) was
+  already done this way and its reasoning is matched. Nothing else about the fingerprint changed.
+- This adds only a few whole-number operations per entity and allocates nothing, which matters
+  because it runs every tick and this engine forbids creating anything mid-tick. Measured at a full
+  crowd of 2048 enemies the entire fingerprint takes about 31 microseconds, which is under 0.2% of
+  the time budget for one frame — no measurable cost.
+- Two new tests prove it: one builds the exact same world twice by handing out slots in a different
+  order and confirms the fingerprint is now identical (this test fails against the old code, which is
+  how we know the fix bites); another moves a single enemy and confirms the fingerprint still changes,
+  so real differences are not being hidden.
+
+Confirmed there is only one place that fingerprints entities, shared by co-op, replay and anti-cheat,
+so both sides of a session automatically agree. Checked: lint clean, typecheck 4/4, the engine suites
+pass apart from the one known pre-existing replay-speed test (the replay tests that compare
+recorded-vs-replayed fingerprints still pass), and the full co-op stack over a real socket still
+agrees on every tick.

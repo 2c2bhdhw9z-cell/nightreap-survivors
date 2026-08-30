@@ -937,6 +937,138 @@ function maxWeapon(run: Run, player: number, typeIndex: number): void {
   );
 }
 
+// ---------------------------------------------------------------------------------------------
+section("the state hash is canonical — allocation order cannot change it");
+
+// The bug this guards: hashState used to fold enemies/projectiles/pickups into the running hash in
+// `pool.slots` (dense) order. Dense order is a function of the free/alloc history, not of the world,
+// so two clients that agree on exactly which entities are alive could hash differently purely
+// because their slots were consumed in a different sequence. That is a FALSE desync, and it gets
+// likelier the longer a run goes (Endless). The fix hashes each entity into a self-contained digest
+// (slot folded in) and combines the digests commutatively, so iteration order cannot matter.
+//
+// To prove it, we build the SAME live world twice via DIFFERENT allocation histories, so the two
+// runs hold the same enemies in a DIFFERENT dense/slot layout, and assert the hash is equal. We
+// also confirm the histories genuinely produced a different dense layout — otherwise the test would
+// pass even against the old order-dependent hash and prove nothing.
+{
+  // Read a store's live (slot -> fields) map, keyed by content, so we can assert two runs really do
+  // hold the same logical set of enemies regardless of which slots/order they live in.
+  function liveEnemyKey(run: Run): string {
+    const e = run.enemies;
+    const slots = e.pool.slots;
+    const n = e.pool.count;
+    const parts: string[] = [];
+    for (let i = 0; i < n; i++) {
+      const s = slots[i] as number;
+      parts.push(`${Math.round(e.x[s])},${Math.round(e.y[s])},${Math.round(e.health[s])}`);
+    }
+    parts.sort();
+    return parts.join("|");
+  }
+
+  function denseOrder(run: Run): string {
+    const slots = run.enemies.pool.slots;
+    const n = run.enemies.pool.count;
+    const parts: number[] = [];
+    for (let i = 0; i < n; i++) parts.push(slots[i] as number);
+    return parts.join(",");
+  }
+
+  // Spawn a fixed set of enemies at fixed positions/health. `layout` chooses how the pool churns so
+  // the same final set of live enemies ends up in a different dense/slot arrangement.
+  function buildWorld(layout: "straight" | "churned"): Run {
+    const run = new Run();
+    run.begin({ seed: 4242, modifiers: [MOD_DEV_GODMODE] });
+    // Clear whatever the first tick spawned so both runs start from an empty crowd we control.
+    run.enemies.clear();
+
+    // The four enemies we actually want alive at the end. Same content in both layouts.
+    const want = [
+      { x: 100, y: -50, hp: 30 },
+      { x: -75, y: 25, hp: 12 },
+      { x: 40, y: 200, hp: 7 },
+      { x: -160, y: -120, hp: 21 },
+    ];
+
+    // The identity a live entity has WITHIN a tick is its slot index — every field array is indexed
+    // by it. Two clients that agree on the world (deterministic sim, deterministic slot allocation)
+    // occupy the SAME set of slots; what a resync or churn can permute is the ORDER those slots
+    // appear in the dense list. So both layouts here put the four enemies in the same slots
+    // {0,1,2,3}; only the dense ORDER differs. That is precisely the false-desync the fix removes.
+    const place = (slot: number, w: { x: number; y: number; hp: number }): void => {
+      run.enemies.x[slot] = w.x;
+      run.enemies.y[slot] = w.y;
+      run.enemies.health[slot] = w.hp;
+    };
+
+    if (layout === "straight") {
+      // Allocate them in order into fresh slots 0,1,2,3 → dense list [0,1,2,3].
+      for (const w of want) {
+        const handle = run.enemies.spawn(0, w.x, w.y, run.stats);
+        place(handle & 0xfffff, w);
+      }
+    } else {
+      // Same four slots, permuted dense order. Allocate 0,1,2,3 then free slot 1: freeSlot
+      // swap-removes, so slot 3 slides into slot 1's dense position → dense [0,3,2]. Re-allocating
+      // pops slot 1 back off the free stack, appended at the end → dense [0,3,2,1]. Same live SET,
+      // same slot values {0,1,2,3}, different dense order.
+      const handles: number[] = [];
+      for (const w of want) {
+        const handle = run.enemies.spawn(0, w.x, w.y, run.stats);
+        handles.push(handle & 0xfffff);
+        place(handle & 0xfffff, w);
+      }
+      const reslot = handles[1] as number; // slot 1
+      const victim = want[1] as { x: number; y: number; hp: number };
+      run.enemies.pool.freeSlot(reslot);
+      const back = run.enemies.spawn(0, victim.x, victim.y, run.stats);
+      place(back & 0xfffff, victim);
+    }
+    return run;
+  }
+
+  const straight = buildWorld("straight");
+  const churned = buildWorld("churned");
+
+  check(
+    "both histories reach the same live set of enemies",
+    liveEnemyKey(straight) === liveEnemyKey(churned) && liveEnemyKey(straight).length > 0,
+    `${liveEnemyKey(straight)}`,
+  );
+  check(
+    "but the two histories arranged the pool differently (so this actually tests order-independence)",
+    denseOrder(straight) !== denseOrder(churned),
+    `${denseOrder(straight)} vs ${denseOrder(churned)}`,
+  );
+  check(
+    "same world, different allocation order → SAME hash",
+    straight.hashState(0x811c9dc5) === churned.hashState(0x811c9dc5),
+    `${straight.hashState(0x811c9dc5) >>> 0} vs ${churned.hashState(0x811c9dc5) >>> 0}`,
+  );
+
+  // Canonicalisation must not collapse REAL differences: move one enemy and the hash must change.
+  const moved = buildWorld("straight");
+  const movedSlot = moved.enemies.pool.slots[0] as number;
+  const baselineHash = straight.hashState(0x811c9dc5);
+  moved.enemies.x[movedSlot] = (moved.enemies.x[movedSlot] as number) + 1;
+  check(
+    "moving one enemy still changes the hash",
+    moved.hashState(0x811c9dc5) !== baselineHash,
+    `${moved.hashState(0x811c9dc5) >>> 0} vs ${baselineHash >>> 0}`,
+  );
+
+  // And a genuinely different SET (an extra enemy) must hash differently too.
+  const extra = buildWorld("straight");
+  const eh = extra.enemies.spawn(0, 999, 999, extra.stats);
+  extra.enemies.health[eh & 0xfffff] = 5;
+  check(
+    "adding an enemy still changes the hash",
+    extra.hashState(0x811c9dc5) !== baselineHash,
+    `${extra.hashState(0x811c9dc5) >>> 0} vs ${baselineHash >>> 0}`,
+  );
+}
+
 console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);
 if (failures > 0) {
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };

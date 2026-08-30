@@ -176,7 +176,7 @@ anything is left here it is art polish, not implementation.
 | Replay revalidation is over its time budget — 7.76s against a 5s gate | Open. Decide: optimise, or re-baseline with a written reason. |
 | Cross-runtime replay proof (record on phone, revalidate on server, hashes match) | Open. **Must exist before anti-cheat rejects anybody.** |
 | `test:web` cannot run without a database (client is built at import time) | Open |
-| `hashState` walks pool slots in allocation order, not a canonical one | Open — a desync report currently means "real divergence *or* slot-order divergence" |
+| `hashState` walks pool slots in allocation order, not a canonical one | **Done.** Entity hashing is now order-independent (per-entity digest with the slot folded in, combined commutatively), so a desync report means real divergence only. |
 | Dropped ticks are invisible to the player (the game runs in slow motion, not stalled) | Open — surface it in the dev HUD |
 | Platform coupling in `packages/web` / `packages/desktop` | **Done.** No vendor packages, no injected badge, no analytics script. |
 

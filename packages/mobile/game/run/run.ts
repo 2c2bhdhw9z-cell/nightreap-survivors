@@ -1087,38 +1087,77 @@ export class Run {
     h = hashFloat32Range(h, players.health, 0, players.count);
     h = hashUint8Range(h, players.upright, 0, players.count);
 
+    // Entity stores are hashed ORDER-INDEPENDENTLY.
+    //
+    // WHY, AND WHY IT IS NOT JUST DENSE ORDER
+    // `pool.slots` is the pool's dense list of live slots, and its order is a function of the
+    // free/alloc history, not of the world: `freeSlot` swap-removes, so two clients that agree on
+    // exactly which entities are alive can still hold the same slots in a different dense order —
+    // and after a resync or a restore they can even land the SAME world on a DIFFERENT set of
+    // slots. Folding entities into the running hash in dense order therefore invents a desync
+    // between two phones that actually agree, and the odds of that grow with slot churn (i.e. with
+    // run length — worst exactly where Endless lives).
+    //
+    // THE FIX: build a self-contained per-entity digest (seeded from a fixed constant, with the
+    // entity's slot mixed in first, then its fields exactly as before) and COMBINE the digests
+    // with unsigned 32-bit addition, which is commutative — so iteration order cannot matter.
+    // Folding the slot into each digest is what stops the commutative combine's cancellation
+    // weakness: two identical entities in different slots produce different digests and so do not
+    // annihilate under addition. This allocates NOTHING (no scratch buffer, no sort), which is the
+    // only safe shape in a per-tick hot path under the engine's no-allocation-inside-a-tick rule.
+    //
+    // The slot mixed in is the RAW slot index `s`, never the packed handle: a handle carries a
+    // per-slot generation counter, and a resynced client and a fresh one reach the same world with
+    // different generation counts, which would reintroduce exactly the divergence we are removing.
+    // The slot index is the entity's within-tick identity (every field array is indexed by it), so
+    // it is the right stable key and it is generation-free.
+    //
+    // Props (below) stay as they are: their positions come out of the stage seed identically on
+    // every device and their pool barely churns, so they were never exposed to this.
     const enemies = this.enemies;
     const eSlots = enemies.pool.slots;
     const eCount = enemies.pool.count;
-    h = hashWord(h, eCount);
+    let eAcc = 0;
     for (let i = 0; i < eCount; i++) {
       const s = eSlots[i] as number;
-      h = hashFloat(h, enemies.x[s] as number);
-      h = hashFloat(h, enemies.y[s] as number);
-      h = hashFloat(h, enemies.health[s] as number);
+      let d = hashWord(0x9e3779b1, s);
+      d = hashFloat(d, enemies.x[s] as number);
+      d = hashFloat(d, enemies.y[s] as number);
+      d = hashFloat(d, enemies.health[s] as number);
+      eAcc = (eAcc + d) >>> 0;
     }
+    h = hashWord(h, eCount);
+    h = hashWord(h, eAcc);
 
     const proj = this.projectiles;
     const pSlots = proj.pool.slots;
     const pCount = proj.pool.count;
-    h = hashWord(h, pCount);
+    let pAcc = 0;
     for (let i = 0; i < pCount; i++) {
       const s = pSlots[i] as number;
-      h = hashFloat(h, proj.x[s] as number);
-      h = hashFloat(h, proj.y[s] as number);
-      h = hashWord(h, proj.ttl[s] as number);
+      let d = hashWord(0x9e3779b1, s);
+      d = hashFloat(d, proj.x[s] as number);
+      d = hashFloat(d, proj.y[s] as number);
+      d = hashWord(d, proj.ttl[s] as number);
+      pAcc = (pAcc + d) >>> 0;
     }
+    h = hashWord(h, pCount);
+    h = hashWord(h, pAcc);
 
     const pick = this.pickups;
     const kSlots = pick.pool.slots;
     const kCount = pick.pool.count;
-    h = hashWord(h, kCount);
+    let kAcc = 0;
     for (let i = 0; i < kCount; i++) {
       const s = kSlots[i] as number;
-      h = hashFloat(h, pick.x[s] as number);
-      h = hashFloat(h, pick.y[s] as number);
-      h = hashFloat(h, pick.value[s] as number);
+      let d = hashWord(0x9e3779b1, s);
+      d = hashFloat(d, pick.x[s] as number);
+      d = hashFloat(d, pick.y[s] as number);
+      d = hashFloat(d, pick.value[s] as number);
+      kAcc = (kAcc + d) >>> 0;
     }
+    h = hashWord(h, kCount);
+    h = hashWord(h, kAcc);
 
     // Scenery folds in as integers only — which cells are still standing and how many were broken.
     // Prop positions come out of the stage seed identically on every device, so hashing a float here
