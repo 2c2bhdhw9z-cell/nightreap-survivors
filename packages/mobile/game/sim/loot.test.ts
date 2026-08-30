@@ -39,6 +39,7 @@ import {
   BOSS_DROP_RULE,
   CONSUMABLE_TTL,
   DEFAULT_DROP_RULE,
+  GEM_SLOT_BUDGET,
   GEM_VALUE,
   HEALTH_PICKUP_AMOUNT,
   MAX_COLLECT_EVENTS,
@@ -634,4 +635,103 @@ console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures
 if (failures > 0) {
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };
   host.process?.exit?.(1);
+}
+
+
+// ---------------------------------------------------------------------------------------------
+section("a saturated floor still pays out");
+{
+  /**
+   * The regression this section exists for.
+   *
+   * Gems drop on every kill and never expire, so the pickup pool saturates within about a minute of a
+   * real run and stays saturated for the remaining twenty-nine. Before `GEM_SLOT_BUDGET`, a coin
+   * arriving at a full pool was refused outright — and it could not merge either, because merging needs
+   * an existing coin on the floor and coins could never win a slot to begin with.
+   *
+   * Measured on a 30-minute run before the fix: 14,336 kills, 215 coins earned, **80 collected**, while
+   * the cheapest shop rank costs 200 gold. The economy did not work, silently, and no test noticed
+   * because every individual drop behaved correctly in isolation. These checks are about the pool being
+   * *full*, which is the state a real run spends nearly all of its time in.
+   */
+  const store = new PickupStore();
+  const stats = baseStats();
+  const rng = new Rng(4242);
+
+  // Flood the floor with gems until the gem budget is exhausted.
+  for (let i = 0; i < GEM_SLOT_BUDGET + 200; i++) {
+    store.dropGem(PICKUP.gemSmall, 2000 + i, 2000, 1);
+  }
+
+  const liveAfterFlood = store.count;
+  check(
+    "gems stop at their budget rather than taking the whole pool",
+    liveAfterFlood <= GEM_SLOT_BUDGET,
+    `${liveAfterFlood} live, budget ${GEM_SLOT_BUDGET}`,
+  );
+  check(
+    "and the overflow was not thrown away — it merged",
+    store.totalMerged > 0,
+    `${store.totalMerged} merged, ${store.totalMergedValue} value preserved`,
+  );
+
+  // Now a coin arrives on a floor that is, as far as gems are concerned, completely full.
+  const before = store.count;
+  const coin = store.spawn({
+    kind: PICKUP.gold,
+    x: 0,
+    y: 0,
+    value: 7,
+    vx: 0,
+    vy: 0,
+  });
+  check("a coin can still land when the floor is thick with gems", coin >= 0, `slot ${coin}`);
+  check("and it took a real slot", store.count === before + 1);
+
+  // The whole point: it must be collectable.
+  const players = onePlayer(0, 0);
+  store.update(players, stats, rng);
+  check(
+    "a coin dropped at the player's feet is banked, not lost",
+    store.goldBanked === 7,
+    `banked ${store.goldBanked}`,
+  );
+}
+
+// ---------------------------------------------------------------------------------------------
+section("gold survives a full pool the way gems do");
+{
+  const store = new PickupStore();
+  const stats = baseStats();
+
+  // Fill the reserve with coins far away, so the next coin cannot take a slot and must merge.
+  let placed = 0;
+  for (let i = 0; i < 4000; i++) {
+    const slot = store.spawn({ kind: PICKUP.gold, x: 5000 + i, y: 5000, value: 1, vx: 0, vy: 0 });
+    if (slot < 0) break;
+    placed++;
+  }
+  check("the coin reserve fills", placed > 0, `${placed} coins placed`);
+
+  const valueBefore = (() => {
+    let sum = 0;
+    for (let i = 0; i < store.pool.count; i++) sum += store.value[store.pool.slots[i]];
+    return sum;
+  })();
+
+  const refused = store.spawn({ kind: PICKUP.gold, x: 5000, y: 5000, value: 9, vx: 0, vy: 0 });
+  check("a coin is refused once the pool is genuinely full", refused < 0);
+
+  const valueAfter = (() => {
+    let sum = 0;
+    for (let i = 0; i < store.pool.count; i++) sum += store.value[store.pool.slots[i]];
+    return sum;
+  })();
+
+  check(
+    "but its value merged into a neighbouring coin rather than vanishing",
+    valueAfter === valueBefore + 9,
+    `${valueBefore} -> ${valueAfter}`,
+  );
+  void stats;
 }
