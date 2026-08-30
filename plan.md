@@ -8,8 +8,11 @@ unproven it says so.
 
 ## THE ONE-LINE ANSWER
 
-**The engine is built and measured. The content is ~80% of the launch list. What is left is one
-ending, the tutorial prompts, then polish, sound, money and store paperwork.**
+**The engine is built and measured. Content is ~80% of the launch list. What is genuinely left is
+finishing the Reaper ending, then polish, sound, money and store paperwork.**
+
+Read the Reaper section below before planning around it — it is further along than previous versions
+of this document claimed, and what remains needs three decisions from you before it can be coded.
 
 ---
 
@@ -134,11 +137,37 @@ Android manifest already resolves.
 
 ### Content — the last of it
 
-1. **The Reaper ending.** At 30 minutes the Red Reaper walks in, one more every minute after. He can
-   be killed with the right build; killing him drops five eggs and unlocks a character. Then the White
-   Hand arrives — the screen reddens, the camera pushes in, a bell tolls twelve times, and nothing
-   saves you. **This is the next thing to build.**
-2. **In-run tutorial prompts**, painted to match everything else.
+**1. The Reaper ending — about 60% built, not 0%.** An earlier version of this plan said this was
+entirely unbuilt. It is not. Verified in `run/run.ts:739` (`tickReaper`):
+
+| Piece | State |
+|---|---|
+| Reaper arrives on time, once | **Built.** Spawns `gravewarden` (900hp, boss, heavy, persistent) above the player |
+| `CUE.reaperArrived` fires | **Built** |
+| Twelve bell tolls, one per second, numbered for the audio layer | **Built** |
+| The White Hand ends the run | **Built.** `RUN_END.whiteHand`, "Taken by the White Hand" — counts as completed, not a death |
+| HUD countdown and last-minute warning | **Built and tested** (`hud.test.ts`) |
+| First-timer prompt when he is near | **Built** (`guide/`) |
+| **One more Reaper every minute after** | **Missing.** `reaperSpawned` latches after the first |
+| **Killing him drops five eggs** | **Missing.** Golden Eggs do not exist yet — only a comment in `stats.ts` |
+| **Killing him unlocks a character** | **Missing.** No run fact records it |
+| **Screen reddens, camera pushes in** | **Unverified** — the cues exist, the visual response may not |
+| Any test of the White Hand sequence | **Missing.** Zero test coverage |
+
+There is also a **design tension to settle before this can be finished.** Today the Reaper arrives and
+the White Hand ends the run **12 seconds later** (`WHITE_HAND_TICKS = 12 * TICKS_PER_SECOND`). Twelve
+seconds leaves no room for "one more every minute", and not enough to kill a 900hp boss. Three
+decisions are needed, and they are yours because they set the difficulty of the game's ending:
+
+- **How long between the Reaper arriving and the White Hand?** One minute? Five? Until some number of
+  Reapers are dead?
+- **Does killing Reapers delay or prevent the White Hand,** or is it purely a reward path?
+- **What is a Golden Egg?** A permanent stat point spent between runs, or something else? This is a new
+  save-level currency and needs a cap, or it becomes the off switch `stats.ts` warns about.
+
+**2. In-run tutorial prompts — built, not missing.** `guide/` is 822 lines with a 997-line test suite,
+prompt lanes, hold timings, phases and a first-run offer, and it is wired into the run screen. If
+anything is left here it is art polish, not implementation.
 
 ### Engineering — known, small, tracked
 
