@@ -3749,3 +3749,28 @@ The switches that were meant to reach "10% of players" reached nobody, because n
 app who it was. It now uses the same id the cloud backup already makes on first launch, so a player
 stays in the same group every time they open the game — a switch turned on for them stays on. If that
 id can't be read, gradual switches stay off, which is the safe answer.
+
+## Every stat now has a ceiling (handoff item 2)
+
+A player's stats are stored as whole numbers with a hard limit: cross about 2.1 billion and the
+number silently flips negative. When that happens to health, you are dead the instant you spawn; to
+damage, your hits start healing the enemy; and worse, the broken number gets fingerprinted into the
+co-op/replay check, so the game's anti-cheat brands that player a cheater for what was really an
+overflow. Only four of the thirty stats had a ceiling before; the rest could grow without limit,
+which is exactly the door the planned Golden Eggs feature would have walked through.
+
+What changed:
+- Every stat now has a ceiling, so none can ever run away and flip negative. Four of them are real
+  balance limits kept as they were (extra projectiles at 10, armour at 50, pierce at 10, crit chance
+  at 100%); a few more are deliberate game limits (99 revives, generous caps on reroll/skip/banish
+  charges and on the invulnerability window). The remaining "multiplier" stats get a very high safety
+  ceiling of 1000x their normal value that nothing in the current game can get anywhere near, so it
+  changes nothing you can actually reach today while still leaving a huge margin below the danger
+  line. Any cap that is a judgement call is flagged as a guess in a comment so it can be tuned later.
+- A test now fails the build if any stat is ever left without a ceiling again, so a future stat added
+  without one is caught immediately instead of months later in someone's save. A second test proves
+  that guard actually fires by planting the exact mistake and confirming it is caught.
+
+Nothing currently reachable in play is altered: the safety ceilings sit far above anything the game
+can produce today. Checked: lint clean, typecheck 4/4, and the engine suites pass apart from the one
+known, pre-existing replay-speed test.

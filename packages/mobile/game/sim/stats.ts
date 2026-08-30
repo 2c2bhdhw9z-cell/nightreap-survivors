@@ -180,20 +180,86 @@ export const STAT_BASE: readonly number[] = (() => {
  */
 
 /**
- * Hard ceilings from `plan.md`. `-1` means uncapped.
+ * Hard ceilings. **Every stat is capped — `-1` (uncapped) is no longer a legal value here, and a
+ * test in `sim.test.ts` fails the build if any entry is `-1`.** That invariant is what stops the
+ * `Int32Array` from ever wrapping negative: a stored value past 2,147,483,647 does not saturate, it
+ * flips sign, and a negative `maxHealth` or `damage` corrupts the run *and* the state hash silently.
  *
  * These exist so the endgame stays a game: unbounded `amount` turns the screen into a solid wall of
  * projectiles and unbounded `armor` makes damage stop existing. Limit Break pushes stats *toward*
  * these, and the caps are what make Golden Eggs a long tail rather than an off switch.
+ *
+ * TWO KINDS OF CAP, AND THE HEADROOM RULE
+ * A handful of caps are true *balance* ceilings picked on purpose (amount 10, armor 50, pierce 10,
+ * critChance 100%, revives) — those are the game design, and they bite reachable play by intent.
+ * The rest are *hazard* ceilings: high enough that no currently reachable stack ever reaches them,
+ * so they change nothing at normal play, but low enough to leave real headroom below 2^31.
+ *
+ * The realistic overflow site is `scale()`: `value * values[id]` is evaluated as a JS number before
+ * the divide. `value` is a live game quantity (a hit's damage, a lifetime in ticks); a permille cap
+ * of a few million multiplied by a value in the thousands stays comfortably inside 2^53 there, and
+ * the *stored* value stays ~1000x below 2^31. Hence millions, not billions: `MULT_CAP` below is
+ * 1000x base, which is far past anything the modifier stack can compound to yet leaves ~2100x of
+ * headroom under the Int32 limit.
  */
 export const STAT_CAPS: readonly number[] = (() => {
   const c = Array.from<number>({ length: STAT_COUNT }).fill(-1);
-  c[STAT.amount] = 10;
-  c[STAT.armor] = 50;
-  c[STAT.pierce] = 10;
-  c[STAT.critChance] = STAT_SCALE; // 100%
-  // A cooldown multiplier at or below zero would mean infinite fire rate in one tick, which is a
-  // divide-by-zero dressed as a game mechanic. 10% of base is the floor.
+
+  // A generous permille ceiling for multiplier stats: 1000x base. No reachable modifier stack gets
+  // near this (the largest catalog multipliers compound to low single-digit x), so it is a pure
+  // hazard rail and does not touch balance. Leaves ~2100x headroom under 2^31 for the stored value.
+  const MULT_CAP = 1_000_000; // 1000.0x in permille
+
+  // --- Balance ceilings (deliberate, bite reachable play by design) ------------------------
+  c[STAT.amount] = 10; // wall-of-projectiles ceiling
+  c[STAT.armor] = 50; // above this, damage stops existing
+  c[STAT.pierce] = 10; // per-hit passes through
+  c[STAT.critChance] = STAT_SCALE; // 100% — a probability, cannot exceed its own space
+
+  // --- Player multiplier stats (hazard rails at 1000x base) --------------------------------
+  c[STAT.damage] = MULT_CAP;
+  c[STAT.area] = MULT_CAP;
+  c[STAT.projectileSpeed] = MULT_CAP;
+  c[STAT.duration] = MULT_CAP;
+  c[STAT.moveSpeed] = MULT_CAP;
+  c[STAT.xpGain] = MULT_CAP;
+  c[STAT.goldGain] = MULT_CAP;
+  c[STAT.magnet] = MULT_CAP;
+  c[STAT.luck] = MULT_CAP;
+  c[STAT.knockback] = MULT_CAP;
+  c[STAT.critDamage] = MULT_CAP; // base is 2000; 1_000_000 is far above it
+  c[STAT.gemValue] = MULT_CAP;
+
+  // cooldown is a multiplier floored at 100 (0.1x) and only ever driven *down*; nothing pushes it
+  // up past base, but it still needs a ceiling to satisfy the "no -1" invariant. 1000x base.
+  c[STAT.cooldown] = MULT_CAP;
+
+  // maxHealth is permille health units (100_000 == 100hp). Base is 100_000, so its 1000x ceiling is
+  // 100_000_000 (== 100k hp) — still ~21x below 2^31, generous headroom. Guess: tune down if a
+  // 100k-hp wall ever becomes reachable, but nothing today approaches it.
+  c[STAT.maxHealth] = 100 * MULT_CAP; // 100_000_000 permille == 100_000 hp
+  c[STAT.regen] = MULT_CAP; // permille hp/sec (1000 == 1hp/sec); 1000hp/sec ceiling
+
+  // --- Run-level multiplier knobs (hazard rails at 1000x base) -----------------------------
+  c[STAT.enemySpeed] = MULT_CAP;
+  c[STAT.enemyHealth] = MULT_CAP;
+  c[STAT.enemyDamage] = MULT_CAP;
+  c[STAT.spawnRate] = MULT_CAP;
+  c[STAT.timeScale] = MULT_CAP;
+  c[STAT.curse] = MULT_CAP;
+
+  // --- Count stats (small integer ceilings) ------------------------------------------------
+  // iFrames is in ticks (base 30 == 0.5s). Passives/powerups grant tens; 6000 ticks == 100s of
+  // invulnerability is far past anything reachable, so it is a hazard rail, not a balance change.
+  c[STAT.iFrames] = 6000;
+  // revives: a deliberate balance ceiling. 99 is more than any run can spend and keeps the HUD sane.
+  c[STAT.revives] = 99;
+  // level-up charges. Guesses at generous ceilings — nothing reachable grants this many, so they do
+  // not bite; lower them if a build ever wants fewer.
+  c[STAT.rerolls] = 999;
+  c[STAT.skips] = 999;
+  c[STAT.banishes] = 999;
+
   return c;
 })();
 

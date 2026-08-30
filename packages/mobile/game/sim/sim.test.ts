@@ -382,6 +382,41 @@ section("caps and floors");
       return true;
     })(),
   );
+
+  // The invariant that closes the Int32 overflow hazard for good: every stat must be capped, so a
+  // future stat appended to STAT with no cap is caught here rather than wrapping negative in a
+  // player's save months after launch. `-1` (uncapped) must no longer appear anywhere in STAT_CAPS.
+  const hasUncapped = (caps: readonly number[]): boolean => {
+    for (let i = 0; i < caps.length; i++) if (caps[i] < 0) return true;
+    return false;
+  };
+  check(
+    "every stat has a cap — no -1 remains in STAT_CAPS",
+    !hasUncapped(STAT_CAPS),
+    "an uncapped Int32 stat wraps negative past 2^31 and corrupts the run and the state hash",
+  );
+  // Planted-violation proof: the guard above only protects us if it actually fires. Prove it does by
+  // showing the same detector returns true on a table that reintroduces a -1, and false on the real
+  // one. If a future edit puts a -1 back into STAT_CAPS, the check above flips to FAIL.
+  check(
+    "the no--1 guard fires on a planted -1 and passes the real table",
+    (() => {
+      const planted = STAT_CAPS.slice();
+      planted[STAT.damage] = -1; // reintroduce the exact regression the guard exists to catch
+      return hasUncapped(planted) === true && hasUncapped(STAT_CAPS) === false;
+    })(),
+    "detector catches a reintroduced -1",
+  );
+
+  // Every cap must leave real headroom below the Int32 ceiling — including at the mid-calculation
+  // multiply in scale(), where value*values[id] is evaluated before the divide. A stored cap in the
+  // low millions multiplied by a large in-game value stays inside 2^53 there and ~1000x below 2^31.
+  const INT32_MAX = 2_147_483_647;
+  check(
+    "no cap comes anywhere near the Int32 ceiling",
+    STAT_CAPS.every((cap) => cap <= INT32_MAX / 20),
+    `every cap <= ${INT32_MAX / 20} (>=20x headroom under 2^31)`,
+  );
 }
 
 section("Hurry and Hyper — the Phase 1 gate");
