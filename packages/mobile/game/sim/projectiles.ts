@@ -30,6 +30,7 @@
  */
 
 import { EntityPool, handleSlot, NULL_HANDLE, POOL_BUDGETS, type Handle } from "../core/pool";
+import { BRAD_FULL, fxCosF, fxSinF } from "../core/fx";
 import type { Rng } from "../core/rng";
 import { ENEMY_FLAG, type EnemyStore } from "./enemies";
 import { STAT, STAT_SCALE, type Stats } from "./stats";
@@ -126,8 +127,14 @@ export const MAX_KILL_EVENTS = 512;
 
 const TICK_SECONDS = 1 / 60;
 
-/** Full circle in the integer angle unit used for orbit and sweep. */
-export const BRAD_FULL = 4096;
+/**
+ * Full circle in the integer angle unit used for orbit and sweep.
+ *
+ * Re-exported from `core/fx` rather than redeclared. It used to be a second `= 4096` literal here,
+ * which is how the sim ended up with its own idea of brads while the integer trig table that shares
+ * the unit sat unused in `core/fx`. One definition, one unit, one table.
+ */
+export { BRAD_FULL } from "../core/fx";
 
 /**
  * Everything needed to put one projectile into the world.
@@ -460,21 +467,22 @@ export class ProjectileStore {
           this.y[s] = oy;
           break;
         }
+        // Both of these already carry the angle in brads. They used to convert to radians purely to
+        // call `Math.cos`/`Math.sin`, which are not specified across JS engines — so the integer
+        // angle was exact and then thrown away on the last step. The table lookup keeps it.
         case MOVE.orbiting: {
           const a = (this.angle[s] + this.angularVel[s]) & (BRAD_FULL - 1);
           this.angle[s] = a;
-          const rad = (a * Math.PI * 2) / BRAD_FULL;
-          this.x[s] = ox + Math.cos(rad) * this.anchorDist[s];
-          this.y[s] = oy + Math.sin(rad) * this.anchorDist[s];
+          this.x[s] = ox + fxCosF(a) * this.anchorDist[s];
+          this.y[s] = oy + fxSinF(a) * this.anchorDist[s];
           break;
         }
         case MOVE.sweep: {
           // Progress through the swing, 0..1 across its whole short life.
           const a = (this.angle[s] + this.angularVel[s]) & (BRAD_FULL - 1);
           this.angle[s] = a;
-          const rad = (a * Math.PI * 2) / BRAD_FULL;
-          this.x[s] = ox + Math.cos(rad) * this.anchorDist[s];
-          this.y[s] = oy + Math.sin(rad) * this.anchorDist[s];
+          this.x[s] = ox + fxCosF(a) * this.anchorDist[s];
+          this.y[s] = oy + fxSinF(a) * this.anchorDist[s];
           break;
         }
         case MOVE.homing: {
@@ -482,16 +490,18 @@ export class ProjectileStore {
           if (target >= 0) {
             const dx = enemies.x[target] - this.x[s];
             const dy = enemies.y[target] - this.y[s];
-            const len = Math.hypot(dx, dy);
+            // sqrt throughout, never hypot: hypot is not bit-guaranteed across engines and these
+            // values steer a projectile, whose position is hashed.
+            const len = Math.sqrt(dx * dx + dy * dy);
             if (len > 0.0001) {
-              const speed = Math.hypot(this.vx[s], this.vy[s]);
+              const speed = Math.sqrt(this.vx[s] * this.vx[s] + this.vy[s] * this.vy[s]);
               // Blend toward the target instead of snapping, so a knife curves rather than
               // teleporting its aim and reading as a bug.
               const tx = (dx / len) * speed;
               const ty = (dy / len) * speed;
               this.vx[s] += (tx - this.vx[s]) * 0.18;
               this.vy[s] += (ty - this.vy[s]) * 0.18;
-              const l2 = Math.hypot(this.vx[s], this.vy[s]);
+              const l2 = Math.sqrt(this.vx[s] * this.vx[s] + this.vy[s] * this.vy[s]);
               if (l2 > 0.0001 && speed > 0.0001) {
                 this.vx[s] = (this.vx[s] / l2) * speed;
                 this.vy[s] = (this.vy[s] / l2) * speed;

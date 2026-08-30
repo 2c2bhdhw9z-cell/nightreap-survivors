@@ -257,33 +257,30 @@ section("source rules");
     process?: { cwd?: () => string; exit?: (code: number) => void };
   };
 
-  const relative = [
-    "game/dev/channel.ts",
-    "game/dev/registry.ts",
-    "game/dev/devgate.ts",
-    "game/dev/lint.ts",
-    "game/replay/format.ts",
-    "game/replay/recorder.ts",
-    "game/replay/player.ts",
-    "game/render/renderer.ts",
-    "game/core/rng.ts",
-  ];
-
+  /**
+   * EVERY file under game/, not a hand-written list.
+   *
+   * This used to name nine files. That is how `core/fx.ts` could be built, documented and tested
+   * while the simulation quietly called `Math.cos` on hashed state in six places for months: the
+   * linter existed, bit correctly when tested, and was pointed at 9 of ~165 files. A guard with a
+   * hardcoded subject list only ever guards the day it was written.
+   */
   const files: SourceFile[] = [];
   if (host.Bun) {
     const cwd = host.process?.cwd?.() ?? "";
     const base = cwd.endsWith("/packages/mobile") ? cwd : `${cwd}/packages/mobile`;
-    for (const path of relative) {
-      try {
-        // Sequential await inside a loop is fine here: nine small files, once, in CI.
-        files.push({ path, text: await host.Bun.file(`${base}/${path}`).text() });
-      } catch {
-        check(`could read ${path}`, false, "file missing — run from the repo root");
-      }
+    const glob = new Bun.Glob("game/**/*.ts");
+    const found: string[] = [];
+    for await (const path of glob.scan({ cwd: base })) found.push(path);
+    found.sort();
+    for (const path of found) {
+      files.push({ path, text: await Bun.file(`${base}/${path}`).text() });
     }
   }
 
-  check("source files were read", files.length === relative.length, `${files.length}/${relative.length}`);
+  // A floor rather than an exact count, so adding engine files never fails this check — but deleting
+  // most of the engine, or a glob that silently matches nothing, still does.
+  check("the whole engine was read, not a sample", files.length > 120, `${files.length} files`);
   const violations = lintSources(files);
   check("source lint is clean", violations.length === 0, formatViolations(violations));
 
@@ -292,6 +289,9 @@ section("source rules");
     { path: "game/dev/evil.ts", text: `import { post } from "../net/ladder-client";` },
     { path: "game/dev/rn.ts", text: `import { View } from "react-native";` },
     { path: "game/menu/sneaky.ts", text: `const p = findDevPanel("ops.killswitch");` },
+    { path: "game/sim/drift.ts", text: `const x = Math.cos(a) * r;` },
+    { path: "game/sim/slow.ts", text: `const len = Math.hypot(dx, dy);` },
+    { path: "game/sim/chance.ts", text: `const roll = Math.random();` },
   ]);
   const rules = new Set(planted.map((x) => x.rule));
   check(
@@ -301,7 +301,29 @@ section("source rules");
   );
   check("an RN import inside game/dev is caught", rules.has("engine-has-no-rn"));
   check("bypassing the gate is caught", rules.has("gate-is-the-only-door"));
-  check("the planted file count matches", planted.length === 3, `${planted.length} violations`);
+  check(
+    "Math.cos on hashed state is caught",
+    planted.some((x) => x.rule === "hashed-math-must-be-specified" && x.subject.endsWith("drift.ts")),
+    formatViolations(planted.filter((x) => x.rule === "hashed-math-must-be-specified")),
+  );
+  check(
+    "Math.hypot on hashed state is caught",
+    planted.some((x) => x.rule === "hashed-math-must-be-specified" && x.subject.endsWith("slow.ts")),
+  );
+  check("Math.random anywhere in the engine is caught", rules.has("engine-has-no-unseeded-random"));
+
+  // The rules must not fire on prose. Every one of these words appears in a real comment in the
+  // engine explaining why the function is banned, and a linter that cannot tell code from a comment
+  // about code is a linter people switch off.
+  const prose = lintSources([
+    {
+      path: "game/sim/documented.ts",
+      // eslint-disable-next-line no-useless-concat
+      text: `// Math.cos and Math.hypot are banned here; see core/fx.\n/* Math.random too. */\nconst x = Math.sqrt(a);`,
+    },
+  ]);
+  check("a comment naming a banned function is not a violation", prose.length === 0, formatViolations(prose));
+  check("Math.sqrt stays allowed", prose.length === 0);
 }
 
 section("being told what the menu may do");

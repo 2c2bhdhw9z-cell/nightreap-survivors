@@ -22,6 +22,7 @@
 
 import { STAT, STAT_SCALE, type Stats } from "./stats";
 import { ENEMY_FLAG, type EnemyStore } from "./enemies";
+import { BRAD_FULL, fxCosF, fxSinF } from "../core/fx";
 
 const TICK_SECONDS = 1 / 60;
 
@@ -192,9 +193,13 @@ export class PlayerStore {
     for (let i = 0; i < MAX_PLAYERS; i++) {
       // Players start on a small ring so four of them do not begin the run inside one another and
       // spend the first tick shoving each other apart.
-      const a = n > 1 ? (i / n) * Math.PI * 2 : 0;
-      const px = Math.cos(a) * spawnRadius;
-      const py = Math.sin(a) * spawnRadius;
+      //
+      // Spaced in brads rather than radians. With at most four players `(i * BRAD_FULL) / n` is an
+      // exact integer, so the placement comes out of the integer trig table and is identical on
+      // every engine — these are hashed positions, on tick zero of a co-op session.
+      const brad = n > 1 ? Math.round((i * BRAD_FULL) / n) : 0;
+      const px = fxCosF(brad) * spawnRadius;
+      const py = fxSinF(brad) * spawnRadius;
       this.x[i] = px;
       this.y[i] = py;
       this.prevX[i] = px;
@@ -398,7 +403,9 @@ export class PlayerStore {
         this.x[i] += mx * speed * TICK_SECONDS;
         this.y[i] += my * speed * TICK_SECONDS;
         this.facing[i] = facingFor(mx, my, this.facing[i] as Facing);
-        const len = Math.hypot(mx, my);
+        // sqrt for the same reason `setMove` above gives: hypot is not bit-guaranteed, and this
+        // sets the aim vector, which decides where projectiles are spawned.
+        const len = Math.sqrt(mx * mx + my * my);
         if (len > 0.0001) {
           this.aimX[i] = mx / len;
           this.aimY[i] = my / len;

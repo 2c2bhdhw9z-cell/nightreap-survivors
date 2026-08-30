@@ -22,6 +22,7 @@
  */
 
 import type { Rng } from "../core/rng";
+import { fxCosF, fxSinF } from "../core/fx";
 import type { EnemyStore } from "./enemies";
 import {
   BRAD_FULL,
@@ -1566,12 +1567,14 @@ export class WeaponStore {
             dx = enemies.x[target] - px;
             dy = enemies.y[target] - py;
           }
-          const len = Math.hypot(dx, dy) || 1;
+          const len = Math.sqrt(dx * dx + dy * dy) || 1;
           // Fan them slightly so three knives are visibly three knives.
+          //
+          // The jitter is already in brads; it went to radians only to reach `Math.cos`. Rotating
+          // by the table instead keeps the spawned velocity identical on every engine.
           const jitter = (n - (count - 1) / 2) * 7 * DEG_TO_BRAD;
-          const rad = (jitter * Math.PI * 2) / BRAD_FULL;
-          const cos = Math.cos(rad);
-          const sin = Math.sin(rad);
+          const cos = fxCosF(jitter);
+          const sin = fxSinF(jitter);
           const nx = dx / len;
           const ny = dy / len;
           resetRequest(r);
@@ -1598,14 +1601,13 @@ export class WeaponStore {
         const spreadBrad = t.spread * DEG_TO_BRAD;
         const fx = facingX[player];
         const fy = facingY[player];
-        const len = Math.hypot(fx, fy) || 1;
+        const len = Math.sqrt(fx * fx + fy * fy) || 1;
         const nx = fx / len;
         const ny = fy / len;
         for (let n = 0; n < count; n++) {
           const off = count === 1 ? 0 : (n / (count - 1) - 0.5) * spreadBrad;
-          const rad = (off * Math.PI * 2) / BRAD_FULL;
-          const cos = Math.cos(rad);
-          const sin = Math.sin(rad);
+          const cos = fxCosF(off);
+          const sin = fxSinF(off);
           resetRequest(r);
           r.move = MOVE.straight;
           r.x = px;

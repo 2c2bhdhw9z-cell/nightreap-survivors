@@ -22,6 +22,7 @@
  */
 
 import { SpatialHash } from "../core/spatial-hash";
+import { BRAD_FULL, fxCosF, fxSinF } from "../core/fx";
 import { EntityPool, NULL_HANDLE, POOL_BUDGETS, type Handle } from "../core/pool";
 import { STAT, STAT_SCALE, type Stats } from "./stats";
 
@@ -651,7 +652,9 @@ export class EnemyStore {
   /** Shove an enemy. Heavy enemies ignore it, which is what makes brutes feel like walls. */
   knockback(slot: number, dx: number, dy: number, force: number): void {
     if ((this.flags[slot] & ENEMY_FLAG.heavy) !== 0) return;
-    const len = Math.hypot(dx, dy);
+    // sqrt, not hypot: hypot is not bit-guaranteed across engines and this moves an enemy, which
+    // lands in the state hash.
+    const len = Math.sqrt(dx * dx + dy * dy);
     if (len < 0.0001) return;
     this.vx[slot] = (dx / len) * force;
     this.vy[slot] = (dy / len) * force;
@@ -836,9 +839,13 @@ export class EnemyStore {
         if (dist < 0.0001) {
           // Exactly stacked. Push along a deterministic direction derived from the slot numbers,
           // never a random one — a random nudge here would desync co-op and break replays.
-          const angle = ((s * 2654435761) % 628) / 100;
-          this.pushX[s] += Math.cos(angle) * minDist * SEPARATION_STRENGTH;
-          this.pushY[s] += Math.sin(angle) * minDist * SEPARATION_STRENGTH;
+          //
+          // The hash is taken straight into brads rather than into hundredths of a radian, so the
+          // direction comes from the integer trig table instead of `Math.cos`. Same property the
+          // comment above always claimed: identical on every engine, not merely unrandom.
+          const brad = (s * 2654435761) % BRAD_FULL;
+          this.pushX[s] += fxCosF(brad) * minDist * SEPARATION_STRENGTH;
+          this.pushY[s] += fxSinF(brad) * minDist * SEPARATION_STRENGTH;
           continue;
         }
         const overlap = (minDist - dist) * SEPARATION_STRENGTH;
