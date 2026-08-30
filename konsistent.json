@@ -127,17 +127,15 @@
       "must": {
         "haveType": "directory",
         "haveFiles": [
-          "lib/__analytics.ts",
           "__env.d.ts"
         ]
       }
     },
     {
-      "name": "mobile-layout-keeps-template-providers",
+      "name": "mobile-layout-keeps-error-boundary",
       "paths": "packages/mobile/app/_layout.tsx",
       "must": {
         "importFrom": [
-          "../lib/__analytics",
           "../components/ErrorBoundary"
         ]
       }

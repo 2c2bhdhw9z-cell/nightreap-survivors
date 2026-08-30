@@ -2,20 +2,15 @@
   "expo": {
     "icon": "./assets/icon.png",
     "android": {
-      "package": "com.nightreap_k7q2.runable",
+      "package": "com.nightreap.survivors",
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#141320"
       },
       "edgeToEdgeEnabled": true
     },
-    "extra": {
-      "apiUrl": "https://nightre-oqwfyiy-preview-4200.runable.site/",
-      "applicationId": "nightre-oqwfyiy",
-      "runableAuthIssuer": "https://api.runable.com/api/auth"
-    },
     "ios": {
-      "bundleIdentifier": "com.nightreap_k7q2.runable",
+      "bundleIdentifier": "com.nightreap.survivors",
       "supportsTablet": true,
       "infoPlist": {
         "CADisableMinimumFrameDuration": true
@@ -29,7 +24,7 @@
     "name": "Nightreap Survivors",
     "slug": "nightreap-survivors",
     "version": "1.0.0",
-    "scheme": "runable-nightre-oqwfyiy",
+    "scheme": "nightreap",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

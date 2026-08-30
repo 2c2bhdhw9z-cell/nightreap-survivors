@@ -6,7 +6,6 @@
   "packages/desktop/electron/__no-renderer.ts": "a3cc64e8a0fbdcd49c556842959e38134ef0c9c36235a8e04fe75011f6f6d47e",
   "packages/mobile/__env.d.ts": "3d4ff4b5383915822b9c8c10afcc4f7563d2e63d4142c3d16034210caf9f1f91",
   "packages/mobile/components/__ErrorBoundary.tsx": "dda2296f08f4e914f250f2e9a6477c8add7dd9c6607c3f7a3adb6eb0426287e4",
-  "packages/mobile/lib/__analytics.ts": "85678c46a7e75b0dee9b96af639184f4b4ea3dccf8ba2e42b841d2f6efd9aeea",
   "packages/mobile/lib/__web-safe-area.ts": "8b1f8172c1d174465f76e7a2bbab0a0a392e96034336621f75ef884ce17806bd",
   "packages/web/src/__server.ts": "81e2692f6992971d511b32e7758ecedba82b2a2fa81f0178869e4c2dd4565ebe",
   "packages/web/src/api/__core/app.ts": "f1015a86fc58ef1272105ca458f849f9765deca24b1217837ea00a8791c5bef8",

@@ -81,3 +81,7 @@ dist/
 *.log
 .DS_Store
 packages/mobile/art/__pycache__/
+
+# single-file web preview build artifacts
+.webdist/
+nightreap.html
