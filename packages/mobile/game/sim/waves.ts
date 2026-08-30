@@ -20,6 +20,7 @@
  */
 
 import { Rng } from "../core/rng";
+import { BRAD_FULL, fxCosF, fxSinF } from "../core/fx";
 import { ENEMY_TYPE_BY_ID, EnemyStore } from "./enemies";
 import { STAT, STAT_SCALE, type Stats } from "./stats";
 
@@ -359,10 +360,14 @@ export class WaveDirector {
   ): void {
     // 4096 steps of a turn — plenty of angular resolution, and an integer draw keeps the spawn
     // position reproducible from the seed alone, which is what replay revalidation needs.
-    const step = rng.nextInt(4096);
-    const angle = (step / 4096) * Math.PI * 2;
-    const x = px + Math.cos(angle) * SPAWN_RING;
-    const y = py + Math.sin(angle) * SPAWN_RING;
+    //
+    // The draw is already a brad, so it goes straight into the integer trig table. It used to be
+    // converted to radians and fed to `Math.cos`, which is not specified across JS engines: two
+    // devices could place the same seeded spawn a fraction of a unit apart, and that lands in the
+    // state hash. This is the first divergence a cross-engine replay would ever hit.
+    const step = rng.nextInt(BRAD_FULL);
+    const x = px + fxCosF(step) * SPAWN_RING;
+    const y = py + fxSinF(step) * SPAWN_RING;
     if (enemies.spawn(typeIndex, x, y, stats) < 0) {
       this.refusedTotal++;
       return;

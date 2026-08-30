@@ -230,3 +230,32 @@ export function fxDirInto(brad: number, out: Int32Array | number[]): void {
   out[0] = fxCos(brad);
   out[1] = fxSin(brad);
 }
+
+// ---------------------------------------------------------------------------
+// Float bridge
+//
+// The simulation stores positions and velocities as `Float32Array`, not fixed point, and converting
+// it wholesale would be a rewrite. These two functions are the narrow bridge that lets float code
+// get a cross-engine-stable sine and cosine.
+//
+// WHY THE RESULT IS STILL BIT-IDENTICAL EVERYWHERE
+// `fxSin` is an integer table lookup — same integer on every engine. `FX_ONE` is 65536, a power of
+// two, and IEEE-754 division by a power of two is exact: no rounding, no error, no engine-specific
+// last bit. So an integer that is identical everywhere divided by 65536 is a double that is
+// identical everywhere. That is the whole trick, and it is why these must never be reimplemented
+// as `Math.sin(brad * SOMETHING)`.
+//
+// Angles are accepted as possibly-fractional brads and rounded here rather than at each call site,
+// because `&` on a non-integer truncates toward zero and would quietly bias every negative angle.
+// `Math.round` is fully specified, so the rounding itself is deterministic.
+// ---------------------------------------------------------------------------
+
+/** sin of an angle in brads, as a float in [-1, 1]. Deterministic across JS engines. */
+export function fxSinF(brad: number): number {
+  return fxSin(Math.round(brad)) / FX_ONE;
+}
+
+/** cos of an angle in brads, as a float in [-1, 1]. Deterministic across JS engines. */
+export function fxCosF(brad: number): number {
+  return fxCos(Math.round(brad)) / FX_ONE;
+}
