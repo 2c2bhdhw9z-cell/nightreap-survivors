@@ -1,8 +1,8 @@
 {
-    "id": "website",
-    "name": "Runable",
-    "description": "A template for building a React application with Vite, Hono, and Cloudflare Workers",
-    "url": "https://example.com",
-    "hostname": "xyz.runable.site",
-    "port": 8080
+  "id": "website",
+  "name": "Nightreap Survivors",
+  "description": "API and admin surface for Nightreap Survivors — Hono, oRPC and Drizzle behind Vite.",
+  "url": "https://example.com",
+  "hostname": "localhost",
+  "port": 8080
 }
