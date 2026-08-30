@@ -38,6 +38,7 @@
     "semver": "^7.7.2",
     "turbo": "2.9.18",
     "typescript": "5.9.3",
+    "vite": "^7.3.1",
     "zod": "^4.3.6"
   },
   "dependencies": {

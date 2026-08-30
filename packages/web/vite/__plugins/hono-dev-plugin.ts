@@ -43,11 +43,13 @@ function toWebRequest(req: import("http").IncomingMessage): Request {
   }
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
-  return new Request(url, {
+  // `url.toString()`: the Request constructor is typed for `string | Request`, not `URL`.
+  // `duplex` no longer needs a suppression — it is part of RequestInit in the current types, and the
+  // stale `@ts-expect-error` had itself become an error for being unused.
+  return new Request(url.toString(), {
     method: req.method,
     headers,
     body: hasBody ? (req as unknown as ReadableStream) : undefined,
-    // @ts-expect-error duplex needed for streaming request bodies
     duplex: hasBody ? "half" : undefined,
-  });
+  } as RequestInit & { duplex?: "half" });
 }

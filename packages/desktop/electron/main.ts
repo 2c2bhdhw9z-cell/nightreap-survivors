@@ -1,14 +1,16 @@
 import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createManagedDeepLinks } from "@runablehq/managed-auth/desktop/main";
-import { registerIpcHandlers } from "./ipc";
+import { registerIpcHandlers, sendDeepLink } from "./ipc";
 
-// Fully editable Electron main process — own the window, lifecycle, menus, tray,
-// and IPC (starter handlers in ./ipc.ts). One platform call is enforced by
-// `bun run lint`: createManagedDeepLinks. It registers the app's
-// runable-<APPLICATION_ID> deep-link protocol, forwards deep links to the
-// renderer, and backs managed sign-in (skills/app/references/desktop.md).
+// Fully editable Electron main process — window, lifecycle, menus, tray, and IPC
+// (handlers in ./ipc.ts).
+//
+// Deep links used to be registered by a platform package (`createManagedDeepLinks` from
+// @runablehq/managed-auth), which claimed a `runable-<APPLICATION_ID>` protocol and backed a managed
+// sign-in flow. That package is gone: it tied the desktop build to one company's auth service, and
+// the protocol name carried their branding into the OS. Electron does all of this natively in about
+// twenty lines, which is what follows.
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,13 +18,39 @@ const isDev = process.env.NODE_ENV !== "production";
 const WEB_DEV_URL = process.env.WEBSITE_URL ?? "http://localhost:3000";
 const WEB_DIST = path.join(__dirname, "../web-dist");
 
+/** The app's own URL scheme. Must match `scheme` in packages/mobile/app.json. */
+const PROTOCOL = "nightreap";
+
 let win: BrowserWindow | null = null;
 const getWindow = () => win;
 
-const deepLinks = createManagedDeepLinks({
-  applicationId: process.env.APPLICATION_ID,
-  getWindow,
-});
+/**
+ * Register the scheme with the OS.
+ *
+ * In dev, Electron is launched via the `electron` binary, so the OS has to be told which executable
+ * and arguments to re-invoke — otherwise the link opens a bare Electron instead of this app.
+ */
+function registerProtocol(): void {
+  if (isDev && process.platform !== "darwin") {
+    app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [path.resolve(process.argv[1] ?? "")]);
+  } else {
+    app.setAsDefaultProtocolClient(PROTOCOL);
+  }
+}
+
+/** Pull the first `nightreap://…` argument out of an argv array. Windows and Linux deliver links this way. */
+function deepLinkFromArgv(argv: readonly string[]): string | null {
+  return argv.find((arg) => arg.startsWith(`${PROTOCOL}://`)) ?? null;
+}
+
+function forward(url: string | null): void {
+  if (!url) return;
+  const target = getWindow();
+  if (!target) return;
+  if (target.isMinimized()) target.restore();
+  target.focus();
+  sendDeepLink(target, url);
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -57,13 +85,20 @@ app.on("activate", () => {
   }
 });
 
-// Windows/Linux deliver deep links as argv — of a second instance while the app
-// is running, of this instance on cold start. Keep one instance and forward both.
+// macOS delivers deep links as an event, never as argv.
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  forward(url);
+});
+
+// Windows and Linux deliver them as argv — of a second instance while the app is running, or of this
+// instance on a cold start. Keep one instance and handle both.
 if (app.requestSingleInstanceLock()) {
-  app.on("second-instance", (_event, argv) => deepLinks.handleArgv(argv));
+  app.on("second-instance", (_event, argv) => forward(deepLinkFromArgv(argv)));
   app.whenReady().then(() => {
+    registerProtocol();
     createWindow();
-    deepLinks.handleArgv(process.argv);
+    forward(deepLinkFromArgv(process.argv));
   });
 } else {
   app.quit();

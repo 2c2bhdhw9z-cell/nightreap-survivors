@@ -1,104 +1,223 @@
-# NIGHTREAP SURVIVORS — WHERE YOU ARE
+# NIGHTREAP SURVIVORS — THE PLAN
 
-Read page one. That is the whole point of this file. Everything long-winded moved to `plan-detail.md`
-and nothing was thrown away.
+This is the plan of record. It is written from what is **verified in the code**, not from what an
+earlier document claimed. Every number below was counted or measured, and where something is
+unproven it says so.
 
 ---
 
 ## THE ONE-LINE ANSWER
 
-**The game is built. We are filling it with content. About 80% of the launch list is done.**
+**The engine is built and measured. The content is ~80% of the launch list. What is left is one
+ending, the tutorial prompts, then polish, sound, money and store paperwork.**
 
 ---
 
-## THE NINE STAGES OF THE BUILD
+## HOW YOU RUN IT — FOUR WAYS, ALL WORKING
 
-| # | What it is | Status |
+This section exists because the old plan assumed a hosting platform that is gone. None of these
+depend on anyone else's service staying up.
+
+| Way | What it needs | Best for |
 |---|---|---|
-| 0 | Skeleton + proof the phone can draw a crowd | **DONE** |
-| 1 | One playable slice, dev menu, rule system | **DONE** |
-| 2 | Playing together over the internet | **DONE** |
-| 3 | Levels, gold, shop, unlocks, saving | **DONE** |
-| 4 | **Launch content — weapons, characters, stages, enemies** | **IN PROGRESS — nearly done** |
-| 5 | Extra content (ships as free updates after launch) | Not started |
-| 6 | Endgame + all the extra modes | Not started |
-| 7 | Polish pass | Not started |
-| 8 | Sound, money, legal, store submission | Not started |
+| **Expo Go + EAS Update** | Nothing but your phone | **Day-to-day. This is the main way now.** |
+| Single-file HTML | Any browser | A fallback with no account at all |
+| `expo start` | A computer | Live reload while editing |
+| Store build | Apple/Google accounts | Launch, stage 8 |
+
+### Expo Go (the one to use)
+
+The project is published to EAS as **`nightreap-survivors-preview`**. Open Expo Go signed into your
+account, go to **Projects**, tap it. No dev server, no computer, no QR code.
+
+To ship a change to the phone:
+
+```sh
+cd packages/mobile
+EXPO_TOKEN=<token> bunx eas-cli update --branch preview --message "what changed"
+```
+
+Force-close Expo Go and reopen to pick it up. Two things make this work and must not be changed
+casually: `runtimeVersion: { policy: "sdkVersion" }` in `app.json`, which produces
+`exposdk:54.0.0` — the value Expo Go matches on — and the `preview` **channel** being connected to
+the `preview` **branch**. Publishing to a branch with no channel pointed at it returns 404 to the
+phone.
+
+### Single-file HTML
+
+```sh
+cd packages/mobile && bunx expo export --platform web --output-dir ../../.webdist
+cd ../.. && node tools/build-single-html.mjs .webdist nightreap.html
+```
+
+One ~2 MB file, no server. Open it in a real browser, not the iOS Files preview.
+
+### On a computer
+
+```sh
+bun install && cd packages/mobile && bunx expo start
+```
+
+QR code in the terminal, live reload. Add `--tunnel` if the phone is on another network.
+
+### The old way, for the record
+
+It used to be `exp://…-4300.runable.site` pasted into Safari — a dev server hosted by the platform
+this project was scaffolded on. That host now returns 502. Nothing in the game was wrong; the
+server simply went away. That single point of failure is why the four ways above are listed.
 
 ---
 
-## WHAT IS ACTUALLY IN THE GAME RIGHT NOW
+## WHAT IS ACTUALLY IN THE GAME — COUNTED, NOT CLAIMED
 
-- **30 weapons** — 15 you can be offered, each with an upgraded final form behind it.
-- **20 items** (the passive upgrades), five levels each.
-- **12 characters**, all with their own picture, starting weapon, strength and weakness.
-- **26 enemies** — 18 that walk at you, 8 named fights.
-- **5 stages**, each with its own look, its own crowd schedule and its own named fights.
-- **8 arcanas** — the run-warping cards, three per run, offered at 4, 12 and 22 minutes.
-- **51 badges** (achievements), with their own screen.
-- **Treasure chests** with the full opening ceremony.
-- **1–4 player online co-op**, built and working, switched off until launch.
-- **Anti-cheat** running live, plus an admin page to review it.
-- **Saving** that survives the app being killed mid-run, and a cloud backup.
-- **A dev menu** that can jump to any minute, any stage, any character, any enemy count.
-- Menus for stages, characters, powerups, badges, settings, results, how-to-play.
-- **A title screen** — night sky, blood moon, graveyard, fog and embers, all drawn by the phone.
+- **30 weapons** — 15 offerable, each with an upgraded final form
+- **26 enemies** — 18 that walk at you, 8 named fights
+- **51 achievements**, with their own screen
+- **12 characters**, each with art, a starting weapon, a strength and a weakness
+- **5 stages**, each with its own look, crowd schedule and named fights
+- **8 arcanas** — run-warping cards, three per run, at 4/12/22 minutes
+- **20 items** (passive upgrades), five levels each
+- **Treasure chests** with the full opening ceremony
+- **1–4 player online co-op** — built, tested over a real socket, switched off until launch
+- **Anti-cheat** via full run recording and replay, plus an admin review page
+- **Saving** that survives the app being killed mid-run, plus cloud backup
+- **A dev menu** that jumps to any minute, stage, character or enemy count
+- **A title screen** — painted art, and menus for every screen listed above
+
+---
+
+## THE ENGINE — WHAT MAKES IT FAST, AND WHY THAT MATTERS
+
+Worth knowing so nobody "tidies" it into slowness later:
+
+- **Fixed 60Hz timestep** with the clock injected, never read. The same code runs headless for tests
+  and replays.
+- **Struct-of-arrays over pre-allocated typed arrays.** An enemy is an integer index into 16 parallel
+  arrays. No objects, no allocation inside a tick — which is why there is no GC pause, which is why
+  frame times are flat.
+- **Seeded RNG** (xoshiro128\*\*) with 10 independent named streams, so adding a visual-effect roll
+  cannot shift the enemy spawn table.
+- **The engine does not know screens exist.** Nothing in `packages/mobile/game/` imports React,
+  React Native or Expo — verified across all 165 files. That is what lets one engine run on Android,
+  iPhone and a browser.
+- **Integer trig.** Angles are "brads" (4096 per turn) through a lookup table in `core/fx.ts`, never
+  `Math.cos`. JS does not specify `sin`/`cos`/`pow`/`hypot`, so those differ between phones and
+  servers — and anything that differs breaks replay validation.
+
+---
+
+## MEASURED PERFORMANCE
+
+Real device, real build, from the in-game bench:
+
+| | iPhone 17 Pro (A19 Pro), Expo Go |
+|---|---|
+| Quads at 60fps | **8,176** (target was 5,000) |
+| p50 / p95 / p99 / worst | **16.7 / 16.7 / 16.7 / 16.7 ms** |
+| Frames over 16.7ms | **0.0%** (target under 1%) |
+| Dropped ticks | **0** |
+| Overdraw | 54.1× screen, still holding |
+
+Not one frame missed out of ~14,500. Flat p99 is the payoff of the no-allocation rule.
+
+**Two caveats, stated plainly.** That run was 4 minutes of a 15-minute warm test, and the harness
+refuses a verdict before 15 because a phone flatters itself for about three minutes before it
+throttles. And an A19 Pro is the opposite end of the market from the **$100 phone** this is supposed
+to run on. The flagship number proves the engine is clean. It says nothing about the target device.
+
+**Next measurement that matters: the same bench on a cheap Android.** One `eas update` away — the
+Android manifest already resolves.
 
 ---
 
 ## WHAT IS LEFT BEFORE LAUNCH
 
-**Stage 4 — the last piece of content:**
-1. **The Reaper ending.** At 30 minutes the Red Reaper walks in, and one more every minute after.
-   He can be killed with the right build. Killing him drops five eggs and unlocks a character.
-   Then the White Hand arrives: the screen reddens, the camera pushes in, a bell tolls twelve times,
-   and nothing can save you. — **This is what gets built next.**
-2. The small in-run prompts that teach a first-time player, painted to match everything else.
+### Content — the last of it
 
-**Then stages 7 and 8:** polish, sound and music, ads and cosmetics, the legal review, the store listings.
+1. **The Reaper ending.** At 30 minutes the Red Reaper walks in, one more every minute after. He can
+   be killed with the right build; killing him drops five eggs and unlocks a character. Then the White
+   Hand arrives — the screen reddens, the camera pushes in, a bell tolls twelve times, and nothing
+   saves you. **This is the next thing to build.**
+2. **In-run tutorial prompts**, painted to match everything else.
+
+### Engineering — known, small, tracked
+
+| Item | State |
+|---|---|
+| Replay revalidation is over its time budget — 7.76s against a 5s gate | Open. Decide: optimise, or re-baseline with a written reason. |
+| Cross-runtime replay proof (record on phone, revalidate on server, hashes match) | Open. **Must exist before anti-cheat rejects anybody.** |
+| `test:web` cannot run without a database (client is built at import time) | Open |
+| `hashState` walks pool slots in allocation order, not a canonical one | Open — a desync report currently means "real divergence *or* slot-order divergence" |
+| Dropped ticks are invisible to the player (the game runs in slow motion, not stalled) | Open — surface it in the dev HUD |
+| Platform coupling in `packages/web` / `packages/desktop` | **Done.** No vendor packages, no injected badge, no analytics script. |
+
+### Then
+
+**Polish. Sound and music. Ads and cosmetics. Legal review. Store listings.**
 
 ---
 
-## THE ONLY TWO THINGS THAT NEED *YOU*
+## THE ONLY THINGS THAT NEED *YOU*
 
 1. **Look at the menus and say yes or no.** Nothing outside a run ships without your approval.
-2. **Get both test tracks live with real testers.** Google requires 12 real people opted in for
-   14 days in a row before you may release. That clock only starts when you start it, and it should be
-   burning right now while the content gets finished. Recruit 18–20 so a few dropping out doesn't
-   reset you. Apple's TestFlight track runs alongside it.
-
-Everything else is on me.
+2. **Start both test tracks with real testers.** Google requires 12 real people opted in for 14
+   consecutive days before you may release. That clock only starts when you start it. Recruit 18–20
+   so a few dropping out doesn't reset you. TestFlight runs alongside it.
+3. **Run the bench on a cheap Android** for 15 warm minutes, and the iPhone one to 15 too.
 
 ---
 
-## THINGS ON THE SHELF (known, tracked, not forgotten)
+## LOCKED DECISIONS
 
-- Two old character frames still carry a leftover trinket that needs erasing by hand.
-- The "800 enemies at 60fps" number has been proven in the lab but not yet on your actual phone —
-  that gets measured in the next real Android build.
-- Co-op has only ever been tested with fake players; it needs four real phones once.
-- The online switchboard is decided but not switched on yet (that happens at the four-phones test).
-- Pixel art gets slightly soft when a menu blows it up big. It is a limit of how phones scale images.
-  The title screen dodges it by drawing shapes instead of pictures.
-
----
-
-## LOCKED DECISIONS (settled, not reopening)
+Settled. Not reopening without a reason written down here.
 
 - Mobile first. **Google Play first, Apple about a month later.**
-- Free to play. Rewarded ads and cosmetics only. No paying for power. Money work is stage 8.
-- Original art and an original font. Nothing traced, nothing borrowed.
-- Same rules as the game that inspired it, different names for everything.
+- Free to play. Rewarded ads and cosmetics only. **No paying for power.**
+- Original art, original font. Nothing traced, nothing borrowed.
+- Same genre rules as the game that inspired it, different names for everything.
 - **Host-runs-the-game co-op. No voice chat, ever.**
 - Difficulty never quietly adjusts to how well you are doing.
-- Leaderboards never give you power.
-- Launch small on content, never on systems: cut a stage before cutting a feature.
-- Every run is recorded and replayable, which is also how cheating gets caught.
-- The game must run on a $100 phone.
+- Leaderboards never grant power.
+- Launch small on content, never on systems: **cut a stage before cutting a feature.**
+- Every run is recorded and replayable — that is also how cheating is caught.
+- **The game must run on a $100 phone.**
+- **No third-party telemetry.** The save carries `telemetryOptIn` and it defaults to off. Anything
+  that reports regardless of that flag does not ship.
+- **No dependency on one company's hosting to run or test the game.** Four ways in, listed above.
 
 ---
 
-## HOW TO READ THE REST
+## HOW TO CHECK THE PROJECT IS HEALTHY
 
-- `plan-detail.md` — the full original plan: every argument, every number, every gate. Nothing lost.
-- `task.md` — the running diary, plain English, newest at the bottom. Read this to see what changed today.
+```sh
+bun run lint          # conventions + oxlint. Clean.
+bun run typecheck     # all packages. Clean.
+bun run test:game     # 37 headless engine suites
+bun run test:e2e      # the whole co-op stack over a real socket, starts its own relay
+bun run test:soak     # 20 minutes of simulated quad-storm, headless
+bun run build:web     # the API + web frontend
+```
+
+**Vite is declared once, at the repo root.** It used to be declared separately by `packages/web` and
+`packages/desktop`, which gave TypeScript two distinct copies of every Vite type and made a plugin
+from one package unassignable to the config of the other. If `typecheck` ever starts failing with
+`Plugin<any> is not assignable to PluginOption`, someone has re-added it to a package.
+
+`test:game` has **one** known failure — the revalidation budget in the table above. Anything else
+failing is new and is a regression.
+
+The engine also lints itself: `dev/lint.ts` reads all 165 engine files and rejects `Math.random`
+anywhere, and unspecified maths (`sin`, `cos`, `pow`, `hypot`, and 13 more) anywhere its result gets
+hashed. That rule exists because the fixed-point layer was written, documented, tested — and then
+not used by the simulation for months, because nothing checked.
+
+---
+
+## HISTORY
+
+- `docs/archive/plan-detail.md` — the original long-form plan. Kept for its arguments and numbers.
+  Its testing and delivery sections are obsolete: they assume the hosting platform that has gone away.
+- `docs/archive/features-review.md` — the 200-item feature backlog, sorted.
+- `task.md` — the running diary, newest at the bottom. Still the place to append what changed today.
+- `design.md` — palette, fonts, spacing, motion rules, screen list.
+- `audit-handoff.md` — a full engineering audit with every finding and its evidence.

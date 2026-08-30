@@ -107,7 +107,6 @@
       "must": {
         "haveType": "directory",
         "haveFiles": [
-          "public/runable.js",
           "src/__server.ts",
           "src/api/__core/app.ts",
           "src/api/database/__client.ts",
@@ -116,7 +115,6 @@
           "src/web/types/__analytics.d.ts",
           "vite/__plugins/asset-optimizer-plugin.ts",
           "vite/__plugins/hono-dev-plugin.ts",
-          "vite/__plugins/runable-analytics-plugin.ts",
           "website.config.json"
         ]
       }
@@ -152,24 +150,6 @@
       }
     },
     {
-      "name": "desktop-main-creates-managed-deep-links",
-      "paths": "packages/desktop/electron/main.ts",
-      "must": {
-        "importFrom": [
-          "@runablehq/managed-auth/desktop/main"
-        ]
-      }
-    },
-    {
-      "name": "desktop-preload-exposes-managed-auth-bridge",
-      "paths": "packages/desktop/electron/preload.ts",
-      "must": {
-        "importFrom": [
-          "@runablehq/managed-auth/desktop/preload"
-        ]
-      }
-    },
-    {
       "name": "web-main-uses-template-bootstrap",
       "paths": "packages/web/src/web/main.tsx",
       "must": {
@@ -188,22 +168,12 @@
       }
     },
     {
-      "name": "web-app-keeps-runable-runtime",
-      "paths": "packages/web/src/web/app.tsx",
-      "must": {
-        "importFrom": [
-          "@runablehq/website-runtime"
-        ]
-      }
-    },
-    {
       "name": "web-vite-config-keeps-template-plugins",
       "paths": "packages/web/vite.config.ts",
       "must": {
         "importFrom": [
           "./vite/__plugins/asset-optimizer-plugin",
-          "./vite/__plugins/hono-dev-plugin",
-          "./vite/__plugins/runable-analytics-plugin"
+          "./vite/__plugins/hono-dev-plugin"
         ]
       }
     },
