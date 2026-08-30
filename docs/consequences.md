@@ -341,39 +341,132 @@ that way precisely because it exercises the modifier system you will need later 
 ## THE ORDER THIS IMPLIES
 
 Not a schedule — a dependency order. Each step is cheap before the one below it and expensive after.
+Revised after the four verifications above; item 0 is new and it outranks everything.
 
+0. **Diagnose why gold stops at minute 10 and why weapons never reach level 8.** Until progression
+   works, no run-length decision can be evaluated, the shop cannot be funded, and eggs have no
+   currency to be bought with. This is the core loop, and it is measurably not closing.
 1. **Add the content-fault checks** (unlock threshold vs run length, arcana mark vs shortest run).
    Retires the entire class of bug in A1 and A2. Hours.
 2. **Cap every stat.** Remove `-1` from `STAT_CAPS` and assert it. Blocks B entirely, and must precede
    eggs, Ascension and Endless Curse stacking. Hours.
 3. **Canonicalise `hashState` order.** Makes desync reports mean one thing before Endless multiplies
-   them. Hours.
-4. **Set `reaperSecond` per stage and re-derive unlock thresholds as fractions.** Now safe, because
-   step 1 will fail the build if you get it wrong.
-5. **Build the ending:** +1 Reaper per minute, lethal contact damage as a named constant, and the
-   first tests of the White Hand sequence — which currently has **zero** coverage.
-6. **Check the guest death path.** If guests self-kill, make death host-confirmed before co-op ships.
+   them — and, per D, determinism is now also what keeps a lethal Reaper safe in co-op. Hours.
+4. **Give the White Hand a presentation.** The cues already fire with position and toll index; nothing
+   consumes them. Cheapest large improvement available, no simulation change.
+5. **Set `reaperSecond` per stage and re-derive unlock thresholds as fractions** — after 0, so the
+   decision is made against a working curve, and after 1, so a mistake fails the build.
+6. **Build the rest of the ending:** +1 Reaper per minute, lethal contact damage as a named constant,
+   and the first tests of the White Hand sequence, which currently has **zero** coverage.
 7. **Decide Endless ladder eligibility.** Determines whether checkpointed revalidation must exist.
-8. **Then eggs** — needing the cap decision, a name, and the replay-capture channel from G.
+8. **Then eggs** — needing the cap from 2, a name, and the modifier slot from G.
 
-Steps 1–3 are about six hours of work between them and they are the difference between "we fixed a
-bug" and "that bug was never possible." Everything below them is safer for having done them.
+Items 1–3 are about six hours between them and they are the difference between "we fixed a bug" and
+"that bug was never possible." Item 0 is unscoped until it is diagnosed, which is exactly why it is
+first.
 
 ---
 
-## WHAT I COULD NOT VERIFY
+## THE FOUR OPEN QUESTIONS — NOW ANSWERED
 
-Stated so nothing here reads as more certain than it is.
+All four were checked. Two dissolved, one is confirmed missing, and the fourth turned up something
+that outranks everything above it.
 
-- **Whether guests already defer death to the host** (D). Decides whether that risk is real or already
-  handled.
-- **Whether the replay format captures permanent stats** (G). Decides whether the ordering constraint
-  is a new requirement or an existing bug.
-- **Your XP curve** (A3). So "evolutions get rarer" is a mechanism, not a measured quantity.
-- **Whether the screen-redden and camera-push exist** for the White Hand. The cues fire; the visual
-  response is unconfirmed.
-- **The real Reaper HP that makes an invuln-loop kill possible but not easy.** Needs measurement
-  against late-run DPS, which the dev menu can produce by jumping to any minute with any build.
-- **Whether an invuln-loop kill is achievable at all.** `passives.ts:345-352` gives up to +44 iFrames
-  and `powerups.ts:354` sells more permanently, on a base of 30 (`stats.ts:148`) — so the tools exist
-  in principle. Whether the numbers reach far enough is arithmetic I have not done.
+### D — Guests do NOT predict their own death. Risk largely dissolves.
+
+`net/local-view.ts:2` — LocalView *"makes the local player's own movement feel instant"*. It is
+**movement prediction only**. And `local-view.ts:163` is explicit:
+
+> `alive` false — downed or dead — stops prediction dead. A corpse does not walk.
+
+`net/session.ts:10-12` confirms the model: *"there is no steady-state traffic describing spawns, damage
+or deaths… The host confirms a tick's input record and broadcasts it."* Guests re-run the same
+authoritative input stream deterministically; disagreement is caught by state hash and repaired with a
+full snapshot (`session.ts:22-23`).
+
+**So a guest cannot mispredict itself into death.** My earlier concern was largely wrong — the
+architecture already handles it, by keeping prediction render-side and stopping it at death.
+
+What remains is smaller but real: with a one-hit-kill hitbox, any *residual nondeterminism* stops being
+a cosmetic position snap and becomes a brief wrong death followed by a resync. Which means the
+cross-engine determinism work is not merely nice for anti-cheat — **it is the thing that makes a lethal
+Reaper safe in co-op.** Those two decisions are coupled, and they were not obviously coupled before.
+
+### G — Replays already carry permanent stats. No new requirement.
+
+`replay/format.ts:163-180`, `RunHeader` contains:
+
+```ts
+modifierCount: number;
+modifiers: Int32Array;      // MAX_REPLAY_MODIFIERS = 64
+contentVersion: number;
+buildId: number;
+```
+
+The channel exists and is versioned. Eggs become a modifier entry like everything else, and
+`contentVersion` already lets a revalidator reject or special-case a replay recorded under different
+content. The ordering constraint in section G is therefore **a design that was already anticipated**,
+not a bug to fix — but the 64-slot ceiling is a real budget worth remembering before piling in
+Ascension tiers, egg counts and shop ranks.
+
+### 4 — The White Hand has no presentation at all. Confirmed missing.
+
+`CUE.reaperArrived` (16) and `CUE.bellTolled` (17) both exist and both fire. The only cue any screen
+consumes is `CUE.chestOpened` (`app/dev/play.tsx:547`).
+
+Nothing reddens the screen. Nothing pushes the camera. Nothing plays a bell, because there is no audio
+layer yet. **Today the ending is: the Reaper appears, and twelve seconds later the run silently stops.**
+
+The simulation is right and the payoff is absent. That is the cheapest big win in this document — the
+cues are already emitted with position and a toll index, so a presentation layer has everything it
+needs and requires no simulation change.
+
+### A3 — The XP curve, measured. This is the real finding.
+
+Built `tools/measure-xp-curve.ts` and ran three seeds. Godmode, player walking a circle, `autoPick`
+taking card 0.
+
+| | seed 20260830 | seed 777 | seed 424242 |
+|---|---|---|---|
+| level at 15 → 30 min | 36 → **39** | 16 → **18** | 16 → **20** |
+| best weapon level at 15 → 30 | 5 → **5** | 3 → **4** | 3 → **4** |
+| weapons at max level (8), ever | **0** | **0** | **0** |
+| gold at 10 min → 30 min | 69 → **80** | 16 → **16** | 12 → **12** |
+
+Three things, all consistent across seeds:
+
+**1. Gold income stops at about minute 10–12.** In two of three seeds the gold total is *identical* at
+minute 10 and minute 30. A whole 30-minute run yields **12 to 80 gold.** The shop is 20 items with five
+levels each, and your plan has Golden Eggs *"purchasable with gold"*. If a full run pays 16 gold, the
+meta-economy does not function. I have not diagnosed the cause and will not guess — but it is a real,
+reproducible anomaly.
+
+**2. No weapon ever reaches level 8, so no weapon ever evolves.** `MAX_WEAPON_LEVEL = 8` and evolution
+needs level 8 plus a passive. Best observed across three full 30-minute runs is level 5. All 15 evolved
+final forms are currently unreachable. *Caveat that matters:* `autoPick` takes card 0 blindly and
+spreads upgrades across six weapons, where a real player funnels one. So this number is a floor, not a
+verdict — but the gap from 5 to 8 is wide enough that focusing alone may not close it.
+
+**3. The back half of a run is nearly empty.** Minutes 15–30 contribute 2–3 levels, 0–1 weapon levels,
+and 0 gold.
+
+### What this does to section A
+
+It inverts it. Cutting a run to 15 minutes costs far **less** than section A feared, because minutes
+15–30 currently produce almost nothing.
+
+But that is not a reason to relax — it is a worse problem wearing a friendlier face. The reason
+shortening the run looks cheap is that **the second half of your run is already broken.** The arcana at
+22:00 and the 20-minute stage unlocks are gated behind a stretch of play that pays out nothing.
+
+So the ordering changes. Diagnosing the gold flatline and the weapon-level ceiling should come before
+tuning `reaperSecond`, because until progression works you cannot tell whether a 15-minute run is
+*correct* or merely *indistinguishable from a broken 30-minute one.*
+
+### Still not verified
+
+- **The Reaper HP that makes an invuln-loop kill possible but not trivial.** Needs late-run DPS, which
+  now looks lower than assumed given the weapon-level ceiling.
+- **Whether an invuln-loop kill is achievable at all.** `passives.ts:345-352` grants up to +44 iFrames
+  and `powerups.ts:354` sells more permanently, on a base of 30 (`stats.ts:148`). The tools exist; the
+  arithmetic against 9999 contact damage is not done.
