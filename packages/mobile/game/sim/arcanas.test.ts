@@ -34,6 +34,7 @@ import {
   arcanaConditionMet,
   arcanaContentFaults,
   arcanaIndexOf,
+  arcanaReachabilityFaults,
   arcanaUnlockText,
   MAX_ARCANAS,
   type ArcanaProgress,
@@ -131,6 +132,46 @@ function progress(bestAnywhereSeconds: number, bestByStageIndex: number[] = []):
     ok(a.numeral.length > 0, `${a.id} has a numeral for its card`);
     ok(a.name.length > 0 && a.blurb.length > 0, `${a.id} has words on its card`);
   }
+}
+
+// -------------------------------------------------------------------------------------------
+// Offer marks are reachable inside the shortest run
+// -------------------------------------------------------------------------------------------
+{
+  // The reaper seconds are injected, not read from ./stages, so this file stays free of the stage
+  // table. The shipped stages all run 1800s; the shipped marks are 240/720/1320, all well under it.
+  const shipped = [
+    { id: "paupersCrypt", reaperSecond: 1800 },
+    { id: "theOssuary", reaperSecond: 1800 },
+    { id: "mournersMarsh", reaperSecond: 1800 },
+    { id: "gallowsRow", reaperSecond: 1800 },
+    { id: "hollowBelfry", reaperSecond: 1800 },
+  ];
+  eq(
+    arcanaReachabilityFaults(ARCANA_MINUTE_MARKS, shipped).length,
+    0,
+    "every shipped arcana mark fires inside the shortest shipped run",
+  );
+
+  // Shorten one stage below a mark and the check must name the mark and that shortest run.
+  const withShortStage = shipped.map((s, i) => (i === 2 ? { id: s.id, reaperSecond: 300 } : s));
+  const faults = arcanaReachabilityFaults(ARCANA_MINUTE_MARKS, withShortStage);
+  ok(
+    faults.some((f) => f.includes("is later than the shortest run (300s on mournersMarsh)")),
+    "a mark past the shortest run is caught, naming the mark and the shortest run",
+  );
+  eq(
+    faults.length,
+    ARCANA_MINUTE_MARKS.filter((m) => m > 300).length,
+    "exactly the marks that overrun the shortest run are reported",
+  );
+
+  // A mark exactly equal to the shortest run still fires on the final tick, so it is not a fault.
+  eq(
+    arcanaReachabilityFaults([300], withShortStage).length,
+    0,
+    "a mark equal to the shortest run is reachable, not a fault",
+  );
 }
 
 // -------------------------------------------------------------------------------------------

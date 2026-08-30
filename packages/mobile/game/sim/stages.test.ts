@@ -22,6 +22,7 @@
  */
 
 import { Rng } from "../core/rng";
+import { ARCANA_MINUTE_MARKS, arcanaReachabilityFaults } from "./arcanas";
 import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore } from "./enemies";
 import { ModifierStack } from "./modifiers";
 import {
@@ -355,6 +356,20 @@ check(
     "longer than a run",
   ),
 );
+check(
+  "an unlock asking for longer than the required stage's own run can last is caught",
+  faultsMention(
+    [one, copyStage(two, { unlock: { kind: STAGE_UNLOCK.survive, stage: "paupersCrypt", seconds: STANDARD_RUN_SECONDS + 1 } })],
+    `needs ${STANDARD_RUN_SECONDS + 1}s survived on paupersCrypt, but a run there ends at ${STANDARD_RUN_SECONDS}s`,
+  ),
+);
+check(
+  "an unlock asking for exactly the required stage's reaperSecond is caught (>= not >)",
+  faultsMention(
+    [one, copyStage(two, { unlock: { kind: STAGE_UNLOCK.survive, stage: "paupersCrypt", seconds: STANDARD_RUN_SECONDS } })],
+    `needs ${STANDARD_RUN_SECONDS}s survived on paupersCrypt, but a run there ends at ${STANDARD_RUN_SECONDS}s`,
+  ),
+);
 check("a stage with no waves at all is caught", faultsMention([copyStage(one, { waves: [] })], "has no waves"));
 check(
   "a table that does not start at zero is caught",
@@ -442,6 +457,37 @@ check(
 check(
   "a table that stops changing far too early is caught",
   faultsMention([copyStage(one, { waves: one.waves.slice(0, 6) })], "stops changing"),
+);
+
+// ---------------------------------------------------------------------------
+// 6b. Arcana offer marks are reachable inside the shortest run
+// ---------------------------------------------------------------------------
+section("arcana offer marks are reachable inside the shortest run");
+
+const stageReapers = STAGE_TYPES.map((s) => ({ id: s.id, reaperSecond: s.reaperSecond }));
+
+check(
+  "every shipped arcana mark fires inside the shortest run",
+  arcanaReachabilityFaults(ARCANA_MINUTE_MARKS, stageReapers).length === 0,
+  arcanaReachabilityFaults(ARCANA_MINUTE_MARKS, stageReapers).join("; ") || "clean",
+);
+{
+  // Shorten one stage so an existing shipped mark now lands after that stage's Reaper.
+  const shortened = stageReapers.map((s, i) => (i === 0 ? { id: s.id, reaperSecond: 60 } : s));
+  const faults = arcanaReachabilityFaults(ARCANA_MINUTE_MARKS, shortened);
+  check(
+    "a mark later than the shortest run is caught, naming the mark and the shortest run",
+    faults.some((f) => f.includes(`is later than the shortest run (60s on ${STAGE_TYPES[0].id})`)),
+    faults.join("; ") || "no fault",
+  );
+}
+check(
+  "a mark equal to the shortest run is fine (it still fires on the final tick)",
+  arcanaReachabilityFaults([STANDARD_RUN_SECONDS], stageReapers).length === 0,
+);
+check(
+  "an empty stage list raises nothing rather than dividing by nothing",
+  arcanaReachabilityFaults(ARCANA_MINUTE_MARKS, []).length === 0,
 );
 
 // ---------------------------------------------------------------------------

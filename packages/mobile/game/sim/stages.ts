@@ -739,7 +739,21 @@ export function stageContentFaults(list: readonly StageType[] = STAGE_TYPES): re
       if (i === 0) faults.push(`${where}: the first stage must be open from the start`);
       const req = STAGE_BY_ID.get(s.unlock.stage);
       if (req === undefined) faults.push(`${where}: needs "${s.unlock.stage}", which is not a stage`);
-      else if (req >= i) faults.push(`${where}: needs a stage that is not open before it`);
+      else {
+        if (req >= i) faults.push(`${where}: needs a stage that is not open before it`);
+        // The threshold is time survived on the REQUIRED stage, so it has to be reachable on THAT
+        // stage's clock, not this one's. `>=` and not `>`: a run on the required stage ends the
+        // instant its Reaper arrives (tickReaper, run.ts:598), and whether a survival time exactly
+        // equal to that second is credited before or after the run ends depends on tick ordering.
+        // Rather than lean on that ordering, equality is forbidden outright — a threshold that can
+        // only be met on the very frame the run ends is not a threshold anyone should ship.
+        const required = list.find((r) => r.id === s.unlock.stage);
+        if (required !== undefined && s.unlock.seconds >= required.reaperSecond) {
+          faults.push(
+            `${where}: needs ${s.unlock.seconds}s survived on ${required.id}, but a run there ends at ${required.reaperSecond}s`,
+          );
+        }
+      }
       if (s.unlock.seconds <= 0) faults.push(`${where}: asks for a survival time of zero`);
       if (s.unlock.seconds > s.reaperSecond) {
         faults.push(`${where}: asks for longer than a run on that stage can last`);
