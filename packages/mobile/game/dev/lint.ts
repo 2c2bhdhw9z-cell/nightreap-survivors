@@ -170,6 +170,53 @@ export const SERVER_WRITE_MODULES = [
   "server/",
 ] as const;
 
+/**
+ * Math that is NOT specified bit-for-bit by ECMAScript, and so differs between JSC, Hermes and V8.
+ *
+ * `+ - * /` and `Math.sqrt` are correctly rounded by spec and therefore safe. The functions below
+ * are not, and any of them on a value that reaches `Run.hashState` makes a replay recorded on a
+ * phone fail revalidation on a server — rejecting an honest player's run. Use `fxSin`/`fxCos`/
+ * `fxSinF`/`fxCosF` from `core/fx`, which are integer table lookups.
+ *
+ * `hypot` is here because it is not bit-guaranteed either, despite looking like ordinary arithmetic.
+ *
+ * This rule exists because all of this was already written down in `core/fx.ts` and in comments in
+ * `player.ts`, and the code drifted off it anyway: the fixed-point layer was built, documented,
+ * tested, and then never imported by the simulation. A rule nobody enforces is a rule that decays.
+ */
+export const UNSPECIFIED_MATH = [
+  "sin",
+  "cos",
+  "tan",
+  "pow",
+  "exp",
+  "log",
+  "log2",
+  "log10",
+  "hypot",
+  "atan",
+  "atan2",
+  "asin",
+  "acos",
+  "cbrt",
+  "sinh",
+  "cosh",
+  "tanh",
+] as const;
+
+/**
+ * Directories whose output is hashed, compared across machines, or revalidated.
+ *
+ * `render/` is deliberately absent: a shader or a camera shake that differs in the last bit between
+ * two phones is invisible and never hashed, so banning it there would be noise.
+ */
+const DETERMINISTIC_DIRS = ["game/sim/", "game/run/", "game/net/", "game/replay/"] as const;
+
+/** Strip comments so a rule cannot fire on prose that merely names a banned function. */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
 const IMPORT_RE = /(?:import|export)[\s\S]*?from\s*["']([^"']+)["']|require\(\s*["']([^"']+)["']\s*\)/g;
 
 function importsOf(text: string): string[] {
@@ -190,8 +237,37 @@ export function lintSources(files: readonly SourceFile[]): Violation[] {
   for (const file of files) {
     const inDev = file.path.includes("game/dev/");
     const specs = importsOf(file.text);
+    const isTest = file.path.endsWith(".test.ts");
+    const code = stripComments(file.text);
 
-    if (inDev) {
+    // Rule 7c: no unseeded randomness anywhere in the engine. A single `Math.random` in the sim is a
+    // desynced co-op session and an unreproducible replay. `core/rng.ts` exists for this.
+    if (!isTest && /\bMath\s*\.\s*random\s*\(/.test(code)) {
+      v.push({
+        rule: "engine-has-no-unseeded-random",
+        subject: file.path,
+        detail: "calls Math.random — draw from core/rng instead",
+      });
+    }
+
+    // Rule 7d: no engine-dependent math on hashed state.
+    if (!isTest && DETERMINISTIC_DIRS.some((dir) => file.path.includes(dir))) {
+      for (const fn of UNSPECIFIED_MATH) {
+        if (new RegExp(`\\bMath\\s*\\.\\s*${fn}\\s*\\(`).test(code)) {
+          v.push({
+            rule: "hashed-math-must-be-specified",
+            subject: file.path,
+            detail: `calls Math.${fn} — use core/fx (fxSinF/fxCosF/fxAtan2) or Math.sqrt`,
+          });
+        }
+      }
+    }
+
+    // Tests are exempt from the import rules. They carry deliberately-illegal import strings as
+    // fixtures to prove these very rules bite — `dev.test.ts` names `../net/ladder-client` and
+    // `react-native` on purpose. Once the linter began reading the whole tree it started flagging
+    // its own evidence, which is a false positive rather than a finding.
+    if (inDev && !isTest) {
       for (const spec of specs) {
         for (const banned of SERVER_WRITE_MODULES) {
           if (spec.includes(banned)) {
@@ -225,7 +301,6 @@ export function lintSources(files: readonly SourceFile[]): Violation[] {
       file.path.includes("game/dev/devgate") ||
       file.path.includes("game/dev/lint") ||
       file.path.includes("game/dev/registry");
-    const isTest = file.path.endsWith(".test.ts");
     if (usesFinder && !isGateOrLint && !isTest) {
       v.push({
         rule: "gate-is-the-only-door",
