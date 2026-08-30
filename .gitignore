@@ -71,6 +71,10 @@ android
 
 # scripts (local-only provisioning)
 scripts/
+# Skill scripts are part of the skill, not local provisioning. The blanket rule above matches any
+# directory named `scripts/` at any depth, which silently excluded a committed skill's own tooling.
+!.kiro/skills/**/scripts/
+!.kiro/skills/**/scripts/**
 !packages/mobile/scripts/
 packages/mobile/scripts/*
 !packages/mobile/scripts/generate-ios-certs.py
