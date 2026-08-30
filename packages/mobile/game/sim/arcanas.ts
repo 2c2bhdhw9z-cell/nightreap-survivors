@@ -407,6 +407,47 @@ export function arcanaContentFaults(): string[] {
 }
 
 /**
+ * Whether any offer mark lands after the shortest run can possibly last.
+ *
+ * The reaper seconds are passed in rather than read from `./stages`, for the same reason `begin()`
+ * takes the unlocked pool: this file knows the content it owns (the marks) and nothing about the
+ * stage table. The caller — the stage or arcana self-check — knows both, so it hands the two
+ * together. Injecting the numbers also keeps the sim free of an arcanas→stages import that would
+ * only exist to read a single field.
+ *
+ * The rule is deliberately the strict one from the handoff: a mark that beats the *shortest* stage's
+ * reaperSecond is unreachable on at least one stage, and content the player can never see on some
+ * stage is a bug, not a choice. A mark unreachable only on one longer-than-average stage would be a
+ * softer "warn", but there is no warn channel here, so the fail condition is the shortest run.
+ */
+export function arcanaReachabilityFaults(
+  marks: readonly number[],
+  stageReaperSeconds: readonly { readonly id: string; readonly reaperSecond: number }[],
+): string[] {
+  const faults: string[] = [];
+  if (stageReaperSeconds.length === 0) return faults;
+
+  let shortest = stageReaperSeconds[0].reaperSecond;
+  let shortestId = stageReaperSeconds[0].id;
+  for (let i = 1; i < stageReaperSeconds.length; i++) {
+    if (stageReaperSeconds[i].reaperSecond < shortest) {
+      shortest = stageReaperSeconds[i].reaperSecond;
+      shortestId = stageReaperSeconds[i].id;
+    }
+  }
+
+  for (const mark of marks) {
+    if (mark > shortest) {
+      faults.push(
+        `arcana offer at ${mark}s is later than the shortest run (${shortest}s on ${shortestId}), so it never fires there`,
+      );
+    }
+  }
+
+  return faults;
+}
+
+/**
  * One run's arcanas: what is available, what has been offered, what is held.
  *
  * One deck per run, not per player. In co-op the host owns the deck and the pick is authoritative,
