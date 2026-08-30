@@ -38,12 +38,29 @@ Score each. Any **red** means the decision needs a written justification, not a 
 Ask: **can I get everything out, in a format I can use, without asking permission?** "There's an API"
 is not the same as "there's an export."
 
+**Test it, do not read about it.** Run the actual export and load the result into something that is not
+the vendor. Measure three things: how long it took, whether it was complete, and whether it is usable
+without bespoke transformation. **If you cannot perform that test before adopting, score export 🔴, not
+🟡** — an export path that has never been exercised is a promise, not a capability. Re-run it
+periodically; exports rot as schemas change.
+
 ### 2. Identity and auth
 - 🟢 You own the user records; vendor is one provider among several
 - 🟡 Vendor issues tokens you can verify independently
 - 🔴 Vendor owns identity; leaving means every user re-registers
 
 This is the single most expensive kind to unwind, because the cost lands on your users, not on you.
+
+**The sharper question is what happens during an outage, not at migration.** Migration is a project you
+can plan; an outage is Tuesday afternoon.
+
+- 🟢 A second login path you control — password fallback, or another provider
+- 🟡 New logins fail but existing sessions continue
+- 🔴 Vendor is down, so nobody can log in, including your admins
+
+Also check whether your **schema** has their identity format in it — a vendor's proprietary user id
+embedded in every foreign key means leaving requires a full id migration. See the companion skill's
+`references/discovery-checklist.md` §8.
 
 ### 3. Interface shape
 - 🟢 Vendor implements a standard you could swap (S3 API, SQL, OIDC, OCI)
@@ -65,6 +82,70 @@ not, you cannot develop when they have an outage, and neither can a new contribu
 
 ### 6. Exit cost, in hours
 Estimate honestly. Under a week is a dependency. Over a month is a merger.
+
+### 6b. Exit cost, in money and contract terms
+
+**A vendor can have a flawless API and still trap you commercially.** This dimension is invisible in
+code review, which is exactly why it gets missed.
+
+- 🟢 No egress fees, no minimum commitment, export included, a documented deletion SLA
+- 🟡 Some egress or export cost, or a short minimum term
+- 🔴 High egress fees, auto-renewing contract, "termination assistance" sold separately, or data
+  retained after termination
+
+Do the arithmetic on **data gravity**: what does it cost to move the volume you expect to have in two
+years? A perfect export API is worthless if egress on several terabytes exceeds your runway. Storage
+that is cheap to fill and expensive to empty is a business model, not an accident.
+
+Check specifically: auto-renewal notice windows, whether pricing can change unilaterally mid-term, and
+what happens to your data on non-payment.
+
+### 6c. Interface coupling at the event boundary
+
+Where a vendor pushes data *into* you — webhooks, callbacks, event streams — the shape of their payload
+can leak into your domain.
+
+- 🟢 Events hit a translation layer and are mapped to your own internal types
+- 🟡 Passed through raw, but consumed in one isolated module
+- 🔴 Core domain logic parses their deeply nested JSON directly, all over the codebase
+
+The fix is cheap *before* adoption and expensive after: one adapter that converts their event into your
+type, and nothing downstream knows the vendor exists. This is the same "vendors live behind your own
+interface" rule as Part 3, applied to inbound data rather than outbound calls.
+
+### 6d. Local development without the vendor
+
+**Can a developer run the whole stack with no vendor account and no network?**
+
+If the project depends on a proprietary cloud primitive — a bespoke queue, a managed database with no
+open equivalent — then the vendor must supply a local emulator. If they do not, every laptop is
+permanently tethered to their uptime, onboarding requires provisioning, and nobody can work on a plane
+or during an incident.
+
+An open-source client library does **not** solve this. Which brings us to:
+
+### 6e. Open source is not the question
+
+**A vendor's SDK being on GitHub tells you almost nothing about lock-in.** Judge by where the *data* and
+the *identities* live. An MIT-licensed client talking to a proprietary hosted service you cannot run
+yourself is full lock-in with a friendly licence file.
+
+Conversely, a closed-source client for a service implementing a standard you can swap — S3 API, SQL,
+OIDC, OCI — may be barely locked in at all.
+
+### 6f. Jurisdiction and data residency
+
+Not legal advice, and do not pretend otherwise. These are the questions to put to whoever advises the
+project, flagged early because they are expensive to discover late:
+
+- 🟢 Data stays in infrastructure or a region you control
+- 🟡 Vendor processes it, but you choose the region and can audit
+- 🔴 Residency is vendor-controlled, no data processing agreement exists, or the legal
+  controller/processor relationship is unclear
+
+Surface it as a question, never as a conclusion. If the project handles personal data, health data,
+payments, or anything involving minors, say plainly that this needs qualified review rather than an
+engineering opinion.
 
 ### 7. The template question — for scaffolded starters specifically
 
@@ -131,6 +212,16 @@ route your users through their service.
 **🚩 Declared-but-unused config.** Empty env placeholders for services you never adopted. Harmless
 functionally, but they signal that nobody has audited what this project actually talks to.
 
+**🚩 A generated config file you could not recreate.** `firebase.json`, `amplifyconfiguration.json`,
+`vercel.json`, `wrangler.toml`, and any `*.config.json` a CLI wrote for you. Apply the **recreatability
+test**: *if I delete this file, can I rebuild it from what is in my repository?* If not, it holds state
+that exists only in the vendor's dashboard — an id, a region, a routing rule — and that is lock-in you
+cannot see in code. It is also the class most likely to survive a careful manual removal pass, because
+nothing imports it.
+
+**🚩 A vendor SDK arriving transitively.** Check the lockfile, not just the manifest. A dependency you
+never chose is still a dependency, and you cannot remove it by editing your own `package.json`.
+
 ## Part 3 — Guardrails that make it hard to re-add
 
 Do not rely on vigilance. Encode it.
@@ -178,11 +269,26 @@ Add a CI job that builds and runs the test suite with **no network and no vendor
 passes, contributors can work during a vendor outage. If it fails, you have found runtime coupling
 you did not know about.
 
+### An outbound host allowlist
+
+Stronger than auditing, because it makes adding a host **impossible to merge silently**: enumerate every
+URL literal and fail on any host not in a reviewed allowlist, each with a comment saying why it is
+there. Working script in `references/exit-drills.md`, Drill 4.
+
+Keep that allowlist under review next to the privacy policy. A host in one and not the other means one
+of them is wrong — a compliance problem, not a tidiness one.
+
+### Scheduled exit drills
+
+A score decays; evidence does not. Put the kill drill and the export test on a calendar rather than
+doing them once at adoption. All four drills, with commands, are in `references/exit-drills.md`.
+
 ### An `ADR` or decision log entry per vendor
 
 One short file per adopted vendor recording: what it does, what data it holds, the documented export
-path, the estimated exit cost in hours, and who decided. Reviewing this list annually is how you
-notice that a "small" dependency now owns your identities.
+path, **the date the export was last actually tested**, the estimated exit cost in hours *and money*,
+contract renewal terms, and who decided. Reviewing this list annually is how you notice that a "small"
+dependency now owns your identities.
 
 ## Part 4 — Pre-ship audit
 
@@ -196,6 +302,23 @@ Before a release, and especially before a store submission:
 4. **Does the app still work if the vendor is unreachable?** Test with the vendor's hosts blocked.
 5. **Are there dead vendor hosts left in config?** They will produce unexplainable errors for users
    long after everyone has forgotten the vendor existed.
+
+## Working outside this skill's assumptions
+
+Written for any agent, any stack. The examples lean JavaScript because that is where it was first
+exercised; the method does not depend on it.
+
+- **Detect the toolchain, do not assume it.** The lockfile name identifies the package manager; use that
+  one. Python, Go, Rust, JVM and .NET all have equivalents for every check here — dependency trees,
+  lint plugins, CI config, generated vendor files.
+- **If you cannot run commands,** this still works as a review checklist: read the manifests, lockfile,
+  build config, CI workflows and generated config files, and report what you find.
+- **If you cannot check a surface, say so.** "No lockfile found, so transitive deps were not checked" is
+  a finding. Silence that reads as a pass is the one genuinely harmful output.
+- **Never adopt or remove a vendor on the user's behalf.** This skill produces findings and options. The
+  decision — and anything destructive, contractual or user-facing — belongs to the user.
+- **Do not give legal advice.** Residency, DPAs and controller/processor relationships get surfaced as
+  questions for qualified review, never as conclusions.
 
 ## How to talk to the user about this
 
