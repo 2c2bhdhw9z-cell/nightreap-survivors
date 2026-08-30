@@ -116,12 +116,57 @@ scan "Comments asserting something must not be removed" MED \
 scan "Vendor preview/sandbox hosts (these die silently)" MED \
   'https?://[a-z0-9.-]*(preview|sandbox|staging)[a-z0-9.-]*\.[a-z]{2,}' '*.ts' '*.tsx' '*.json'
 
-scan "Injected badges / watermarks / feedback widgets" MED \
-  'Badge|Watermark|PoweredBy|MadeWith|AgentFeedback' '*.tsx' '*.jsx'
+# Rendered components only, not the words. An earlier version matched a bare `Badge` and produced 45
+# hits in a game that calls its achievements "badges" — all prose, all in comments. Requiring JSX
+# angle-bracket usage of a capitalised component name finds `<VendorBadge />` and ignores paragraphs
+# about badges. Third strike for the same lesson: match the construct, never the vocabulary.
+scan "Injected badge / watermark / feedback components" MED \
+  '<[A-Z][A-Za-z0-9]*(Badge|Watermark|PoweredBy|MadeWith|Feedback|Branding)\b' '*.tsx' '*.jsx' '*.vue' '*.svelte'
 
 if [ -n "$VENDOR" ]; then
   scan "Vendor name in identity fields (bundle id, package, scheme)" MED \
     "(bundleIdentifier|\"package\"|\"scheme\"|applicationId).*($VENDOR)" '*.json'
+fi
+
+# ---- MEDIUM: surfaces a source grep never reaches ------------------------------------------------
+# Each of these was missed by a careful manual pass on a real project, because none of them is source
+# code: state in a dot-directory, a plugin in build config, a deploy step in CI, a generated config
+# file nothing imports, or an SDK arriving as somebody else's dependency.
+
+if [ -n "$VENDOR" ]; then
+  scan "Vendor in the lockfile — may be transitive, i.e. not yours to remove" MED \
+    "$VENDOR" 'package-lock.json' 'yarn.lock' 'pnpm-lock.yaml' 'bun.lock' 'Cargo.lock' 'poetry.lock' 'go.sum'
+
+  scan "Vendor in build tool configuration (plugins and presets hide here)" MED \
+    "$VENDOR" 'vite.config.*' 'webpack.config.*' 'next.config.*' 'rollup.config.*' \
+    'babel.config.*' 'metro.config.*' 'nuxt.config.*' 'astro.config.*' 'svelte.config.*'
+
+  scan "Vendor in CI/CD configuration" MED \
+    "$VENDOR" '*.yml' '*.yaml' 'Jenkinsfile'
+fi
+
+# Hidden vendor state directories. Nothing imports these, so no source grep finds them.
+hidden=$(find "$ROOT" -maxdepth 3 \
+  \( -name '.firebase*' -o -name '.amplify*' -o -name '.vercel*' -o -name '.netlify*' \
+     -o -name '.wrangler*' -o -name '.sst*' -o -name '.serverless*' -o -name '.supabase*' \) \
+  -not -path '*/node_modules/*' 2>/dev/null | head -8 || true)
+if [ -n "$hidden" ]; then
+  printf '\n[MED] Vendor-generated state directories\n'
+  printf '%s\n' "$hidden" | sed 's/^/    /'
+  med=$((med + 1))
+fi
+
+# Generated config. The test that matters: could you recreate this from the repo alone?
+generated=$(find "$ROOT" -maxdepth 3 \
+  \( -name 'firebase.json' -o -name 'amplifyconfiguration.json' -o -name 'vercel.json' \
+     -o -name 'wrangler.toml' -o -name 'netlify.toml' -o -name 'now.json' \
+     -o -name '*.config.json' \) \
+  -not -path '*/node_modules/*' 2>/dev/null | head -8 || true)
+if [ -n "$generated" ]; then
+  printf '\n[MED] Generated config — apply the recreatability test to each\n'
+  printf '      If deleting it means you cannot rebuild it from this repo, it holds vendor-only state.\n'
+  printf '%s\n' "$generated" | sed 's/^/    /'
+  med=$((med + 1))
 fi
 
 # ---- MEDIUM: declared-but-unread env ------------------------------------------------------------
@@ -147,15 +192,21 @@ hr
 printf '\nSummary: %s high, %s medium\n\n' "$high" "$med"
 
 cat <<'EOF'
-The question no script can answer for you:
+This script only reads files. It cannot see the three things that usually decide the real exit cost:
+
+  1. MONEY.     Egress fees, minimum commitments, auto-renewal. A flawless export API is worthless
+                if moving your data costs more than your runway.
+  2. IDENTITY.  If the vendor is down right now, can anyone log in? Including your admins?
+  3. DATA.      Has the export ever actually been RUN, and loaded somewhere that is not the vendor?
+                A documented export is a promise; a tested one is a capability.
+
+And the question no tool can answer:
 
   If this vendor shut down tomorrow with no notice, what would it take to keep shipping?
 
-Write the answer down. If nobody can answer it, that is the finding. Then check the two things
-that decide the real exit cost:
+Write the answer down. If nobody can answer it, that is the finding.
 
-  1. Can you build and test this project with NO network and NO vendor account?
-  2. Who owns the user identities — you, or them?
+Drills that turn these from opinions into evidence: references/exit-drills.md
 EOF
 
 [ "$high" -gt 0 ] && exit 1

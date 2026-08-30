@@ -33,10 +33,36 @@ structural when it is merely defended.
    ```
    Write down what *already* fails. You need this, or you will be blamed for pre-existing failures —
    and you will not be able to tell your own regressions from the project's existing state.
+
+   **A baseline is only valid for the branch it was measured on.** Measure it yourself on the branch
+   you are working from. Never inherit one from a document; the document may have been written from a
+   different branch, and then you will spend hours on a failure that was never yours.
 3. **Identify what is currently running.** If a deployed preview, published build, or cached client
    exists, establish whether your changes can reach it. Usually they cannot — a published artifact is
    a snapshot. Say so plainly, because a user mid-project is often frightened of losing the one
    working thing they have.
+
+### STOP — three questions that can make removal destructive
+
+Ask these *before* deleting anything. Each one is a case where correct-looking code removal causes
+real, sometimes unrecoverable damage.
+
+**Does the vendor hold data you need?** If user records, uploads, analytics history or configuration
+live in the vendor's system, **exporting that data is a prerequisite project, not part of this one.**
+Removing the integration first can strand the data behind an account you then have no reason to keep
+paying for. Tell the user plainly: *"there is data in their system; getting it out comes first, and it
+is separate work."*
+
+**Does the vendor serve live traffic?** If they host the frontend, terminate TLS, or run the API
+gateway, then deleting the vendor project **before** repointing DNS causes a hard outage that lasts
+until propagation. See "Reclaim the edge" below.
+
+**Do users authenticate through the vendor?** Then removal is a user-facing migration, not a
+refactor. Every user's identity may need re-minting. Scope it as its own project — see
+`references/discovery-checklist.md` §8.
+
+If the answer to any of these is yes, **say so and stop.** Removing the code is the last step of that
+larger job, not the first.
 
 ## Phase 1 — Discovery
 
@@ -180,6 +206,47 @@ making the user's setting cosmetic and any privacy declaration built on it false
 actually needs before rebuilding. Often the answer is "nothing" — the wrapper served the platform's
 needs, not the product's.
 
+## Phase 3b — Credentials, and the edge
+
+Two steps that are not code changes, and are the ones most often skipped.
+
+### Revoke, do not merely delete
+
+**Removing a key from `.env` does not invalidate it.** The credential remains live at the vendor until
+somebody revokes it there. And if it was *ever committed*, it is permanently in the history of every
+clone, fork, CI cache and mirror.
+
+```bash
+# Was a credential ever committed?
+git log --all --diff-filter=AM --name-only -- '*.env*' | head
+git log -p --all -S 'VENDOR_API_KEY' --oneline 2>/dev/null | head
+```
+
+Report every credential you find and **who must revoke it**. You usually cannot do it yourself, since
+it requires the vendor's dashboard.
+
+> **Never rewrite git history unilaterally.** Tools like `git filter-repo` and `filter-branch` are
+> destructive: they change every commit hash, break every open branch and PR, and require force-pushing
+> over shared history. If secrets are in history, **explain the tradeoff and let the user decide.** For
+> a private repo, revoking the credential is usually sufficient and far safer. Scrubbing history is for
+> the case where the repository is or will become public — and even then it is the user's call, not
+> yours.
+
+### Reclaim the edge before you delete anything
+
+If the vendor hosted the frontend, managed DNS, terminated TLS, or ran an API gateway, the order is
+**not** negotiable:
+
+1. Stand up the replacement and verify it serves correctly on a temporary hostname.
+2. Repoint DNS — CNAME, A, ALIAS — at the new infrastructure.
+3. Wait for propagation and confirm from an independent network.
+4. Verify TLS is valid on the new host, since the certificate may have been vendor-managed.
+5. **Only then** delete the vendor project.
+
+Delete first and the domain hard-fails until DNS propagates, which can be hours. Also re-register
+anything that lives in *other people's* dashboards: third-party webhook URLs and OAuth redirect URIs
+pointing at vendor hosts.
+
 ## Phase 4 — Verification gates
 
 Everything must be at least as green as your Phase 0 baseline.
@@ -192,7 +259,7 @@ build         — the real production build, per target
 runtime smoke — start it; confirm the app boots and a core action works
 ```
 
-**Then verify the removal actually happened:**
+**Then verify the removal actually happened — statically:**
 
 ```bash
 # Only comments should remain
@@ -202,6 +269,27 @@ grep -rniE 'vendorname|@vendor/' --include='*.ts' --include='*.tsx' --include='*
 
 Explanatory comments that say "this used to come from X, here is why it does not now" are correct to
 leave. They stop someone re-adding it.
+
+Then run the exhaustive sweep in `references/discovery-checklist.md`, because source greps miss
+lockfiles, hidden directories, build config, CI workflows and generated config files.
+
+**And then verify it empirically, because grep cannot prove a runtime call is gone.** A removed import
+does not guarantee a removed request: a transitive dependency, a build plugin, or an injected script
+can still phone home. Watch the actual traffic during a normal user flow:
+
+| Platform | How |
+|---|---|
+| Web | DevTools → Network, filter by the vendor's domain. Reload and exercise a real flow. |
+| Node / server | `NODE_DEBUG=http,net`, or a local proxy via `HTTP_PROXY`/`HTTPS_PROXY` |
+| Mobile | Proxy the device (mitmproxy, Charles) with the CA trusted — fiddly but decisive |
+| Any | Block the vendor's hosts at DNS or firewall level and confirm nothing breaks or retries |
+
+The last row is the cheapest and often the best: **if blocking the vendor changes nothing, the coupling
+is genuinely gone.** If something hangs, retries, or logs an error, you have found a call site the grep
+missed.
+
+State which method you used. "No vendor imports remain" and "the app makes no vendor requests" are
+different claims, and only the second one is what the user actually wants.
 
 ## Phase 5 — Report honestly
 
@@ -232,8 +320,44 @@ inside the de-vendoring work.
 - **Do not claim a property you have not measured.** If you remove a beacon, do not say "the app no
   longer makes network calls" unless you checked every call site.
 
+## Working outside this skill's assumptions
+
+Written to be usable by any agent, in any stack. The examples lean JavaScript because that is where it
+was first exercised; the *method* does not.
+
+- **Do not assume a package manager.** Detect it — a lockfile name tells you (`package-lock.json` npm,
+  `yarn.lock` yarn, `pnpm-lock.yaml` pnpm, `bun.lock`/`bun.lockb` bun) — then use that one. Never run
+  `npm install` in a bun project; it will produce a second lockfile and a different tree.
+- **Translate, do not skip.** Every phase has an equivalent elsewhere: Python has
+  `pyproject.toml`/`requirements.txt` and `pip-audit`; Go has `go.mod` and `go mod why`; Rust has
+  `Cargo.toml` and `cargo tree`; JVM has Gradle/Maven dependency trees. Vendor-enforcing lint rules
+  appear as custom checkstyle/ruff/golangci rules.
+- **If a tool is unavailable, say so.** "I could not check the lockfile because no lockfile was found"
+  is useful. Silently skipping a surface and reporting success is not.
+- **If you cannot run commands at all,** the skill still works as a review checklist — read the
+  manifests, build config, CI workflows and generated config files, and report what you find.
+- **Never leave the repository dirtier than you found it.** No stray branches, no half-applied edits,
+  no deleted protection manifests.
+
+### Destructive operations — always ask first
+
+Never do any of these unilaterally, even when clearly correct:
+
+- rewriting git history (`filter-repo`, `filter-branch`, force-push)
+- deleting a vendor project, account or bucket
+- rotating or revoking a credential that something in production may still use
+- running a database migration
+- changing DNS
+
+For each: explain what it does, what breaks, and what the safer alternative is. Then let the user
+decide. Your job is to make the decision easy, not to make it for them.
+
 ## Deeper material
 
-`references/case-study.md` — a complete worked example: what was found, what enforced it, the exact
-replacements, and the two mistakes made along the way. Read it when a project's coupling looks
-structural and you want to see how one that looked structural turned out not to be.
+- **`references/case-study.md`** — a complete worked example: what was found, what enforced it, the
+  exact replacements, and the two mistakes made along the way. Read it when a project's coupling looks
+  structural and you want to see how one that looked structural turned out not to be.
+- **`references/discovery-checklist.md`** — the exhaustive sweep: lockfiles and transitive deps, hidden
+  vendor directories, generated config and the recreatability test, build tool config, CI workflows,
+  committed secrets, client-side storage, database schema coupling, and DNS. Use it when the quick
+  sweep finds something and you need to be certain you found everything.
