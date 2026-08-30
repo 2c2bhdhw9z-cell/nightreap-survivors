@@ -50,11 +50,21 @@ A mobile-first survivors-style roguelike. Bun workspaces + Turborepo.
 ```sh
 bun install
 bun run lint          # konsistent conventions + oxlint. MUST be clean.
-bun run typecheck     # all packages. Currently 4/4 green.
+bun run typecheck     # all packages
 bun run test:game     # 37 headless engine suites
 bun run test:e2e      # full co-op stack over a real socket
 bun run build:web
 ```
+
+**Correction to an earlier version of this document.** It claimed `typecheck` was "4/4 green". That was
+true on the branch it was written from and **false on `main`**, where `packages/web` declared its own
+`vite` and TypeScript therefore saw two incompatible copies of every Vite type. If you are reading this
+before that fix lands, `typecheck` fails on `@template/web` with
+`Plugin<any> is not assignable to PluginOption` and it is **not your regression** — verify against a
+clean `main` before spending time on it.
+
+The lesson, which is the reason step 1 of your mission is to capture a baseline: **a baseline is only
+valid for the branch it was measured on.** Measure it yourself; do not inherit it from prose.
 
 **`test:game` has exactly ONE known failure:**
 
