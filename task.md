@@ -3774,3 +3774,38 @@ What changed:
 Nothing currently reachable in play is altered: the safety ceilings sit far above anything the game
 can produce today. Checked: lint clean, typecheck 4/4, and the engine suites pass apart from the one
 known, pre-existing replay-speed test.
+
+## The co-op "same game?" check no longer cries wolf (handoff item 3)
+
+Every couple of seconds each player computes one small number that fingerprints the whole world, and
+co-op compares those numbers to decide whether two phones are still playing the same game. The same
+number is what the anti-cheat re-computes server-side to decide whether a submitted run is honest.
+
+The problem: the old fingerprint walked the enemies, projectiles and pickups in the order their
+memory slots happened to be handed out, not in any fixed order. Two phones can agree completely on
+what is on screen and still have consumed their slots in a different sequence — especially after a
+resync, and more and more as a run gets longer. When that happened the two fingerprints disagreed
+even though nothing was actually wrong, so the game reported a "desync" that wasn't one. In Endless,
+which runs forever, that false alarm becomes routine. A desync report needs to mean exactly one
+thing: the worlds really diverged.
+
+What changed:
+- Each enemy, projectile and pickup now gets its own little fingerprint that folds in its identity
+  (its slot) alongside its position and health, and those per-entity fingerprints are added together
+  — and addition doesn't care what order you add in. So two phones that agree on the world now
+  produce the same number no matter what order their slots were handed out. The scenery (props) was
+  already done this way and its reasoning is matched. Nothing else about the fingerprint changed.
+- This adds only a few whole-number operations per entity and allocates nothing, which matters
+  because it runs every tick and this engine forbids creating anything mid-tick. Measured at a full
+  crowd of 2048 enemies the entire fingerprint takes about 31 microseconds, which is under 0.2% of
+  the time budget for one frame — no measurable cost.
+- Two new tests prove it: one builds the exact same world twice by handing out slots in a different
+  order and confirms the fingerprint is now identical (this test fails against the old code, which is
+  how we know the fix bites); another moves a single enemy and confirms the fingerprint still changes,
+  so real differences are not being hidden.
+
+Confirmed there is only one place that fingerprints entities, shared by co-op, replay and anti-cheat,
+so both sides of a session automatically agree. Checked: lint clean, typecheck 4/4, the engine suites
+pass apart from the one known pre-existing replay-speed test (the replay tests that compare
+recorded-vs-replayed fingerprints still pass), and the full co-op stack over a real socket still
+agrees on every tick.
