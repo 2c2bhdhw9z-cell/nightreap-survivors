@@ -62,8 +62,15 @@ import {
   setSender,
 } from "../../mobile/game/net/routing";
 
-/** Port the relay listens on. Web dev is 4200 and mobile is 4300, so this takes 4400. */
-const PORT = Number(Bun.env.RELAY_PORT ?? 4400);
+/**
+ * Port the relay listens on. Web dev is 4200 and mobile is 4300, so this takes 4400.
+ *
+ * `PORT` is what a managed host like Railway injects at runtime and expects the process to bind, so
+ * it takes precedence — bind anything else there and the deploy looks up but is unreachable.
+ * `RELAY_PORT` is the local-dev override for when you want to move the relay off 4400, and 4400 is the
+ * default when neither is set.
+ */
+const PORT = Number(Bun.env.PORT ?? Bun.env.RELAY_PORT ?? 4400);
 
 /** How often held seats and dead rooms are swept. Fast enough that a 45s grace expires on time. */
 const SWEEP_INTERVAL_MS = 5_000;
