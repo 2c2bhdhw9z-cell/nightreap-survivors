@@ -14,6 +14,60 @@ bun install
 You do **not** need a `.env`, a database, or the API server to play. The save lives on the device
 (AsyncStorage). The server is only used for cloud backup, leaderboards and anti-cheat reporting.
 
+## On a phone with NO computer — Expo Go + EAS Update (the phone-only path)
+
+This is the path you use when you do not have a PC or Mac at all. It publishes an over-the-air (OTA)
+update to Expo's servers; the phone downloads it the next time you open the project in Expo Go. No
+dev server, no computer, no same-Wi-Fi requirement, and no QR code.
+
+The project is published to EAS as `nightreap-survivors-preview`, owned by the Expo account
+`fuckyouniggerbitch`.
+
+### Publishing an update
+
+Run from `packages/mobile`:
+
+```sh
+EXPO_TOKEN=<token> bunx eas-cli update --branch preview --message "what changed"
+```
+
+Replace `<token>` with an Expo access token (see below). Replace `"what changed"` with a short
+description of the update.
+
+### Creating the token
+
+The token **must** be an access token created on the account that **owns** the project
+(`fuckyouniggerbitch`), **not** the separate team account `fuckyouniggerbitchs-team`. A token from
+the wrong account fails with `Entity not authorized`.
+
+To create one: go to expo.dev, click Access tokens, make sure the account switcher at the top shows
+`fuckyouniggerbitch`, then click "Add robot" with the Admin role.
+
+### Pulling the update on your phone
+
+After publishing:
+
+1. **Force-close** Expo Go on your phone (swipe it away from the app switcher).
+2. Reopen Expo Go.
+3. Tap the project under **Projects** to pull the new update.
+
+### Two invariants you must not change casually
+
+These are cross-referenced in `plan.md` and breaking either one disconnects the phone from updates:
+
+- **`runtimeVersion`** in `app.json` is set to `{ "policy": "sdkVersion" }`. This produces the
+  runtime version string `exposdk:54.0.0`, which is the value Expo Go matches against. Do not
+  hard-code a different value or change the policy.
+- **The `preview` channel** must stay connected to the **`preview` branch**. Publishing to a branch
+  that has no channel pointed at it returns a 404 to the phone and the update never arrives.
+
+### Where this is documented further
+
+`plan.md`'s "HOW YOU RUN IT -- FOUR WAYS" table is the source of record and lists this as the main
+day-to-day path.
+
+---
+
 ## On a phone — Expo Go (the best path)
 
 This is what the renderer was built for: `expo-gl` gets a real OpenGL ES context on device.
