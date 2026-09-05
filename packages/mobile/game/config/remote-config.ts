@@ -103,7 +103,7 @@ export interface FlagSpec {
 export const FLAG_SPECS: readonly FlagSpec[] = [
   { id: FLAG.DEV_MENU, fallback: false },
   { id: FLAG.CHAOS_SANDBOX, fallback: false },
-  { id: FLAG.COOP, fallback: false },
+  { id: FLAG.COOP, fallback: true }, // TEMP test default: co-op reachable with no remote-config server. Return to false / server-controlled once that infra exists.
   { id: FLAG.COOP_MATCHMAKING, fallback: false },
   { id: FLAG.LADDER_POSTING, fallback: true },
   { id: FLAG.LADDER_PAYOUTS, fallback: false },
