@@ -231,14 +231,6 @@ export default function Title() {
           <Chip value={ready ? String(save.runsCompleted) : "—"} icon="skull" tint={Palette.bone} align="right" />
         </View>
 
-        {/* ── SMOKE TEST: remove me ── Temporary hot-reload marker. If the text below changes on your
-            phone after an edit, Expo Go is receiving new code. The literal build tag proves it is the
-            fresh bundle and not a stale cache. Delete this block (and the smokeBanner/smokeText styles). */}
-        <View style={styles.smokeBanner} pointerEvents="none">
-          <Text style={styles.smokeText}>✅ HOT RELOAD WORKS · BUILD 2024-06-13 / v1</Text>
-        </View>
-        {/* ── end smoke test ── */}
-
         <View style={styles.buttons}>
           <PlayButton onPress={() => router.push("/stages")} />
           <View style={styles.row}>
@@ -318,19 +310,4 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", gap: Grid * 1.5 },
   half: { flex: 1 },
   footer: { paddingVertical: Grid * 1.25 },
-
-  /* ── SMOKE TEST: remove me ── styles for the temporary hot-reload banner ── */
-  smokeBanner: {
-    position: "absolute",
-    top: Grid * 5,
-    alignSelf: "center",
-    backgroundColor: "#39FF14",
-    borderWidth: 2,
-    borderColor: "#0A0A0A",
-    paddingVertical: Grid * 0.75,
-    paddingHorizontal: Grid * 1.5,
-    borderRadius: 6,
-  },
-  smokeText: { color: "#0A0A0A", fontSize: 14, fontWeight: "900", letterSpacing: 1 },
-  /* ── end smoke test ── */
 });
