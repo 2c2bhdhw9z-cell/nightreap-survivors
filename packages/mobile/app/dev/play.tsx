@@ -599,6 +599,12 @@ export default function PlayScreen() {
           // No buttons on this screen — movement is the only input, exactly as the solo path has none.
           netRun.setLocalInput(s.x, s.y, 0);
           netRun.step();
+          // Step the local player's drawn glide once here, on the fixed-loop's steady 60Hz clock —
+          // NOT once per authoritative tick applied inside step(). A guest's pump() applies a bursty
+          // count of confirmed ticks (zero on one frame, two or three on the next); gliding the sprite
+          // on that clock and then reading it back by the render `alpha` is what left the local player
+          // shimmering while the crowd, sampled here on this same clock, stayed smooth. Display-only.
+          netRun.advanceLocalView();
         } else {
           run.setStick(0, s.x, s.y);
           run.tick();

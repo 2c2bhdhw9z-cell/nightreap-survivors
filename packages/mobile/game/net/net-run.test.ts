@@ -102,11 +102,17 @@ function makePair(conditions: NetConditions, netSeed = 0x5eed): Pair {
   return { net, host, guest };
 }
 
-/** Step the whole pair forward one tick in the real on-phone order: input, host seals, wire, guest applies. */
+/**
+ * Step the whole pair forward one tick in the real on-phone order: input, host seals, wire, guest
+ * applies, guest advances its drawn glide. The last step matters: `NetRun.step` now only refreshes the
+ * dead-reckoned target (on the bursty authoritative clock), and the drawn position moves in
+ * `advanceLocalView` on the render clock — the fixed loop calls both once per tick, and so does this.
+ */
 function stepPair(pair: Pair): void {
   pair.host.step();
   pair.net.pump();
   pair.guest.step();
+  pair.guest.advanceLocalView();
 }
 
 function firstSplit(host: NetRun, guest: NetRun): number {

@@ -160,7 +160,12 @@ section("1. Typing a room code off a friend's screen");
   check("spaces and dashes are stripped", normalizeCode("AB C-2 34") === "ABC234");
   check("O is repaired to Q", normalizeCode("OBC234").charAt(0) === "Q");
   check("zero is repaired too", normalizeCode("0BC234").charAt(0) === "Q");
-  check("I and 1 and L all become J", normalizeCode("I1L234") === "JJJ234");
+  check("I and 1 both become J", normalizeCode("I1C234") === "JJC234");
+  // L is a LEGAL alphabet character — a real code can contain it (the host showed L3KND3) — so it must
+  // survive verbatim. Repairing L to J rewrote valid codes into codes no room had, which is exactly the
+  // "no party with that code" a guest hit typing a code correctly off the host's screen.
+  check("L is a real code character and is kept, not repaired", normalizeCode("L3KND3") === "L3KND3");
+  check("L does not collide with J", normalizeCode("LBC234") === "LBC234");
   // S and 5 are both missing from the alphabet, so there is no honest repair — they are dropped, and
   // the code then fails the length check rather than silently becoming a different real code.
   check("S is dropped rather than guessed at", normalizeCode("SABC234") === "ABC234");

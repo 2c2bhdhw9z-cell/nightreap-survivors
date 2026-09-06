@@ -71,6 +71,14 @@ export function createAdmission(): Admission {
  * look like them. Repairing the pairs that have exactly one sane target is worth it: the alternative is
  * telling someone their code is wrong when they read it correctly off a low-resolution screenshot.
  *
+ * ONLY CHARACTERS THE ALPHABET LEAVES OUT MAY BE REPAIRED.
+ * A repair rewrites what the player typed into a different character, so it is only ever safe for a
+ * character that could NOT have been in the real code. `I`, `1`, `O` and `0` are absent from the
+ * alphabet, so a typed `I`/`1` can only have meant `J` and a typed `O`/`0` can only have meant `Q`.
+ * `L`, on the other hand, IS in the alphabet — a real code can and does contain `L` (e.g. `L3KND3`) —
+ * so remapping `L` to `J` here rewrote valid codes into codes no room had, and the host's room came
+ * back "no such room" even though the guest read the code correctly. `L` therefore maps to itself.
+ *
  * S and 5 are deliberately NOT repaired. Both are absent from the alphabet, so there is nothing to map
  * them onto — a guess here would turn a typo into a different valid-looking code, which is worse than
  * refusing it. They are simply dropped, and the code then fails the length check.
@@ -83,7 +91,7 @@ export function normalizeCode(raw: string): string {
     else if (ch === "0") ch = "Q";
     else if (ch === "I") ch = "J";
     else if (ch === "1") ch = "J";
-    else if (ch === "L") ch = "J";
+    // NOTE: `L` is a legal alphabet character and must NOT be repaired — see the header.
     if (ROOM_CODE_ALPHABET.indexOf(ch) >= 0) out += ch;
   }
   return out;

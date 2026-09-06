@@ -35,9 +35,6 @@ import { STAT, STAT_SCALE } from "../sim/stats";
 import { GuestSession, HostSession, type Link } from "./session";
 import { LocalView } from "./local-view";
 
-/** Sim rate, matching the simulation. Used to turn a move-speed stat into px-per-second for prediction. */
-const TICK_SECONDS = 1 / 60;
-
 export interface NetRunOptions {
   /** The world. Already begun on the launch seed/stage/playerCount, exactly as the host's is. */
   run: Run;
@@ -153,6 +150,20 @@ export class NetRun {
       for (let t = from; t <= send; t++) view.record(t, x, y);
     }
     g.setLocalInput(x, y, buttons);
+  }
+
+  /**
+   * Step the local player's drawn glide one render tick toward its dead-reckoned target.
+   *
+   * Call this once per fixed-loop tick — the render clock — regardless of how many authoritative ticks
+   * `step` applied this frame. That is the whole point: the dead-reckoned *target* is refreshed on the
+   * bursty authoritative clock inside `step`, but the drawn sprite must move on the same steady 60Hz
+   * cadence and `alpha` the camera and the crowd interpolate with, or the local player lurches on burst
+   * frames and freezes on starved ones while everything else glides. No-op on a host and solo, which
+   * have no `LocalView` and draw the simulation exactly.
+   */
+  advanceLocalView(): void {
+    this.localView?.advance();
   }
 
   /** Ask the host or guest to answer an open card screen. */
