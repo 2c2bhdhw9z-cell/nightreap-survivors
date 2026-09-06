@@ -882,7 +882,7 @@ export default function PlayScreen() {
 
             readRunInto(
               run,
-              0,
+              localSlot,
               run.stats.get(STAT.maxHealth) / STAT_SCALE,
               connected,
               characterIds,
@@ -961,15 +961,15 @@ export default function PlayScreen() {
           frameMsCount = 0;
           setReadout({
             ticks: run.runTicks,
-            level: run.prog.level,
-            xpFraction: run.prog.barFraction,
-            health: run.players.health[0],
+            level: run.progFor(localSlot).level,
+            xpFraction: run.progFor(localSlot).barFraction,
+            health: run.players.health[localSlot],
             maxHealth: run.stats.get(STAT.maxHealth) / STAT_SCALE,
             enemies: run.enemies.count,
             projectiles: run.projectiles.count,
             gems: run.pickups.pool.count,
             kills: run.kills,
-            gold: run.prog.gold,
+            gold: run.progFor(localSlot).gold,
             damage: run.damageDealt,
             fps: avg > 0 ? 1000 / avg : 0,
             droppedTicks: loop.stats.droppedTicks,

@@ -80,7 +80,7 @@ export interface HudInput {
   /** Which seat is this device. The local badge is drawn brighter and never reordered. */
   localSlot: number;
 
-  /** Shared party level and progress toward the next one. */
+  /** The local seat's own level and progress toward the next one — each phone banks its own. */
   level: number;
   xp: number;
   xpToNext: number;
@@ -499,11 +499,23 @@ export function createHudInput(): HudInput {
  * the simulation. Everything below is readable and nothing is writable, so no line in this file can
  * change a fight, and the tests can hand over a hand-written object instead of starting a run.
  */
+/** One seat's progression, as the HUD reads it: level, experience toward the next, pending picks, banked gold. */
+export interface ProgLike {
+  readonly level: number;
+  readonly xp: number;
+  readonly xpToNext: number;
+  readonly pending: number;
+  readonly gold: number;
+}
+
 export interface RunLike {
   readonly runTicks: number;
   readonly timeLimitTicks: number;
   readonly kills: number;
-  readonly prog: { readonly level: number; readonly xp: number; readonly xpToNext: number; readonly pending: number; readonly gold: number };
+  /** Slot 0's progression. Kept for the solo call sites that never left slot 0. */
+  readonly prog: ProgLike;
+  /** One seat's progression. `progFor(0) === prog`, so solo is byte-identical. */
+  progFor(player: number): ProgLike;
   readonly players: {
     readonly count: number;
     readonly health: Float32Array;
@@ -534,14 +546,18 @@ export function readRunInto(
 ): HudInput {
   out.playerCount = clampCount(run.players.count);
   out.localSlot = clampSeat(localSlot, out.playerCount);
-  out.level = run.prog.level;
-  out.xp = run.prog.xp;
-  out.xpToNext = run.prog.xpToNext;
-  out.pendingLevels = run.prog.pending;
+  // Level, experience, pending picks and gold are per-seat: each phone banks its own. Reading the
+  // local seat's progression here is the whole fix — the shared `run.prog` (slot 0) let a guest's
+  // own experience advance the host's visible bar. `progFor(0) === prog`, so solo is unchanged.
+  const prog = run.progFor(out.localSlot);
+  out.level = prog.level;
+  out.xp = prog.xp;
+  out.xpToNext = prog.xpToNext;
+  out.pendingLevels = prog.pending;
   out.runTicks = run.runTicks;
   out.timeLimitTicks = run.timeLimitTicks;
   out.reaperAtTicks = reaperAtTicks;
-  out.gold = run.prog.gold;
+  out.gold = prog.gold;
   out.kills = run.kills;
   out.downTicksTotal = DOWN_TICKS_TOTAL;
   out.reviveTicksTotal = REVIVE_TICKS_TOTAL;
