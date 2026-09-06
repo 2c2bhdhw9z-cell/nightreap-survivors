@@ -89,6 +89,9 @@ import { MOVE } from "@/game/sim/projectiles";
 import { MAX_PLAYERS, PLAYER_STATE } from "@/game/sim/player";
 import { RUN_END, formatRunTime } from "@/game/sim/results";
 import { describeHandoff, runHandoff, runIdOf } from "@/game/save/handoff";
+import { coopHandoff, type CoopLaunch } from "@/game/net/coop-handoff";
+import { NetRun, netRunFromLaunch } from "@/game/net/net-run";
+import { CARD_ACTION } from "@/game/net/messages";
 import { powerUpLoadout } from "@/game/shop/loadout";
 import {
   CHARACTER_GROWTH_MODIFIERS,
@@ -328,6 +331,14 @@ export default function PlayScreen() {
 
   // Live handles the render loop reads without being torn down and rebuilt by a re-render.
   const runRef = useRef<Run | null>(null);
+  // The co-op launch, taken from the hand-off exactly once at mount. Null on a solo run, and null on a
+  // second mount, so a remount can never re-consume a stale live socket. When it is set, the run is
+  // driven through the net session below instead of ticked locally; when it is null, this screen is the
+  // same purely-local run it has always been.
+  const coopRef = useRef<CoopLaunch | null | undefined>(undefined);
+  if (coopRef.current === undefined) coopRef.current = coopHandoff.take();
+  // The net run driver, live only on a co-op run. Built in `startRun`.
+  const netRunRef = useRef<NetRun | null>(null);
   const rafRef = useRef<number | null>(null);
   /** Current stick vector, -1..1, already deadzoned. Read once per sim tick. */
   const stickRef = useRef<StickState>({ x: 0, y: 0, active: false, originX: 0, originY: 0, knobX: 0, knobY: 0 });
@@ -399,6 +410,10 @@ export default function PlayScreen() {
   useEffect(
     () => () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      // Leaving a co-op run frees the seat for good. The lobby disarmed its own `leave` when it handed
+      // the socket over, so this is the one thing left that will close it — without this, the seat would
+      // be held for the whole grace window and block the party from re-forming.
+      coopRef.current?.connection.leave?.();
     },
     [],
   );
@@ -532,15 +547,33 @@ export default function PlayScreen() {
       runRef.current = run;
       startRun(run);
 
-      renderer.camera.snapTo(run.players.x[0], run.players.y[0]);
+      // The seat this phone is playing. Zero on a solo run and on the host; whatever the relay stamped
+      // for a guest. The camera follows it and the HUD reads it, so a guest sees its own player, not the
+      // host's.
+      const localSlot = coopRef.current?.connection.localSlot ?? 0;
+
+      renderer.camera.snapTo(run.players.x[localSlot], run.players.y[localSlot]);
 
       const loop = new FixedLoop(() => {
         const s = stickRef.current;
-        run.setStick(0, s.x, s.y);
         // Read before the tick, because the counter on screen has to start from what the player had
         // rather than from what they ended the tick with.
         const goldBefore = run.prog.gold;
-        run.tick();
+        const netRun = netRunRef.current;
+        if (netRun !== null) {
+          // Co-op. The stick is fed to the net session, not straight into the run: the session seals it
+          // into the confirmed record (host) or sends it and waits for the host to confirm it (guest),
+          // and `applyRecord` is the only thing that advances the world — the same code path on every
+          // phone, which is what keeps four worlds identical. The borrowed transport is pumped here so
+          // its reconnect timing is driven from the frame loop, since it owns no clock of its own.
+          coopRef.current?.connection.pump?.();
+          // No buttons on this screen — movement is the only input, exactly as the solo path has none.
+          netRun.setLocalInput(s.x, s.y, 0);
+          netRun.step();
+        } else {
+          run.setStick(0, s.x, s.y);
+          run.tick();
+        }
 
         // Cues live for exactly one tick, so a chest has to be noticed here and not in the drawing
         // frame — at thirty frames a second the drawing frame misses half of them.
@@ -816,11 +849,13 @@ export default function PlayScreen() {
         }
 
         // React hears about the card screen the moment it opens, and about everything else four
-        // times a second. Anything faster and the panel starts costing frames.
-        const open = run.cards.open;
+        // times a second. Anything faster and the panel starts costing frames. The LOCAL player's
+        // draw drives the overlay, so a guest sees and answers its own screen, not the host's.
+        const cardSlot = coopRef.current?.connection.localSlot ?? 0;
+        const open = run.cardsFor(cardSlot).open;
         if (open !== cardsWereOpen) {
           cardsWereOpen = open;
-          setCards(open ? readCards(run) : CLOSED_CARDS);
+          setCards(open ? readCards(run, cardSlot) : CLOSED_CARDS);
         }
         // The same treatment for an arcana offer. It has to be edge-triggered like the card screen is:
         // rebuilding this view every frame would hand React three fresh strings sixty times a second
@@ -879,8 +914,17 @@ export default function PlayScreen() {
   const pick = useCallback((index: number) => {
     const run = runRef.current;
     if (!run) return;
-    run.pickCard(index);
-    setCards(run.cards.open ? readCards(run) : CLOSED_CARDS);
+    const netRun = netRunRef.current;
+    const localSlot = coopRef.current?.connection.localSlot ?? 0;
+    if (netRun !== null) {
+      // Co-op: the pick is a request the host confirms into THIS player's card byte, applied on every
+      // phone from the confirmed record. Mutating the local run directly is exactly the bug that made a
+      // guest's pick pop back up a second later — the host's next confirmed record overwrote it.
+      netRun.requestCardAction(CARD_ACTION.PICK_0 + index);
+    } else {
+      run.pickCard(index);
+    }
+    setCards(run.cardsFor(localSlot).open ? readCards(run, localSlot) : CLOSED_CARDS);
   }, []);
 
   const takeArcana = useCallback((index: number) => {
@@ -900,15 +944,27 @@ export default function PlayScreen() {
   const reroll = useCallback(() => {
     const run = runRef.current;
     if (!run) return;
-    run.rerollCards();
-    setCards(readCards(run));
+    const netRun = netRunRef.current;
+    const localSlot = coopRef.current?.connection.localSlot ?? 0;
+    if (netRun !== null) {
+      netRun.requestCardAction(CARD_ACTION.REROLL);
+    } else {
+      run.rerollCards();
+    }
+    setCards(readCards(run, localSlot));
   }, []);
 
   const skip = useCallback(() => {
     const run = runRef.current;
     if (!run) return;
-    run.skipCard();
-    setCards(run.cards.open ? readCards(run) : CLOSED_CARDS);
+    const netRun = netRunRef.current;
+    const localSlot = coopRef.current?.connection.localSlot ?? 0;
+    if (netRun !== null) {
+      netRun.requestCardAction(CARD_ACTION.SKIP);
+    } else {
+      run.skipCard();
+    }
+    setCards(run.cardsFor(localSlot).open ? readCards(run, localSlot) : CLOSED_CARDS);
   }, []);
 
   if (!webglAvailable()) {
@@ -1115,10 +1171,14 @@ export default function PlayScreen() {
     const pick = Math.max(0, characterRef.current);
     characterLoadout(pick, 1, characterModsRef.current);
     const growth = CHARACTER_GROWTH_MODIFIERS[pick] ?? [];
+    // A co-op launch fixes the seed, stage and party size for the whole party — every phone heard the
+    // same three numbers over the launch message, and beginning from anything else would build a
+    // different world than the host is sealing. Solo reads them from the route params exactly as before.
+    const coop = coopRef.current ?? null;
     run.begin({
-      seed: seedRef.current,
-      playerCount: partyRef.current,
-      stageId: stageRef.current,
+      seed: coop !== null ? coop.seed : seedRef.current,
+      playerCount: coop !== null ? Math.max(1, coop.playerCount) : partyRef.current,
+      stageId: coop !== null ? coop.stageId : stageRef.current,
       modifiers: mods,
       powerUps: powerUpsRef.current,
       characters: characterModsRef.current,
@@ -1132,6 +1192,13 @@ export default function PlayScreen() {
       arcanaPool: openArcanaPool(saveRef.current),
       record: false,
     });
+    // Build the net session once, on a co-op run, over the socket the lobby handed us. From here the
+    // frame loop feeds this the local stick and calls `step`; the shared world advances through the
+    // same tested `applyRecord` on every phone. All of the wiring lives in `netRunFromLaunch`, so this
+    // screen stays a caller.
+    if (coop !== null && netRunRef.current === null) {
+      netRunRef.current = netRunFromLaunch(run, Math.max(1, coop.playerCount), coop.connection);
+    }
     stickRef.current.x = 0;
     stickRef.current.y = 0;
     stickRef.current.active = false;
@@ -1188,8 +1255,9 @@ function frameSourceFor(atlas: Atlas): FrameSource {
   };
 }
 
-function readCards(run: Run): CardView {
-  const c = run.cards;
+function readCards(run: Run, player = 0): CardView {
+  // The LOCAL player's draw, so a guest sees and answers its own screen rather than the host's.
+  const c = run.cardsFor(player);
   const names: string[] = [];
   const texts: string[] = [];
   for (let i = 0; i < Math.min(c.offerCount, OFFERS_PER_SCREEN); i++) {

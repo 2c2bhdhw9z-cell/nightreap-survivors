@@ -471,9 +471,19 @@ export type CardAction = (typeof CARD_ACTION)[keyof typeof CARD_ACTION];
 /** `u32 firstTick, u8 count, u8 playerCount`. */
 export const TICK_CONFIRM_HEADER_BYTES = 6;
 
-/** Per confirmed tick: `playerCount` x (i8 x, i8 y, u8 buttons, u8 flags), then `u8 cardAction`. */
+/**
+ * Per confirmed tick: `playerCount` x (i8 x, i8 y, u8 buttons, u8 flags), then `playerCount` x
+ * `u8 cardAction` — one card-action byte PER PLAYER.
+ *
+ * The card byte used to be a single shared value, applied by "whoever asked first" to player 0's
+ * loadout. That is precisely why a guest's upgrade would pop back up a second later: only one pick
+ * per tick was ever confirmed, and it was always spent on the host's build. Widening the record to a
+ * byte per player is what lets every player answer their own screen and have every phone apply all of
+ * them, in slot order, from the same confirmed record. It rides the confirm stream's ordering and
+ * retransmission exactly as the single byte did.
+ */
 export function tickRecordBytes(playerCount: number): number {
-  return playerCount * 4 + 1;
+  return playerCount * 4 + playerCount;
 }
 
 export function tickConfirmBytes(playerCount: number, count: number): number {

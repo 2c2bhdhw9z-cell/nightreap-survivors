@@ -25,7 +25,7 @@
  * than desync in a way that looks like a bug. Bump it on ANY layout change below.
  */
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Hard ceiling on party size. Sized so per-player arrays can be flat and preallocated. */
 export const MAX_PLAYERS = 4;
@@ -191,8 +191,15 @@ export const CORRECTION_MAX_ENTITIES = 64;
  * Retransmission, not acknowledgement. A dropped confirm is repaired by the next one instead of by a
  * round trip, which matters because a round trip at 150ms costs nine ticks and the thing we are
  * repairing is worth four bytes. Sized to keep the message inside MAX_MESSAGE_BYTES at four players.
+ *
+ * Trimmed from 64 to 56 when the confirmed record widened to carry one card-action byte PER PLAYER
+ * (protocol 5): a four-player record is now 20 bytes rather than 17, so the widest window that still
+ * fits one 1200-byte datagram is `floor((1200 - 4 - 6) / 20) = 59`. Fifty-six keeps a little air above
+ * the header math and stays a comfortable multiple of the confirm interval. The steady-state window
+ * below is unchanged, so a healthy connection sends exactly as many copies of each record as before;
+ * only the widest burst a single message can carry moved.
  */
-export const CONFIRM_REDUNDANCY_TICKS = 64;
+export const CONFIRM_REDUNDANCY_TICKS = 56;
 
 /**
  * Ticks of input actually resent in a steady-state confirm.

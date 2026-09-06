@@ -526,6 +526,68 @@ section("cost");
   check("and a deal is far too fast to be felt", elapsed / draws < 0.05, `${Math.round((elapsed * 1000) / draws)}ns per deal`);
 }
 
+/* ---------------------------------------------------------------------------------------------- */
+/* Per-player draws: two seats, two screens, two stores                                             */
+/* ---------------------------------------------------------------------------------------------- */
+
+function testPerPlayerDraws(): void {
+  section("Two players draw onto their own stores from their own streams");
+
+  const stats = new Stats();
+  new ModifierStack().resolve(stats);
+  // Shared per-player stores, as the run holds them.
+  const weapons = new WeaponStore(2);
+  weapons.reset(2);
+  const passives = new PassiveStore(2);
+  passives.reset(2);
+  const stack = new ModifierStack();
+
+  // Two progressions and two card draws, one per seat — exactly the shape `Run` now holds.
+  const prog0 = new Progression();
+  prog0.reset();
+  const prog1 = new Progression();
+  prog1.reset();
+  const cards0 = new CardDraw();
+  cards0.resetRun(stats);
+  const cards1 = new CardDraw();
+  cards1.resetRun(stats);
+  // Different streams per seat, so the two screens are genuinely independent rather than a mirror.
+  const rng0 = new Rng(0x1111);
+  const rng1 = new Rng(0x2222);
+
+  prog0.addXp(1_000_000, stats);
+  prog0.pending = 1;
+  prog1.addXp(1_000_000, stats);
+  prog1.pending = 1;
+
+  const open0 = cards0.beginScreen(0, prog0, weapons, passives, stats, rng0);
+  const open1 = cards1.beginScreen(1, prog1, weapons, passives, stats, rng1);
+  check("both seats opened their own screen", open0 && open1);
+
+  // Player 0 picks its first offer, player 1 picks its first offer. Each grant must land in its own
+  // slot of the store, never the other's — that is the whole fix.
+  const before1 = countWeaponsFor(weapons, 1);
+  cards0.pick(0, 0, weapons, passives, prog0, stats, stack, rng0);
+  check("player 0's pick did not touch player 1's store", countWeaponsFor(weapons, 1) === before1,
+    `p1 weapons ${countWeaponsFor(weapons, 1)}`);
+
+  const before0 = countWeaponsFor(weapons, 0);
+  cards1.pick(0, 1, weapons, passives, prog1, stats, stack, rng1);
+  check("player 1's pick did not touch player 0's store", countWeaponsFor(weapons, 0) === before0,
+    `p0 weapons ${countWeaponsFor(weapons, 0)}`);
+
+  check("player 0 spent its own pick", cards0.picksMade === 1 && !cards0.open);
+  check("player 1 spent its own pick", cards1.picksMade === 1 && !cards1.open);
+}
+
+function countWeaponsFor(weapons: WeaponStore, player: number): number {
+  let n = 0;
+  for (let i = 0; i < 6; i++) if (weapons.typeIndex[player * 6 + i] >= 0) n++;
+  return n;
+}
+
+testPerPlayerDraws();
+
 console.log(`\n${failures === 0 ? "PASS" : `FAIL — ${failures} check${failures === 1 ? "" : "s"}`}`);
 
 if (failures > 0) {

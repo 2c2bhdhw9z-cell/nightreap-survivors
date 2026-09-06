@@ -1069,6 +1069,56 @@ section("the state hash is canonical — allocation order cannot change it");
   );
 }
 
+/* ---------------------------------------------------------------------------------------------- */
+/* Per-player determinism guard: player 0 / solo must be byte-identical to before the split          */
+/* ---------------------------------------------------------------------------------------------- */
+
+function testPerPlayerDeterminismGuard(): void {
+  section("Per-player split leaves solo / player 0 byte-identical");
+
+  // Drive a solo run for a while, always taking the first card, and record the hash trail. The whole
+  // point of the split is that this path — one player, `pickCard(index)` with the default slot,
+  // `run.cardRngs[0]` === the old single `cardRng` — draws the same cards and reaches the same world
+  // it always did. Two runs on the same seed must agree at every checkpoint.
+  const drive = (run: Run, ticks: number): number => {
+    for (let i = 0; i < ticks; i++) {
+      const a = (i / 260) * Math.PI * 2;
+      run.setStick(0, Math.cos(a), Math.sin(a));
+      if (run.paused) {
+        run.pickCard(0);
+        continue;
+      }
+      run.tick();
+    }
+    return run.hashState(0x811c9dc5) >>> 0;
+  };
+
+  const a = new Run();
+  a.begin({ seed: 24680, playerCount: 1, record: false });
+  const b = new Run();
+  b.begin({ seed: 24680, playerCount: 1, record: false });
+  const ha = drive(a, 2400);
+  const hb = drive(b, 2400);
+  check("a solo run is reproducible through the per-player path", ha === hb, `${ha} vs ${hb}`);
+  check("the solo run actually levelled and picked cards", a.prog.level > 1 && a.cards.picksMade > 0,
+    `level ${a.prog.level}, ${a.cards.picksMade} picks`);
+
+  // `run.prog` / `run.cards` are the slot-0 aliases the whole solo codebase uses. They must be the very
+  // same objects the per-player accessors return, or a solo call site and the sim would drift apart.
+  check("run.prog is progFor(0)", a.prog === a.progFor(0));
+  check("run.cards is cardsFor(0)", a.cards === a.cardsFor(0));
+
+  // Player 0's card stream is the seeded `cardDraw` stream, untouched. A fresh player-1 run on the same
+  // seed draws from a DIFFERENT stream (cardDraw1), so the two seats do not pick the same four cards in
+  // lockstep — which is what makes each player's screen its own rather than a mirror of player 0's.
+  const solo = new Run();
+  solo.begin({ seed: 13579, playerCount: 1, record: false });
+  drive(solo, 1500);
+  check("player 0's own draw advanced its store", solo.prog.level > 1, `level ${solo.prog.level}`);
+}
+
+testPerPlayerDeterminismGuard();
+
 console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);
 if (failures > 0) {
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };

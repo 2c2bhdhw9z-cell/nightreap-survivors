@@ -28,7 +28,7 @@
 import { NULL_HANDLE, EntityPool, POOL_BUDGETS } from '../core/pool';
 import type { Rng } from '../core/rng';
 import type { PlayerStore } from './player';
-import { PLAYER_RADIUS } from './player';
+import { MAX_PLAYERS, PLAYER_RADIUS } from './player';
 import type { Stats } from './stats';
 import { STAT, STAT_SCALE } from './stats';
 
@@ -190,6 +190,16 @@ export class PickupStore {
    */
   xpBanked = 0;
   /**
+   * The same tick totals, split by the player who actually collected each gem/coin.
+   *
+   * The run loop credits each player's own progression from these, so a co-op guest levels on the gems
+   * it walked over rather than pouring the whole party's experience into player 0. Exact even when the
+   * per-event buffer overflows — like `xpBanked`, these are summed in `collect`, not derived from the
+   * capped event list. `xpBanked`/`goldBanked` stay as the party-wide totals the HUD and tests read.
+   */
+  readonly xpBankedBy = new Float32Array(MAX_PLAYERS);
+  readonly goldBankedBy = new Float32Array(MAX_PLAYERS);
+  /**
    * Live gems, tracked so `GEM_SLOT_BUDGET` can be enforced without walking the pool on every drop.
    *
    * Maintained in exactly two places — `spawn` on a successful gem alloc, and `remove` — so a gem that
@@ -347,6 +357,8 @@ export class PickupStore {
     this.collectCount = 0;
     this.xpBanked = 0;
     this.goldBanked = 0;
+    this.xpBankedBy.fill(0);
+    this.goldBankedBy.fill(0);
     this.healBanked = 0;
     this.chestsTaken = 0;
     this.vacuumsTaken = 0;
@@ -382,6 +394,8 @@ export class PickupStore {
     this.collectCount = 0;
     this.xpBanked = 0;
     this.goldBanked = 0;
+    this.xpBankedBy.fill(0);
+    this.goldBankedBy.fill(0);
     this.healBanked = 0;
     this.chestsTaken = 0;
     this.vacuumsTaken = 0;
@@ -490,9 +504,11 @@ export class PickupStore {
       case PICKUP.gemMedium:
       case PICKUP.gemLarge:
         this.xpBanked += value;
+        if (player >= 0 && player < MAX_PLAYERS) this.xpBankedBy[player] += value;
         break;
       case PICKUP.gold:
         this.goldBanked += value;
+        if (player >= 0 && player < MAX_PLAYERS) this.goldBankedBy[player] += value;
         break;
       case PICKUP.health:
         this.healBanked += value > 0 ? value : HEALTH_PICKUP_AMOUNT;

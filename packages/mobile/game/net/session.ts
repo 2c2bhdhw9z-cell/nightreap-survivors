@@ -105,8 +105,14 @@ export interface Link {
 /* The confirmed record ring                                                                       */
 /* ---------------------------------------------------------------------------------------------- */
 
-/** Bytes reserved per tick record. Sized for four players so the ring never has to resize. */
-export const RECORD_STRIDE = MAX_PLAYERS * 4 + 1;
+/**
+ * Bytes reserved per tick record. Sized for four players so the ring never has to resize.
+ *
+ * Layout: `MAX_PLAYERS` x (i8 x, i8 y, u8 buttons, u8 flags) then `MAX_PLAYERS` x (u8 cardAction) —
+ * one card-action byte PER PLAYER. Each player answers their own level-up screen; every phone applies
+ * all of them from the same confirmed record, in slot order, so the picks stay replay-revalidatable.
+ */
+export const RECORD_STRIDE = MAX_PLAYERS * 4 + MAX_PLAYERS;
 
 /**
  * A ring of confirmed input records, one per tick.
@@ -150,9 +156,16 @@ export class ConfirmRing {
     return slot * this.stride;
   }
 
-  cardActionOf(tick: number, playerCount: number): number {
+  /**
+   * The card-action byte a given player sealed on a given tick.
+   *
+   * The card bytes sit after every player's input, one byte each, so player `p`'s answer is at
+   * `playerCount * 4 + p`. `player` defaults to 0 so a solo caller reads the one byte there has ever
+   * effectively been.
+   */
+  cardActionOf(tick: number, playerCount: number, player = 0): number {
     if (!this.has(tick)) return CARD_ACTION.NONE;
-    return this.data[this.offsetOf(tick) + playerCount * 4] as number;
+    return this.data[this.offsetOf(tick) + playerCount * 4 + player] as number;
   }
 
   clear(): void {
@@ -171,15 +184,15 @@ export class ConfirmRing {
  * Kept next to the record application rather than inside `Run` because it is a session concern: the
  * simulation only knows "pick index 2", it has no opinion about who asked.
  */
-export function applyCardAction(run: Run, action: number): boolean {
+export function applyCardAction(run: Run, action: number, player = 0): boolean {
   if (action === CARD_ACTION.NONE) return false;
   if (action >= CARD_ACTION.PICK_0 && action <= CARD_ACTION.PICK_3) {
-    return run.pickCard(action - CARD_ACTION.PICK_0);
+    return run.pickCard(action - CARD_ACTION.PICK_0, player);
   }
-  if (action === CARD_ACTION.REROLL) return run.rerollCards();
-  if (action === CARD_ACTION.SKIP) return run.skipCard();
+  if (action === CARD_ACTION.REROLL) return run.rerollCards(player);
+  if (action === CARD_ACTION.SKIP) return run.skipCard(player);
   if (action >= CARD_ACTION.BANISH_0 && action <= CARD_ACTION.BANISH_3) {
-    return run.banishCard(action - CARD_ACTION.BANISH_0);
+    return run.banishCard(action - CARD_ACTION.BANISH_0, player);
   }
   return false;
 }
@@ -213,8 +226,14 @@ export function applyRecord(
     run.axes[p * 2 + 1] = y > 127 ? y - 256 : y;
     run.buttons[p] = data[o + 2] as number;
   }
-  const action = data[base + playerCount * 4] as number;
-  if (action !== CARD_ACTION.NONE) applyCardAction(run, action);
+  // Each player's own card-action byte, applied to that player's own screen. Slot order is fixed, so
+  // two picks landing on the same tick resolve the same way on every phone. A byte for a player whose
+  // screen is not open resolves to nothing inside `run.pickCard` etc., so a stale request is harmless.
+  const cardBase = base + playerCount * 4;
+  for (let p = 0; p < playerCount; p++) {
+    const action = data[cardBase + p] as number;
+    if (action !== CARD_ACTION.NONE) applyCardAction(run, action, p);
+  }
   run.tick();
   return true;
 }
@@ -474,19 +493,31 @@ export class HostSession {
       }
     }
 
-    // A card screen is answered by whoever asked first this tick: the host's own UI, then guests in
-    // slot order. Fixed order rather than arrival order, because arrival order is a network detail and
-    // this decision has to be reproducible from the confirm stream alone.
-    let action = this.pendingCard;
+    // Every player answers their OWN card screen. Each player's pending action is sealed into that
+    // player's own card byte — the host's into its slot, each guest's into its slot — gated on whether
+    // THAT player's screen is open in the confirmed world. This replaces the old "whoever asked first"
+    // single shared byte, which was the reason a guest's pick was overwritten by the host's next
+    // record: there was only one answer per tick and it always went to player 0's loadout.
+    const cardBase = base + n * 4;
+    for (let p = 0; p < n; p++) {
+      let action: number;
+      if (p === this.localSlot) {
+        action = this.pendingCard;
+      } else {
+        action = (this.guests[p] as GuestConn).pendingCard;
+      }
+      // A pick for a player whose screen is not open is not a decision about when the world resumes,
+      // so it is dropped rather than sealed — otherwise a late tap would spend a charge on the next
+      // screen to open. `pausedFor` reads the confirmed world every phone shares.
+      if (!this.run.pausedFor(p)) action = CARD_ACTION.NONE;
+      data[cardBase + p] = action;
+    }
+    // Cleared after sealing so a held request is confirmed exactly once.
     this.pendingCard = CARD_ACTION.NONE;
     for (let p = 0; p < n; p++) {
       if (p === this.localSlot) continue;
-      const g = this.guests[p] as GuestConn;
-      if (action === CARD_ACTION.NONE) action = g.pendingCard;
-      g.pendingCard = CARD_ACTION.NONE;
+      (this.guests[p] as GuestConn).pendingCard = CARD_ACTION.NONE;
     }
-    if (!this.run.paused) action = CARD_ACTION.NONE;
-    data[base + n * 4] = action;
 
     applyRecord(this.run, this.ring, t, n);
     this.tick = t;

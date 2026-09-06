@@ -200,8 +200,32 @@ export class Run {
   readonly props = new PropField();
   readonly weapons = new WeaponStore(MAX_PLAYERS);
   readonly passives = new PassiveStore(MAX_PLAYERS);
-  readonly prog = new Progression();
-  readonly cards = new CardDraw();
+  /**
+   * Per-player progression and card draws.
+   *
+   * These used to be one `Progression` and one `CardDraw` shared by the whole party, which is why a
+   * co-op guest's level-up did nothing: everyone levelled off one bar and picked from one screen that
+   * only player 0's loadout ever received. Now each seat has its own, so each player levels on their
+   * own gems and picks their own upgrades onto their own already-per-player weapon/passive store.
+   *
+   * Held as a plain object keyed by slot rather than an array on purpose: the snapshot walker descends
+   * into a plain object and captures each `Progression`/`CardDraw`'s fields automatically, exactly as
+   * it did for the single instances, but it deliberately skips arrays-of-objects (they are content
+   * data). So this shape is what keeps per-player progression and card state in the resume snapshot
+   * for free. `get prog()`/`get cards()` return slot 0 so every existing solo call site is unchanged.
+   */
+  readonly progAll: { [slot: number]: Progression } = {
+    0: new Progression(),
+    1: new Progression(),
+    2: new Progression(),
+    3: new Progression(),
+  };
+  readonly cardsAll: { [slot: number]: CardDraw } = {
+    0: new CardDraw(),
+    1: new CardDraw(),
+    2: new CardDraw(),
+    3: new CardDraw(),
+  };
   /**
    * The run's arcanas. One deck per run rather than per player: in co-op the host owns the pick, for
    * the same reason the host owns the wave table.
@@ -271,7 +295,8 @@ export class Run {
   /** Last tick's health and standing, so "took damage" and "went down" can be announced as events. */
   private readonly prevHealth = new Float32Array(MAX_PLAYERS);
   private readonly prevUpright = new Uint8Array(MAX_PLAYERS);
-  private prevLevel = 1;
+  /** Last tick's level per player, so a level-up can be announced and a growth step folded in. */
+  private readonly prevLevel = new Int32Array(MAX_PLAYERS).fill(1);
   /**
    * The run's modifiers as wire ids, filled at `begin` whether or not the run is being recorded.
    *
@@ -297,6 +322,16 @@ export class Run {
   private spawnRng: Rng;
   private dropRng: Rng;
   private cardRng: Rng;
+  /**
+   * Per-player card draw streams, one per seat.
+   *
+   * Slot 0 is `this.cardRng` (`RNG_STREAMS.cardDraw`) verbatim, so every existing solo replay and
+   * ladder hash draws the exact same four cards it always has — the determinism-guard test pins this.
+   * Slots 1..3 are the seed-derived `cardDraw1..cardDraw3` streams, reseeded the same way every other
+   * stream is (`seed ^ hashName(name)`), so they are identical on every phone and never touch a
+   * wall-clock or an object-iteration order. See `sim/cards.ts` for the one-seeded-stream discipline.
+   */
+  private readonly cardRngs: Rng[] = [];
   private critRng: Rng;
   private arcanaRng: Rng;
   private chestRng: Rng;
@@ -306,15 +341,69 @@ export class Run {
     this.spawnRng = this.rng.get("spawn");
     this.dropRng = this.rng.get("drop");
     this.cardRng = this.rng.get("cardDraw");
+    this.cardRngs.push(this.cardRng);
+    this.cardRngs.push(this.rng.get("cardDraw1"));
+    this.cardRngs.push(this.rng.get("cardDraw2"));
+    this.cardRngs.push(this.rng.get("cardDraw3"));
     this.chestRng = this.rng.get("chest");
     this.critRng = this.rng.get("crit");
     this.arcanaRng = this.rng.get("arcana");
     this.owners = { count: 1, x: this.players.x, y: this.players.y };
   }
 
-  /** True while a level-up screen is open. The simulation is frozen until it is answered. */
+  /** Player 0's progression. The alias every solo call site — HUD, summary, dev menu — keeps using. */
+  get prog(): Progression {
+    return this.progAll[0] as Progression;
+  }
+
+  /** One player's progression. Slots outside 0..MAX_PLAYERS-1 clamp to slot 0. */
+  progFor(player: number): Progression {
+    if (player < 0 || player >= MAX_PLAYERS) return this.progAll[0] as Progression;
+    return this.progAll[player] as Progression;
+  }
+
+  /** Player 0's card draw. The alias the solo card UI and tests keep using. */
+  get cards(): CardDraw {
+    return this.cardsAll[0] as CardDraw;
+  }
+
+  /** One player's card draw. Slots outside 0..MAX_PLAYERS-1 clamp to slot 0. */
+  cardsFor(player: number): CardDraw {
+    if (player < 0 || player >= MAX_PLAYERS) return this.cardsAll[0] as CardDraw;
+    return this.cardsAll[player] as CardDraw;
+  }
+
+  /**
+   * True while ANY player has a screen open. The simulation is frozen for the whole party until every
+   * open screen is answered.
+   *
+   * The co-op rule, stated once: the shared world freezes while anyone is choosing. A level-up taken
+   * while the crowd closes in is not a decision, and freezing only the chooser's slot would let the
+   * others keep fighting a world the chooser cannot see — and, worse, would advance the sim on some
+   * phones and not others on the same tick, which is a desync. So one player's open screen stops
+   * every sim step on every phone, and the tick still counts so the numbering stays shared.
+   */
   get paused(): boolean {
-    return this.cards.open || this.arcanas.open;
+    if (this.arcanas.open) return true;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if ((this.cardsAll[p] as CardDraw).open) return true;
+    }
+    return false;
+  }
+
+  /** True while this specific player has a card screen open. Used by the host to gate each card byte. */
+  pausedFor(player: number): boolean {
+    if (this.arcanas.open) return true;
+    if (player < 0 || player >= MAX_PLAYERS) return false;
+    return (this.cardsAll[player] as CardDraw).open;
+  }
+
+  /** True while any player has a card screen open, ignoring arcanas. */
+  private anyCardOpen(): boolean {
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if ((this.cardsAll[p] as CardDraw).open) return true;
+    }
+    return false;
   }
 
   /** Run clock in ticks, which time scale can advance faster than real ticks. */
@@ -392,8 +481,12 @@ export class Run {
     this.props.stream(this.players.x[0], this.players.y[0]);
     this.weapons.reset(playerCount);
     this.passives.reset(playerCount);
-    this.prog.reset();
-    this.cards.resetRun(this.stats);
+    // Every seat resets, not just the ones in play: a slot that never joins still has to hold a clean
+    // progression and card draw so the snapshot's per-player fields are deterministic on every phone.
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      (this.progAll[p] as Progression).reset();
+      (this.cardsAll[p] as CardDraw).resetRun(this.stats);
+    }
     // The pool is what the profile has earned, decided outside the simulation. An empty pool means no
     // offer ever opens — the deck never invents a card to fill a screen.
     this.arcanas.begin(c.arcanaPool);
@@ -402,8 +495,8 @@ export class Run {
     this.waves.begin(wavesForStage(this.stageId), stage.reaperSecond);
     this.summary.reset();
     this.cues.resetRun();
-    this.prevLevel = this.prog.level;
     for (let p = 0; p < MAX_PLAYERS; p++) {
+      this.prevLevel[p] = (this.progAll[p] as Progression).level;
       this.prevHealth[p] = this.players.health[p];
       this.prevUpright[p] = this.players.upright[p];
     }
@@ -476,7 +569,12 @@ export class Run {
       if (mod !== undefined) this.stack.add(mod);
     }
     this.rebuildLoadout();
-    if (this.cards.open) this.cards.relabel(this.weapons, this.passives, 0);
+    // Each open per-player card screen relabels for its OWN slot, so a restored co-op run gets every
+    // player's card text back from the content rows rather than only player 0's.
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      const cards = this.cardsAll[p] as CardDraw;
+      if (cards.open) cards.relabel(this.weapons, this.passives, p);
+    }
   }
 
   /**
@@ -551,11 +649,17 @@ export class Run {
     // hits and deaths again on every paused frame — twelve times over for a screen held one second.
     this.cues.beginTick();
 
-    if (this.cards.open) {
-      // A card screen owed by autoPick resolves itself here so a headless run never deadlocks.
-      if (this.autoPick) this.pickCard(0);
-      return false;
+    // A card screen owed by autoPick resolves itself here so a headless run never deadlocks — and it
+    // resolves EVERY open player's screen, not just player 0's, or a headless party with two players
+    // owed cards would freeze forever waiting on the second one.
+    let anyCardOpen = false;
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      if ((this.cardsAll[p] as CardDraw).open) {
+        anyCardOpen = true;
+        if (this.autoPick) this.pickCard(0, p);
+      }
     }
+    if (anyCardOpen) return false;
 
     // An arcana offer freezes the run exactly like a card screen does, and for the same reason: it is a
     // decision, and a decision taken while the crowd is closing in is not a decision.
@@ -567,8 +671,8 @@ export class Run {
     const stats = this.stats;
     const players = this.players;
 
-    // 1. Progression opens the tick.
-    this.prog.beginTick();
+    // 1. Progression opens the tick — every player's, so each seat's per-tick gain counters reset.
+    for (let p = 0; p < players.count; p++) (this.progAll[p] as Progression).beginTick();
 
     // 2. The input log records what the simulation is about to consume — after quantisation, never
     //    before, or the log would replay to a slightly different run.
@@ -631,32 +735,37 @@ export class Run {
     this.pickups.update(players, stats, this.critRng);
     this.applyCollections();
 
-    // 11. A level-up screen opens between ticks, never in the middle of one.
-    if (this.prog.level > this.prevLevel) {
-      for (let l = this.prevLevel + 1; l <= this.prog.level; l++) {
-        this.cues.emit(CUE.levelUp, players.x[0], players.y[0], l);
-      }
-      this.prevLevel = this.prog.level;
-      // A level can earn the character's next growth step. Only rebuild when the step count actually
-      // changed, so an ordinary level-up costs one integer division rather than a full resolve.
-      if (this.growthTierAt(this.prog.level) !== this.growthTier) {
-        this.rebuildLoadout();
-        this.stack.resolve(this.stats);
+    // 11. A level-up screen opens between ticks, never in the middle of one. Run per player: each
+    //     seat announces its own level-ups, earns its own growth step, and opens its own card screen
+    //     from its own card RNG onto its own weapon/passive store.
+    let growthChanged = false;
+    for (let p = 0; p < players.count; p++) {
+      const prog = this.progAll[p] as Progression;
+      if (prog.level > this.prevLevel[p]) {
+        for (let l = this.prevLevel[p] + 1; l <= prog.level; l++) {
+          this.cues.emit(CUE.levelUp, players.x[p], players.y[p], l, p);
+        }
+        this.prevLevel[p] = prog.level;
+        // A level can earn the character's next growth step. The growth ladder is shared for now
+        // (one character across the party in FEAT-001; FEAT-002 makes it per slot), so the tier is
+        // still keyed off player 0's level — which is exactly today's behaviour for a solo run and is
+        // what keeps the determinism guard bit-identical. Guard the rebuild so an ordinary level-up
+        // costs one integer division rather than a full resolve.
+        if (p === 0 && this.growthTierAt(prog.level) !== this.growthTier) growthChanged = true;
       }
     }
+    if (growthChanged) {
+      this.rebuildLoadout();
+      this.stack.resolve(this.stats);
+    }
 
-    if (this.prog.owesCards) {
-      this.cards.beginScreen(
-        0,
-        this.prog,
-        this.weapons,
-        this.passives,
-        stats,
-        this.cardRng,
-        this.flags,
-      );
-      if (this.cards.open) {
-        this.cues.emit(CUE.cardScreenOpened, players.x[0], players.y[0], this.cards.picksRemaining);
+    for (let p = 0; p < players.count; p++) {
+      const prog = this.progAll[p] as Progression;
+      if (!prog.owesCards) continue;
+      const cards = this.cardsAll[p] as CardDraw;
+      cards.beginScreen(p, prog, this.weapons, this.passives, stats, this.cardRngs[p] as Rng, this.flags);
+      if (cards.open) {
+        this.cues.emit(CUE.cardScreenOpened, players.x[p], players.y[p], cards.picksRemaining, p);
       }
     }
 
@@ -664,7 +773,7 @@ export class Run {
     //      screen rather than inside it — a level-up and an arcana mark landing on the same tick queue up
     //      one behind the other instead of fighting over the screen. The deck compares with `>=` and
     //      consumes the mark, so a mark passed during a card screen is still owed rather than skipped.
-    if (!this.cards.open && this.arcanas.update(this.waves.runSeconds, this.arcanaRng)) {
+    if (!this.anyCardOpen() && this.arcanas.update(this.waves.runSeconds, this.arcanaRng)) {
       this.cues.emit(CUE.cardScreenOpened, players.x[0], players.y[0], this.arcanas.offerCount);
     }
 
@@ -674,10 +783,13 @@ export class Run {
     this.announcePlayerChanges();
 
     // 13. Heals owed by cards are applied outside the card screen, so a meal taken during a batch
-    //     of eight picks still lands exactly once.
-    if (this.cards.healPending > 0) {
-      for (let p = 0; p < players.count; p++) players.heal(p, this.cards.healPending, stats);
-      this.cards.clearHeal();
+    //     of eight picks still lands exactly once. Each player's own food card heals that player.
+    for (let p = 0; p < players.count; p++) {
+      const cards = this.cardsAll[p] as CardDraw;
+      if (cards.healPending > 0) {
+        players.heal(p, cards.healPending, stats);
+        cards.clearHeal();
+      }
     }
 
     this.ticks++;
@@ -794,15 +906,21 @@ export class Run {
     const pickups = this.pickups;
     const stats = this.stats;
 
-    const px = this.players.x[0];
-    const py = this.players.y[0];
-    if (pickups.xpBanked > 0) {
-      this.prog.addXp(pickups.xpBanked, stats);
-      this.cues.emit(CUE.xpCollected, px, py, pickups.xpBanked);
+    // Experience and coins are credited to the player who actually collected the gem or coin, so each
+    // seat levels on its own pickups rather than pouring the whole party's experience into player 0.
+    // The gold cue still fires from player 0's position and reports the party-wide total, because the
+    // coin flash is a single HUD readout for the run, not a per-player event.
+    for (let p = 0; p < this.players.count; p++) {
+      const xp = pickups.xpBankedBy[p];
+      if (xp > 0) {
+        (this.progAll[p] as Progression).addXp(xp, stats);
+        this.cues.emit(CUE.xpCollected, this.players.x[p], this.players.y[p], xp, p);
+      }
+      const gold = pickups.goldBankedBy[p];
+      if (gold > 0) (this.progAll[p] as Progression).addGold(gold, stats);
     }
     if (pickups.goldBanked > 0) {
-      this.prog.addGold(pickups.goldBanked, stats);
-      this.cues.emit(CUE.goldCollected, px, py, pickups.goldBanked);
+      this.cues.emit(CUE.goldCollected, this.players.x[0], this.players.y[0], pickups.goldBanked);
     }
     if (pickups.vacuumsTaken > 0) pickups.startVacuum();
 
@@ -836,12 +954,15 @@ export class Run {
    */
   private openChestFor(player: number, x: number, y: number): void {
     if (player < 0 || player >= this.players.count) {
-      // No loadout to put anything into. Pay coins rather than eat the chest.
+      // No loadout to put anything into. Pay coins rather than eat the chest — to player 0, since
+      // there is no valid opener to credit.
       this.prog.addGold(CHEST_GOLD, this.stats);
       this.cues.emit(CUE.chestOpened, x, y);
       return;
     }
 
+    // Coins from the chest go to the player who opened it, the same rule the gems follow.
+    const prog = this.progAll[player] as Progression;
     const report = this.chestReport;
     openChest(player, this.weapons, this.passives, this.stats, this.chestRng, report);
     this.chestsOpened++;
@@ -850,7 +971,7 @@ export class Run {
     for (let r = 0; r < report.count; r++) {
       const kind = report.kind[r];
       if (kind === CHEST_REWARD.gold) {
-        this.prog.addGold(report.value[r], this.stats);
+        prog.addGold(report.value[r], this.stats);
       } else if (kind === CHEST_REWARD.passiveLevel) {
         passiveChanged = true;
       } else if (kind === CHEST_REWARD.evolution) {
@@ -927,20 +1048,21 @@ export class Run {
 
   // --- Card screen -------------------------------------------------------------------------
 
-  pickCard(index: number): boolean {
-    const took = this.cards.pick(
+  pickCard(index: number, player = 0): boolean {
+    const took = (this.cardsAll[player] as CardDraw).pick(
       index,
-      0,
+      player,
       this.weapons,
       this.passives,
-      this.prog,
+      this.progAll[player] as Progression,
       this.stats,
       this.stack,
-      this.cardRng,
+      this.cardRngs[player] as Rng,
     );
     // A passive pick rebuilds the loadout from scratch, which throws the character's growth record away with
     // everything else in it. Putting it back here — rather than trusting the card layer to know about
-    // characters — means there is one place that owns what the loadout contains.
+    // characters — means there is one place that owns what the loadout contains. The loadout is shared
+    // across the party (one stat table), so any player's passive pick rebuilds it.
     if (took) this.restoreGrowthAfterPick();
     return took;
   }
@@ -1011,16 +1133,32 @@ export class Run {
     return Math.min(steps, this.growthLadder.length);
   }
 
-  rerollCards(): boolean {
-    return this.cards.reroll(0, this.weapons, this.passives, this.cardRng);
+  rerollCards(player = 0): boolean {
+    return (this.cardsAll[player] as CardDraw).reroll(
+      player,
+      this.weapons,
+      this.passives,
+      this.cardRngs[player] as Rng,
+    );
   }
 
-  skipCard(): boolean {
-    return this.cards.skip(0, this.weapons, this.passives, this.cardRng);
+  skipCard(player = 0): boolean {
+    return (this.cardsAll[player] as CardDraw).skip(
+      player,
+      this.weapons,
+      this.passives,
+      this.cardRngs[player] as Rng,
+    );
   }
 
-  banishCard(index: number): boolean {
-    return this.cards.banish(index, 0, this.weapons, this.passives, this.cardRng);
+  banishCard(index: number, player = 0): boolean {
+    return (this.cardsAll[player] as CardDraw).banish(
+      index,
+      player,
+      this.weapons,
+      this.passives,
+      this.cardRngs[player] as Rng,
+    );
   }
 
   // --- Ending ------------------------------------------------------------------------------
@@ -1164,10 +1302,22 @@ export class Run {
     // would only ever invent a disagreement between two phones that actually agree.
     h = this.props.hashInto(h);
 
-    h = hashWord(h, this.prog.level);
-    h = hashWord(h, this.prog.xp);
-    h = hashWord(h, this.prog.gold);
-    h = hashWord(h, this.prog.pending);
+    // Per-player progression. Hashed for every live seat, in slot order, so a guest that levelled a
+    // fraction differently from the host is caught on the very next hash rather than hours later.
+    //
+    // Solo hashes EXACTLY as before: with a single player this folds in player 0's level/xp/gold/
+    // pending in the same order the old single-progression hash used, so existing replays and the
+    // ladder revalidation boundary do not shift by a bit. Card-open state is deliberately NOT hashed:
+    // it is derived (the sim freezes identically on every phone while a screen is up, and a pick's
+    // effect already shows in the weapon/passive/level state that is hashed), and adding it would move
+    // the solo hash and invalidate every replay recorded before this change.
+    for (let p = 0; p < players.count; p++) {
+      const prog = this.progAll[p] as Progression;
+      h = hashWord(h, prog.level);
+      h = hashWord(h, prog.xp);
+      h = hashWord(h, prog.gold);
+      h = hashWord(h, prog.pending);
+    }
     h = hashWord(h, this.kills);
     // Chests opened is simulation state: it is how many times the loadout was changed by something
     // other than a card, and two devices disagreeing about it is a desync worth catching.

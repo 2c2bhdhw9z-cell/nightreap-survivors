@@ -728,7 +728,7 @@ section("tick confirm");
   const w = new Writer();
 
   check("one player record is 5 bytes", tickRecordBytes(1) === 5, `${tickRecordBytes(1)}`);
-  check("four player record is 17 bytes", tickRecordBytes(MAX_PLAYERS) === 17, `${tickRecordBytes(4)}`);
+  check("four player record is 20 bytes", tickRecordBytes(MAX_PLAYERS) === 20, `${tickRecordBytes(4)}`);
   check(
     "confirm header size is honest",
     tickConfirmBytes(4, 0) === HEADER_BYTES + TICK_CONFIRM_HEADER_BYTES,
@@ -793,6 +793,42 @@ section("tick confirm");
   for (const action of values(CARD_ACTION)) {
     const bytes2 = copy(encodeCardRequest(w, 3, action));
     check(`card request ${action} round trips`, new Reader(bytes2).u8() === action);
+  }
+
+  // Per-player card bytes: the record now carries one card action per player, after every player's
+  // input. A four-player tick where each slot answers a different way must round-trip each byte to the
+  // right slot — this is the widening that lets every player pick their own upgrade.
+  {
+    const pc = 4;
+    const st = tickRecordBytes(pc);
+    const cap = 8;
+    const rec = new Uint8Array(st * cap);
+    const t = 3;
+    const b = (t % cap) * st;
+    // Distinct input per slot, then a distinct card action per slot.
+    for (let p = 0; p < pc; p++) {
+      rec[b + p * 4] = 10 + p; // x
+      rec[b + p * 4 + 1] = 20 + p; // y
+      rec[b + p * 4 + 2] = 30 + p; // buttons
+      rec[b + p * 4 + 3] = 0; // flags
+    }
+    const perPlayerActions = [CARD_ACTION.PICK_0, CARD_ACTION.REROLL, CARD_ACTION.SKIP, CARD_ACTION.BANISH_1];
+    for (let p = 0; p < pc; p++) rec[b + pc * 4 + p] = perPlayerActions[p] as number;
+
+    const enc = copy(encodeTickConfirm(w, 0, t, 1, pc, rec, st, cap));
+    const rr = new Reader(enc);
+    decodeTickConfirmHeader(rr, { firstTick: 0, count: 0, playerCount: 0 });
+    const out = new Uint8Array(st);
+    decodeTickRecord(rr, pc, out, 0);
+    let inputMatch = true;
+    for (let i = 0; i < pc * 4; i++) if (out[i] !== rec[b + i]) inputMatch = false;
+    check("per-player input survives the wider record", inputMatch);
+    let cardMatch = true;
+    for (let p = 0; p < pc; p++) {
+      if (out[pc * 4 + p] !== (perPlayerActions[p] as number)) cardMatch = false;
+    }
+    check("each player's card action lands in its own slot's byte", cardMatch);
+    check("the wider record consumed exactly", rr.remaining === 0 && !rr.truncated, `${rr.remaining}`);
   }
 }
 
@@ -933,7 +969,7 @@ section("constants of record");
   check("a chat line is at most 160 bytes", MAX_CHAT_BYTES === 160, `${MAX_CHAT_BYTES}`);
   check("a message is at most 1200 bytes", MAX_MESSAGE_BYTES === 1200, `${MAX_MESSAGE_BYTES}`);
   check("a party is at most 4", MAX_PLAYERS === 4, `${MAX_PLAYERS}`);
-  check("the protocol version is 4", PROTOCOL_VERSION === 4, `${PROTOCOL_VERSION}`);
+  check("the protocol version is 5", PROTOCOL_VERSION === 5, `${PROTOCOL_VERSION}`);
 }
 
 /* ---- 14. the message table itself -------------------------------------------------------------- */

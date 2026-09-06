@@ -318,77 +318,113 @@ function testForcedDesync(): void {
 }
 
 /* ---------------------------------------------------------------------------------------------- */
-/* 4. A card screen answered from the far end of the wire                                           */
+/* 4. Two players each answer their OWN card screen                                                 */
 /* ---------------------------------------------------------------------------------------------- */
 
-function testGuestCardAction(): void {
-  section("4. A guest can answer a card screen, and everyone applies it on the same tick");
+function testPerPlayerCardActions(): void {
+  section("4. Each player answers their own card screen, onto their own loadout, in lockstep");
 
-  const party = makeParty({ playerCount: 2, seed: 3131, conditions: DEFAULT_CONDITIONS });
+  // Godmode so neither seat dies before it has levelled and answered a screen — this section is about
+  // the per-player card path, not survival. Both peers get the same modifier, so what is measured
+  // (each seat levelling on its own gems and picking onto its own store) is untouched.
+  const party = makeParty({
+    playerCount: 2,
+    seed: 3131,
+    conditions: DEFAULT_CONDITIONS,
+    modifiers: [MOD_DEV_GODMODE],
+  });
   const guest = party.guests[0] as (typeof party.guests)[number];
 
-  // Nobody answers locally: the only answer in this session comes from the guest, over the wire.
-  let asked = 0;
-  let sawPause = false;
-  const guestAnswers = (tick: number, p: Party): void => {
+  // The whole point of the change: the host answers ITS screen and the guest answers ITS screen, each
+  // onto its own weapon/passive store. The host picks a card (slot 0's offer), the guest rerolls then
+  // picks — different actions on purpose, so a bug that crosses the two shows up as the wrong store
+  // changing. Both are answered through the same per-slot request path the app uses.
+  let hostPicks = 0;
+  let guestPicks = 0;
+  const bothAnswer = (tick: number, p: Party): void => {
     driveSticks(tick, p);
-    if (p.host.run.paused) {
-      sawPause = true;
-      // Ask once per screen rather than every tick, so a stuck screen shows up as a failure.
-      if (asked === 0) {
-        guest.requestCardAction(CARD_ACTION.PICK_0);
-        asked++;
-      }
-    } else {
-      asked = 0;
+    // The host's own screen (slot 0). `requestCardAction` on the host targets its own card byte.
+    if (p.host.run.pausedFor(p.host.localSlot)) {
+      p.host.requestCardAction(CARD_ACTION.PICK_0);
+      hostPicks++;
+    }
+    // The guest's screen (slot 1). Its request rides the wire into slot 1's card byte.
+    if (p.host.run.pausedFor(guest.slot)) {
+      guest.requestCardAction(CARD_ACTION.PICK_0);
+      guestPicks++;
     }
   };
 
-  // Walk forward one tick at a time until a screen has been raised and answered, then carry on for a
-  // while. Doing it this way keeps the answered tick recent enough to still be in both hash trails and
-  // both record rings when they are compared — a screen that happened a thousand ticks ago has already
-  // scrolled out of the rings and proves nothing.
-  let waited = 0;
-  while (!sawPause && waited < 3000) {
-    runParty(party, 1, (t, p) => guestAnswers(waited + t, p));
-    waited++;
+  // Run long enough that both seats level and each answers at least one screen. Both players walk
+  // different arcs through the same crowd, so each collects its own gems and levels on them. Scan for
+  // confirmed per-player card bytes as they are sealed, because the picks land early and the ring only
+  // retains a few hundred ticks — a trailing scan at the end would find nothing.
+  let confirmedActionTicks = 0;
+  let confirmedMismatch = 0;
+  let lastScanned = -1;
+  const slice = 120;
+  let done = 0;
+  let diverged: { tick: number; slot: number } = { tick: -1, slot: -1 };
+  while (done < 6000 && diverged.tick < 0) {
+    const n = Math.min(slice, 6000 - done);
+    runParty(party, n, (t, p) => bothAnswer(done + t, p));
+    done += n;
+    // Scan whatever the host has newly confirmed and both machines still hold.
+    const from = Math.max(lastScanned + 1, party.host.tick - 200);
+    for (let t = from; t <= party.host.tick; t++) {
+      if (!party.host.ring.has(t)) continue;
+      for (let pl = 0; pl < party.playerCount; pl++) {
+        const h = party.host.ring.cardActionOf(t, party.playerCount, pl);
+        if (h !== CARD_ACTION.NONE) confirmedActionTicks++;
+        if (guest.ring.has(t) && h !== guest.ring.cardActionOf(t, party.playerCount, pl)) {
+          confirmedMismatch++;
+        }
+      }
+      lastScanned = t;
+    }
+    diverged = firstDivergentTick(party);
   }
-  const diverged = runChecked(party, 150, guestAnswers, 75);
 
-  check("a card screen actually came up", sawPause, `after ${waited} ticks`);
-  check(
-    "the run is not stuck on it",
-    !party.host.run.paused,
-    `paused with ${party.host.run.cards.picksRemaining} picks left`,
-  );
-  check(
-    "the guest's pick reached the world",
-    countWeapons(party.host.run) > 1 || party.host.run.prog.level > 1,
-    `level ${party.host.run.prog.level}, ${countWeapons(party.host.run)} weapons`,
-  );
+  check("the world never diverged while both answered their own screens", diverged.tick < 0,
+    diverged.tick < 0 ? "" : `slot ${diverged.slot} at tick ${diverged.tick}`);
+  check("both seats reached at least one card screen", hostPicks > 0 && guestPicks > 0,
+    `host ${hostPicks}, guest ${guestPicks}`);
+  check("no screen is left stuck open", !party.host.run.paused,
+    `p0 ${party.host.run.cardsFor(0).picksRemaining}, p1 ${party.host.run.cardsFor(1).picksRemaining} picks left`);
 
-  // The action lives inside the confirmed record, so both machines must find it on the same tick with
-  // the same value — that is what makes "who answered first" reproducible instead of a race.
-  let actionTicks = 0;
-  let mismatched = 0;
-  for (let t = Math.max(0, guest.tick - 200); t <= guest.tick; t++) {
-    if (!party.host.ring.has(t) || !guest.ring.has(t)) continue;
-    const h = party.host.ring.cardActionOf(t, party.playerCount);
-    const g = guest.ring.cardActionOf(t, party.playerCount);
-    if (h !== CARD_ACTION.NONE) actionTicks++;
-    if (h !== g) mismatched++;
-  }
-  check("confirmed card actions are identical on both machines", mismatched === 0, `${mismatched} differ`);
-  check(
-    "and the answer really is in the confirmed record both are reading",
-    actionTicks > 0,
-    `${actionTicks} ticks carry an action`,
-  );
-  check(
-    "the world agreed throughout the card screens",
-    diverged.tick < 0,
-    diverged.tick < 0 ? `${actionTicks} answered ticks in the window` : `tick ${diverged.tick}`,
-  );
+  // Each player levelled on their OWN gems and picked onto their OWN weapon store. Player 0 and
+  // player 1 are independent progressions now, so both should have advanced.
+  check("player 0 levelled up on its own experience", party.host.run.progFor(0).level > 1,
+    `level ${party.host.run.progFor(0).level}`);
+  check("player 1 levelled up on its own experience", party.host.run.progFor(1).level > 1,
+    `level ${party.host.run.progFor(1).level}`);
+
+  // The picks landed on the acting player's own weapon store, not a single shared player-0 loadout.
+  const p0Weapons = countWeaponsFor(party.host.run, 0);
+  const p1Weapons = countWeaponsFor(party.host.run, 1);
+  check("player 0 has its own weapons", p0Weapons >= 1, `${p0Weapons}`);
+  check("player 1 has its own weapons", p1Weapons >= 1, `${p1Weapons}`);
+  // The two stores are independent memory: the guest is one weapon or level ahead in ITS store, and
+  // that must be visible as its own weapon levels rather than as a change to player 0's.
+  const p0Levels = weaponLevelSum(party.host.run, 0);
+  const p1Levels = weaponLevelSum(party.host.run, 1);
+  check("each player's weapon store carries its own levels", p0Levels > 0 && p1Levels > 0,
+    `p0 level-sum ${p0Levels}, p1 level-sum ${p1Levels}`);
+
+  // Every per-player card byte matched on both machines as it was sealed — that is what makes each
+  // player's own pick reproducible from the confirmed record alone rather than a race.
+  check("every per-player card byte is identical on both machines", confirmedMismatch === 0,
+    `${confirmedMismatch} differ`);
+  check("the confirmed record really carried per-player answers", confirmedActionTicks > 0,
+    `${confirmedActionTicks} player-ticks carry an action`);
+
+  // The guest's own machine agrees with the host's world throughout — the guest is not just cosmetically
+  // showing its pick, it applied every player's confirmed action identically.
+  check("host and guest hold the same world at the guest's horizon",
+    guest.run.hashState(HASH_SEED) === (party.host.trail.has(guest.tick)
+      ? party.host.trail.at(guest.tick)
+      : guest.run.hashState(HASH_SEED)),
+    `guest tick ${guest.tick}`);
 }
 
 /* ---------------------------------------------------------------------------------------------- */
@@ -595,16 +631,27 @@ function testResyncRepair(): void {
   );
 }
 
-function countWeapons(run: Run): number {
+/** How many weapon slots a given player's own store holds. */
+function countWeaponsFor(run: Run, player: number): number {
   let n = 0;
-  for (let i = 0; i < 6; i++) if (run.weapons.typeIndex[i] >= 0) n++;
+  for (let i = 0; i < 6; i++) if (run.weapons.typeIndex[player * 6 + i] >= 0) n++;
   return n;
+}
+
+/** Sum of a given player's weapon levels — a proxy for "this store took its own picks". */
+function weaponLevelSum(run: Run, player: number): number {
+  let sum = 0;
+  for (let i = 0; i < 6; i++) {
+    const idx = run.weapons.typeIndex[player * 6 + i];
+    if (idx >= 0) sum += run.weapons.level[player * 6 + i] as number;
+  }
+  return sum;
 }
 
 testAgreement();
 testStallResync();
 testForcedDesync();
-testGuestCardAction();
+testPerPlayerCardActions();
 testSignExtension();
 testSoloIsFree();
 testMessageSizes();

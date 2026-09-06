@@ -19,7 +19,10 @@ export const RNG_STREAMS = [
   "spawn", // enemy wave composition and positions
   "drop", // pickups, gold, chicken
   "chest", // chest tier and contents
-  "cardDraw", // level-up card offers, rerolls, banishes
+  "cardDraw", // level-up card offers, rerolls, banishes — player 0's stream (unchanged, ever)
+  "cardDraw1", // player 1's level-up card stream in co-op
+  "cardDraw2", // player 2's level-up card stream in co-op
+  "cardDraw3", // player 3's level-up card stream in co-op
   "crit", // critical hits
   "damageVariance", // per-hit damage spread
   "ai", // enemy steering jitter, elite behaviour choices
