@@ -154,6 +154,17 @@ export class LobbySession {
   private listeners: (() => void)[] = [];
   private cached: LobbyView | null = null;
 
+  /**
+   * Where game bytes go once the run has launched. Null while this is still a lobby.
+   *
+   * Set by `handOffToRun`, and its presence is the single switch that turns this object from a lobby
+   * into a wire the run drives: after it is set, every game frame off the socket is the net session's,
+   * not the lobby's.
+   */
+  private gameSink: ((bytes: Uint8Array, senderSlot: number) => void) | null = null;
+  /** True once the run has been handed the connection, so a stray `leave` on unmount cannot close it. */
+  private handedOff = false;
+
   readonly stats = {
     /** Reconnects that got the same seat back. A climb here is a bad connection, not a bug. */
     resumes: 0,
@@ -198,6 +209,14 @@ export class LobbySession {
           }
         },
         onGame: (bytes, senderSlot) => {
+          // After launch the socket carries the run, not the lobby: input batches, tick confirms, state
+          // hashes and resyncs are the net session's traffic, and handing them to the lobby's `receive`
+          // would be handing it bytes it has no case for. The sink is set by `handOffToRun`, and once it
+          // is set the lobby is done listening — the party has become a run on the same wire.
+          if (this.gameSink !== null) {
+            this.gameSink(bytes, senderSlot);
+            return;
+          }
           this.lobby.receive(bytes, senderSlot, senderSlot === this.lobby.hostSlot);
           this.changed();
         },
@@ -342,12 +361,90 @@ export class LobbySession {
     return went;
   }
 
-  /** Leave for good. Frees the seat immediately rather than holding it for the grace window. */
+  /**
+   * Leave for good. Frees the seat immediately rather than holding it for the grace window.
+   *
+   * Once the connection has been handed to a run, leaving is refused: the run now owns the socket, and
+   * closing it here — which the lobby screen's unmount cleanup does on every navigation — would pull the
+   * wire out from under a run that is mid-fight. The run frees the seat itself when it ends, through the
+   * handle this handed it.
+   */
   leave(): void {
+    if (this.handedOff) return;
     this.transport.quit();
     this.status = LOBBY_STATUS.ENDED;
     this.reason = "";
     this.changed();
+  }
+
+  /**
+   * Hand the live connection to the run and stop being a lobby.
+   *
+   * Returns everything a `NetRun` needs and nothing more: the transport's own `Link` (so the run drives
+   * a session over the seated socket without ever seeing the socket), our seat, the host's seat, whether
+   * we are the host, and the party size. From this point:
+   *
+   *   - game frames off the socket are routed to `sink` instead of the lobby, because they are now the
+   *     session's INPUT_BATCH / TICK_CONFIRM / STATE_HASH / RESYNC traffic, not roster and chat;
+   *   - `leave` is disarmed, so the lobby screen unmounting cannot close the socket the run is using;
+   *   - `pump` and `leave` are exposed on the handle so the run keeps reconnect timing driven from its
+   *     own frame loop and can free the seat for good when it is over.
+   *
+   * The seed and stage are the launch's, not this method's: the host drew them in `Lobby.start` and every
+   * guest heard them over LOBBY_LAUNCH, so the caller already has them from `onLaunch` and this need not
+   * repeat them.
+   */
+  handOffToRun(): {
+    link: { send(bytes: Uint8Array): void };
+    localSlot: number;
+    hostSlot: number;
+    isHost: boolean;
+    playerCount: number;
+    /**
+     * Each seat's chosen character, read from the roster the host published. Every phone agrees on these
+     * — the roster reached all of them before START — so the run begins each seat with its own survivor
+     * without a single new wire message. A never-seated slot reads 0, the first character, which is what
+     * an empty seat has always resolved to.
+     */
+    characterIds: number[];
+    setReceiver: (sink: (bytes: Uint8Array, senderSlot: number) => void) => void;
+    pump: () => void;
+    leave: () => void;
+  } {
+    // Swallow game frames until the run installs its own receiver. Between the launch firing and the run
+    // screen mounting there is no session to hand them to, and letting them fall to the lobby's `receive`
+    // would be handing it session bytes it cannot read. A confirm or two lost in this gap is repaired by
+    // the next one, exactly as any other lost confirm is.
+    this.gameSink = () => undefined;
+    this.handedOff = true;
+    // Read each seat's chosen character straight off the roster. The host published it and every phone
+    // applied it before START, so this array is identical on all of them — which is exactly why the run
+    // can begin each seat with its own survivor from seed + roster and stay deterministic without any new
+    // wire message.
+    const characterIds: number[] = [];
+    for (let i = 0; i < MAX_PLAYERS; i++) {
+      characterIds.push((this.lobby.seats[i] as LobbySeatRow).characterId);
+    }
+    return {
+      link: this.transport.link(),
+      localSlot: this.lobby.localSlot,
+      hostSlot: this.lobby.hostSlot,
+      isHost: this.lobby.isHost,
+      playerCount: Math.max(1, this.lobby.liveCount),
+      characterIds,
+      // The run installs its net session's `receive` here once it is built, so inbound game frames reach
+      // the session instead of the floor.
+      setReceiver: (sink) => {
+        this.gameSink = sink;
+      },
+      pump: () => this.transport.pump(),
+      // Free the seat for good, bypassing the disarmed `leave` above — this is the run deciding it is
+      // truly over, which is the one caller allowed to close a handed-off socket.
+      leave: () => {
+        this.transport.quit();
+        this.status = LOBBY_STATUS.ENDED;
+      },
+    };
   }
 
   /* -------------------------------------------------------------------------------------------- */

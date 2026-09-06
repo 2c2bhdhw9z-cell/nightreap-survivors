@@ -128,9 +128,12 @@ export default function CharacterScreen(): ReactNode {
   const router = useRouter();
   // Which place the run is headed for, chosen on the screen before this one. Carried rather than stored,
   // and re-checked by the run itself, so an unreadable or locked one simply becomes the first place.
-  const params = useLocalSearchParams<{ stage?: string }>();
+  const params = useLocalSearchParams<{ stage?: string; coop?: string }>();
   const stage = Number.parseInt(params.stage ?? "", 10);
   const stageParam = Number.isSafeInteger(stage) ? stage : 0;
+  // Whether this select is the fork on the way to a party rather than a solo run. When it is, the chosen
+  // survivor is handed to the lobby instead of a run, and the stage is left to the host to pick there.
+  const toCoop = params.coop === "1";
   const { save, loadFailed } = useSettings();
   const [picked, setPicked] = useState(() => firstPlayable(save, 0));
   const [notice, setNotice] = useState("");
@@ -140,8 +143,15 @@ export default function CharacterScreen(): ReactNode {
       setNotice("That one is still locked.");
       return;
     }
+    // Same choice, two roads: solo carries the survivor and the stage straight into a run; co-op carries
+    // only the survivor on to the lobby, where the host owns the seed and the stage. Either way this
+    // screen decides nothing beyond who — the run and the lobby each re-check the pick against the save.
+    if (toCoop) {
+      router.push(`/coop?character=${picked}`);
+      return;
+    }
     router.push(`/dev/play?character=${picked}&stage=${stageParam}`);
-  }, [picked, router, save, stageParam]);
+  }, [picked, router, save, stageParam, toCoop]);
 
   const owned = unlockedCount(save);
   const chosen = CHARACTERS[picked];

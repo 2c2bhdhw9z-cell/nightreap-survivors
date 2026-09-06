@@ -600,6 +600,10 @@ export class Lobby {
     );
     bytes[HDR_DEST] = RELAY_BROADCAST;
     this.o.send(bytes);
+    // The guests hear the launch over LOBBY_LAUNCH and fire this from `receive`; the host never
+    // receives its own broadcast, so it fires the same hook here. One path into a run for everyone,
+    // rather than the host screen having to watch `launched` flip and the guests using the hook.
+    this.o.onLaunch?.(chosen, this.launchStageId, this.liveCount);
     return true;
   }
 

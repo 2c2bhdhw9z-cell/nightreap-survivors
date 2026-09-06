@@ -260,6 +260,20 @@ export interface PartyOptions {
   modifiers?: readonly RunModifier[];
   /** Recording is off by default: these tests are about agreement, not about replay files. */
   record?: boolean;
+  /**
+   * Per-seat character records, indexed by slot, for testing co-op where every seat is its own survivor.
+   *
+   * When present, every member of the party begins from the identical per-slot loadout — which is exactly
+   * what the app does, because the roster reaches every phone before launch. Left out, the party begins
+   * with no character, as it always has.
+   */
+  charactersBySlot?: readonly (readonly RunModifier[])[];
+  /** Per-seat growth ladders, indexed by slot, paired with `charactersBySlot`. */
+  characterGrowthBySlot?: readonly (readonly RunModifier[])[];
+  /** Per-seat growth spacing, indexed by slot, paired with `charactersBySlot`. */
+  characterGrowthEveryBySlot?: readonly number[];
+  /** Per-seat starting weapon id, indexed by slot, paired with `charactersBySlot`. */
+  startingWeaponIdBySlot?: readonly string[];
 }
 
 /**
@@ -278,12 +292,25 @@ export function makeParty(opts: PartyOptions): Party {
     conditions = DEFAULT_CONDITIONS,
     modifiers = [],
     record = false,
+    charactersBySlot,
+    characterGrowthBySlot,
+    characterGrowthEveryBySlot,
+    startingWeaponIdBySlot,
   } = opts;
 
   const net = new SimNetwork(conditions, netSeed);
 
   const begin = (run: Run): void => {
-    run.begin({ seed, playerCount, modifiers: modifiers as RunModifier[], record });
+    run.begin({
+      seed,
+      playerCount,
+      modifiers: modifiers as RunModifier[],
+      record,
+      ...(charactersBySlot !== undefined ? { charactersBySlot } : {}),
+      ...(characterGrowthBySlot !== undefined ? { characterGrowthBySlot } : {}),
+      ...(characterGrowthEveryBySlot !== undefined ? { characterGrowthEveryBySlot } : {}),
+      ...(startingWeaponIdBySlot !== undefined ? { startingWeaponIdBySlot } : {}),
+    });
   };
 
   const hostRun = new Run();

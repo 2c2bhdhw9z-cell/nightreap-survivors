@@ -159,6 +159,27 @@ export interface RunConfig {
   /** Levels between growth steps for the chosen character. Must be at least 1. */
   characterGrowthEvery: number;
   /**
+   * PER-SLOT character choice, for co-op where every seat picks its own survivor.
+   *
+   * When present, entry `slot` supplies that seat's character records, growth ladder, growth spacing and
+   * starting weapon, overriding the shared `characters`/`characterGrowth`/`characterGrowthEvery`/
+   * `startingWeaponId` fields above for that seat. A slot left `undefined` (or a shorter array than the
+   * party) falls back to the shared fields, so a solo run — which never sets these — is byte-identical to
+   * before: its one seat resolves from `characters` exactly as it always did.
+   *
+   * These are the character half of the same idea the party already runs on: every seat's choice is on
+   * every phone (the host published the roster before launch), so every phone builds the identical world
+   * from seed + records. Each seat's character record wire id lands on `modifierWire`, so a snapshot
+   * restore, a joining guest and a server replay all rebuild every seat's character, not just seat 0's.
+   */
+  charactersBySlot?: readonly (readonly RunModifier[])[];
+  /** Per-slot growth ladders. Entry `slot` is that seat's ladder; a missing slot uses `characterGrowth`. */
+  characterGrowthBySlot?: readonly (readonly RunModifier[])[];
+  /** Per-slot growth spacing. Entry `slot` is that seat's `everyLevels`; a missing slot uses the shared one. */
+  characterGrowthEveryBySlot?: readonly number[];
+  /** Per-slot starting weapon id. Entry `slot` is that seat's weapon; a missing slot uses `startingWeaponId`. */
+  startingWeaponIdBySlot?: readonly string[];
+  /**
    * Which arcanas this profile has unlocked, as indices into the arcana catalog.
    *
    * Indices rather than records, because unlike a mode or a shop rank an arcana is not applied at run
@@ -303,20 +324,32 @@ export class Run {
    * Two things need these numbers rather than the records themselves: the replay header, and a snapshot
    * restore, which has to rebuild the modifier stack from a byte buffer that cannot hold object
    * references. Filling it unconditionally costs a handful of integer writes once per run.
+   *
+   * Widened from 64 to 128 for co-op per-slot characters: a four-player party puts each seat's character
+   * base record on this list (four ids that used to be one), on top of the mode, ascension, stage and shop
+   * records the list already carried. Growth records are NOT here — they are derived from character-and-
+   * level on every phone — so the ceiling only has to hold four characters plus modes plus purchases, which
+   * 128 clears with room to spare. If a future run ever needs more, widen here and nowhere else: everything
+   * that reads the list is bounded by `modifierCount`, not by this length.
    */
-  private readonly modifierWire = new Int32Array(64);
+  private readonly modifierWire = new Int32Array(128);
   private modifierCount = 0;
   /**
-   * The chosen character's growth ladder, and how far apart its steps are.
+   * Each seat's growth ladder, and how far apart its steps are, indexed by slot.
+   *
+   * Per-slot rather than one shared ladder because in co-op every seat can be a different character with a
+   * different growth quirk on a different level. A solo run fills every slot from its single character, so
+   * slot 0 is identical to the shared ladder it used before — which is what keeps the determinism guard
+   * bit-identical.
    *
    * Held on the run rather than looked up, because `run.ts` has no dependency on the character layer, and
-   * because it survives a snapshot restore for free: the run object is reused, so the ladder is still here
-   * when the stack is rebuilt from wire ids.
+   * because they survive a snapshot restore for free: the run object is reused, so the ladders are still
+   * here when the stack is rebuilt from wire ids.
    */
-  private growthLadder: readonly RunModifier[] = [];
-  private growthEvery = 1;
-  /** How many growth steps are currently folded into the loadout. `-1` means "not established yet". */
-  private growthTier = -1;
+  private readonly growthLadders: (readonly RunModifier[])[] = [[], [], [], []];
+  private readonly growthEverys: number[] = [1, 1, 1, 1];
+  /** How many growth steps are currently folded in, per slot. `-1` means "not established yet". */
+  private readonly growthTiers = new Int32Array(MAX_PLAYERS).fill(-1);
   private readonly bombScratch = new Int32Array(1024);
 
   private spawnRng: Rng;
@@ -446,6 +479,22 @@ export class Run {
 
     this.reseedStreams(this.seed);
 
+    // How many seats are in play. Resolved before the stack is folded because the character records are
+    // now per-seat: a four-player party puts four survivors' shifts on one shared stat table, and which
+    // seats exist decides which characters get added.
+    const playerCount = Math.min(Math.max(1, c.playerCount | 0), MAX_PLAYERS);
+
+    // Per-seat character choice, resolved once here. In solo every slot falls back to the single shared
+    // `characters`/`characterGrowth`/`characterGrowthEvery`/`startingWeaponId`, so a solo run's slot 0 is
+    // exactly what it was before this became per-seat — the determinism guard pins it. In co-op each seat
+    // reads its own entry from the `*BySlot` arrays, which every phone agrees on because the host published
+    // the roster before launch.
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+      this.growthLadders[p] = c.characterGrowthBySlot?.[p] ?? c.characterGrowth;
+      this.growthEverys[p] = Math.max(1, (c.characterGrowthEveryBySlot?.[p] ?? c.characterGrowthEvery) | 0);
+      this.growthTiers[p] = 0;
+    }
+
     // Stats first: how much health a player starts with is a resolved stat, so the modifier stack has
     // to be folded before anybody is placed on the map.
     this.stack.clear();
@@ -455,17 +504,20 @@ export class Run {
     // order-independent by design, so this is only about which records get dropped first if a stack ever
     // overflows: a mode the player chose for this run matters more than a rank they bought last week.
     for (let i = 0; i < c.powerUps.length; i++) this.stack.add(c.powerUps[i]);
-    // The character joins the same stack, ahead of the shop for the same overflow reason: who the player
-    // picked for this run matters more than a rank they bought last week.
-    for (let i = 0; i < c.characters.length; i++) this.stack.add(c.characters[i]);
-    this.growthLadder = c.characterGrowth;
-    this.growthEvery = Math.max(1, c.characterGrowthEvery | 0);
-    this.growthTier = 0;
+    // The characters join the same stack, ahead of the shop for the same overflow reason: who the players
+    // picked for this run matters more than a rank they bought last week. One seat at a time, in slot
+    // order, so the far side rebuilds the identical stack — and so a solo run adds exactly slot 0's
+    // records once, byte-identical to before. The stat table is shared across the party (one set of
+    // numbers), so every seat's shifts fold into it together; what is genuinely per-seat is the growth
+    // ladder above and the starting weapon below.
+    for (let p = 0; p < playerCount; p++) {
+      const records = c.charactersBySlot?.[p] ?? c.characters;
+      for (let i = 0; i < records.length; i++) this.stack.add(records[i]);
+    }
     const resolved = this.stack.resolve(this.stats);
     this.flags = resolved.flags;
     if (resolved.tainted) this.tainted |= 1;
 
-    const playerCount = Math.min(Math.max(1, c.playerCount | 0), MAX_PLAYERS);
     this.players.reset(playerCount, this.stats, playerCount > 1 ? SPAWN_RING_RADIUS : 0);
     this.owners.count = playerCount;
     this.enemies.clear();
@@ -504,15 +556,23 @@ export class Run {
     this.axes.fill(0);
     this.buttons.fill(0);
 
-    const starting = WEAPON_BY_ID.get(c.startingWeaponId);
-    if (starting !== undefined) {
-      for (let p = 0; p < playerCount; p++) this.weapons.grant(p, starting);
+    // Each seat starts holding ITS OWN character's weapon, not one weapon handed to the whole party.
+    // A solo run's one seat reads `startingWeaponId` exactly as before; a co-op seat reads its own entry,
+    // falling back to the shared weapon when its slot is missing. The weapon store is already per-player,
+    // so this is a grant per seat into that seat's own slot.
+    for (let p = 0; p < playerCount; p++) {
+      const weaponId = c.startingWeaponIdBySlot?.[p] ?? c.startingWeaponId;
+      const starting = WEAPON_BY_ID.get(weaponId);
+      if (starting !== undefined) this.weapons.grant(p, starting);
     }
 
     // Both lists go on the wire, and the shop's records go on it for the same reason the mode's do: a
     // snapshot restore, a joining guest and a server revalidating a replay all rebuild the stack from
     // these numbers and nothing else. A purchase left off the wire is a purchase that quietly stops
-    // applying the moment anybody resyncs.
+    // applying the moment anybody resyncs. Each seat's character base record goes on the list too — in
+    // slot order, matching the order they were added to the stack — so the far side rebuilds every seat's
+    // survivor, not just seat 0's. (Growth records are derived from character-and-level and are
+    // deliberately absent, exactly as they were before.)
     let count = 0;
     for (let i = 0; i < c.modifiers.length && count < this.modifierWire.length; i++) {
       this.modifierWire[count++] = c.modifiers[i].wireId;
@@ -520,8 +580,11 @@ export class Run {
     for (let i = 0; i < c.powerUps.length && count < this.modifierWire.length; i++) {
       this.modifierWire[count++] = c.powerUps[i].wireId;
     }
-    for (let i = 0; i < c.characters.length && count < this.modifierWire.length; i++) {
-      this.modifierWire[count++] = c.characters[i].wireId;
+    for (let p = 0; p < playerCount; p++) {
+      const records = c.charactersBySlot?.[p] ?? c.characters;
+      for (let i = 0; i < records.length && count < this.modifierWire.length; i++) {
+        this.modifierWire[count++] = records[i].wireId;
+      }
     }
     this.modifierCount = count;
 
@@ -746,12 +809,11 @@ export class Run {
           this.cues.emit(CUE.levelUp, players.x[p], players.y[p], l, p);
         }
         this.prevLevel[p] = prog.level;
-        // A level can earn the character's next growth step. The growth ladder is shared for now
-        // (one character across the party in FEAT-001; FEAT-002 makes it per slot), so the tier is
-        // still keyed off player 0's level — which is exactly today's behaviour for a solo run and is
-        // what keeps the determinism guard bit-identical. Guard the rebuild so an ordinary level-up
-        // costs one integer division rather than a full resolve.
-        if (p === 0 && this.growthTierAt(prog.level) !== this.growthTier) growthChanged = true;
+        // A level can earn THAT SEAT's next growth step. Each seat climbs its own character's ladder off
+        // its own level, so a level-up on one seat only rebuilds the loadout when that seat's tier
+        // actually moved. Guard the rebuild so an ordinary level-up costs one integer division rather than
+        // a full resolve. A solo run has one seat on slot 0's ladder, byte-identical to before.
+        if (this.growthTierAt(p, prog.level) !== this.growthTiers[p]) growthChanged = true;
       }
     }
     if (growthChanged) {
@@ -1076,23 +1138,35 @@ export class Run {
    * disagreement is invisible until two devices compare state hashes.
    */
   private restoreGrowthAfterPick(): void {
-    if (this.growthTier <= 0) return;
+    // Nothing to put back only when no seat has earned a step yet. As soon as any seat is on its ladder, a
+    // rebuild is the safe move — it re-adds every seat's growth from its own level, so one seat's card pick
+    // cannot quietly drop another seat's growth.
+    let anyStep = false;
+    for (let p = 0; p < this.players.count; p++) if (this.growthTiers[p] > 0) anyStep = true;
+    if (!anyStep) return;
     this.rebuildLoadout();
     this.stack.resolve(this.stats);
   }
 
   /**
-   * Rebuild the loadout list: every player's passives, then the character's growth step.
+   * Rebuild the loadout list: every player's passives, then EACH SEAT's own growth step.
    *
    * Order inside the list does not matter — resolution is order-independent by design — but rebuilding in one
    * place does, because `passives.applyTo` clears the whole list on every call. Anything that lives in the
    * loadout has to be re-added by whoever calls it, and this is that whoever.
+   *
+   * Growth is per seat: each seat's tier is read off ITS character's ladder and ITS own level, and every
+   * seat's earned rung is added to the one shared loadout. A solo run has a single seat on slot 0's ladder,
+   * so the list it builds is identical to before.
    */
   private rebuildLoadout(): void {
     for (let p = 0; p < this.players.count; p++) this.passives.applyTo(this.stack, p);
-    const tier = this.growthTierAt(this.prog.level);
-    this.growthTier = tier;
-    if (tier > 0) this.stack.addLoadout(this.growthLadder[tier - 1]);
+    for (let p = 0; p < this.players.count; p++) {
+      const level = (this.progAll[p] as Progression).level;
+      const tier = this.growthTierAt(p, level);
+      this.growthTiers[p] = tier;
+      if (tier > 0) this.stack.addLoadout((this.growthLadders[p] as readonly RunModifier[])[tier - 1]);
+    }
     // Arcanas last, and rebuilt with everything else rather than added once when taken: `applyTo` on the
     // passive store clears the whole loadout, so anything that lives there has to be put back by the one
     // function that owns what the loadout contains.
@@ -1126,11 +1200,19 @@ export class Run {
     return this.arcanas.flags;
   }
 
-  /** How many growth steps a level has earned, clamped to the ladder the character actually has. */
-  private growthTierAt(level: number): number {
-    if (this.growthLadder.length === 0) return 0;
-    const steps = Math.floor((Math.max(1, level | 0) - 1) / this.growthEvery);
-    return Math.min(steps, this.growthLadder.length);
+  /**
+   * How many growth steps a seat's level has earned, clamped to that seat's character's ladder.
+   *
+   * Per seat because every seat can be a different character on a different level. A solo run asks this for
+   * slot 0 with slot 0's ladder and `everyLevels`, which is exactly the single-ladder arithmetic it did
+   * before.
+   */
+  private growthTierAt(player: number, level: number): number {
+    const ladder = this.growthLadders[player] as readonly RunModifier[] | undefined;
+    if (ladder === undefined || ladder.length === 0) return 0;
+    const every = this.growthEverys[player] ?? 1;
+    const steps = Math.floor((Math.max(1, level | 0) - 1) / Math.max(1, every));
+    return Math.min(steps, ladder.length);
   }
 
   rerollCards(player = 0): boolean {

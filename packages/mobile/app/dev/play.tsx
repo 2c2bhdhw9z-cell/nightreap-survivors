@@ -320,6 +320,9 @@ export default function PlayScreen() {
   const characterRef = useRef(0);
   characterRef.current = firstPlayable(settings.save, Number.isSafeInteger(wanted) ? wanted : 0);
   const characterModsRef = useRef<RunModifier[]>([]);
+  // Per-seat scratch for a co-op run: one records array per slot, filled once at `startRun`. Held rather
+  // than allocated per run for the same reason `characterModsRef` is — starting a run must not allocate.
+  const characterModsBySlotRef = useRef<RunModifier[][]>([[], [], [], []]);
   useEffect(() => {
     saveRef.current = settings.save;
   }, [settings.save]);
@@ -538,9 +541,15 @@ export default function PlayScreen() {
       const painter = new HudPainter({ white });
       frameRef.current = hudView.frame;
       // Who is on the network and what they are playing is the party layer's business, not the run's.
-      // There is no party on this screen, so everybody is present and everybody is character zero.
+      // Solo has no party, so everybody is present and every seat draws the one chosen survivor. In co-op
+      // each seat draws ITS OWN survivor, read from the roster the lobby handed over, so four different
+      // portraits walk the same field.
       const connected = new Uint8Array(MAX_PLAYERS).fill(1);
       const characterIds = new Uint8Array(MAX_PLAYERS).fill(characterRef.current);
+      const coopIds = coopRef.current?.connection.characterIds;
+      if (coopIds !== undefined) {
+        for (let p = 0; p < MAX_PLAYERS; p++) characterIds[p] = coopIds[p] ?? characterRef.current;
+      }
       const reaperAtTicks = REAPER_SECOND * TICKS_PER_SECOND;
 
       const run = new Run(seedRef.current);
@@ -1175,6 +1184,33 @@ export default function PlayScreen() {
     // same three numbers over the launch message, and beginning from anything else would build a
     // different world than the host is sealing. Solo reads them from the route params exactly as before.
     const coop = coopRef.current ?? null;
+    // In co-op every seat begins as its own survivor. The roster's per-seat characters came over on the
+    // handoff, agreed on every phone, so each phone builds the identical per-slot loadout: that seat's
+    // records, its growth ladder, its growth spacing and its starting weapon. A slot the roster does not
+    // name falls back to this phone's own pick. Solo leaves the `*BySlot` fields undefined and the run
+    // uses the single shared character exactly as before — byte-identical.
+    let charactersBySlot: RunModifier[][] | undefined;
+    let characterGrowthBySlot: (readonly RunModifier[])[] | undefined;
+    let characterGrowthEveryBySlot: number[] | undefined;
+    let startingWeaponIdBySlot: string[] | undefined;
+    let characterIds: number[] = [pick, pick, pick, pick];
+    if (coop !== null) {
+      const slots = characterModsBySlotRef.current;
+      charactersBySlot = slots;
+      characterGrowthBySlot = [];
+      characterGrowthEveryBySlot = [];
+      startingWeaponIdBySlot = [];
+      characterIds = [];
+      for (let p = 0; p < MAX_PLAYERS; p++) {
+        const id = Math.max(0, coop.connection.characterIds[p] ?? pick);
+        characterIds.push(id);
+        const out = slots[p] ?? (slots[p] = []);
+        characterLoadout(id, 1, out);
+        characterGrowthBySlot.push(CHARACTER_GROWTH_MODIFIERS[id] ?? []);
+        characterGrowthEveryBySlot.push(CHARACTERS[id]?.growth.everyLevels ?? 1);
+        startingWeaponIdBySlot.push(characterStartingWeaponId(id, "reapersLash"));
+      }
+    }
     run.begin({
       seed: coop !== null ? coop.seed : seedRef.current,
       playerCount: coop !== null ? Math.max(1, coop.playerCount) : partyRef.current,
@@ -1184,8 +1220,11 @@ export default function PlayScreen() {
       characters: characterModsRef.current,
       characterGrowth: growth,
       characterGrowthEvery: CHARACTERS[pick]?.growth.everyLevels ?? 1,
-      characterIds: [pick, pick, pick, pick],
+      characterIds,
       startingWeaponId: characterStartingWeaponId(pick, "reapersLash"),
+      ...(charactersBySlot !== undefined
+        ? { charactersBySlot, characterGrowthBySlot, characterGrowthEveryBySlot, startingWeaponIdBySlot }
+        : {}),
       // Which arcanas may be offered is a profile question, not a simulation one, so it is answered
       // here and handed over as plain indices. Read at the start of every run rather than held, for
       // the same reason the shop loadout is: a run started right after an unlock must see it.

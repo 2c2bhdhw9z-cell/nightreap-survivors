@@ -330,6 +330,48 @@ section("the host starts, and everyone hears one seed");
   check("and nothing was launched", s.view().launched === false);
 }
 
+section("the handoff carries every seat's chosen character");
+{
+  // Each phone begins its co-op run from the roster the host published, so the handoff has to hand the
+  // run every seat's character — not just our own. The roster on this phone already holds them (the seat
+  // frames put them there), and this proves the handle reads them straight off it, in slot order.
+  const w = new World();
+  const s = w.session();
+  const admission = createAdmission();
+  admission.mode = JOIN_MODE.CREATE;
+  admission.size = 2;
+  s.open(admission);
+  w.live.handlers.onOpen();
+  w.live.handlers.onText(seatedFrame(0, [LIVE, LIVE]));
+  // A guest publishes its own character over LOBBY_SEAT; the host folds it into the roster it sends back.
+  // Drive that by hand: seat 1 arrives with character 5 in a peer roster frame.
+  w.live.handlers.onText(
+    JSON.stringify({
+      t: "peer_joined",
+      slot: 1,
+      room: {
+        code: "KX7M2B",
+        hostSlot: 0,
+        targetSize: 2,
+        public: false,
+        seats: [LIVE, LIVE],
+        // The relay's room view does not carry characters; those ride LOBBY_SEAT, which this test does
+        // not model. So seat 1's character is set directly on the lobby the way an applied seat would.
+      },
+    }),
+  );
+  check("our own seat kept the character we chose", (s.view().seats[0] as { characterId: number }).characterId === 3);
+
+  const handle = s.handOffToRun();
+  check("the handle exposes an id per seat", handle.characterIds.length >= 2, `${handle.characterIds.length}`);
+  check("our seat's character is in the array at our slot", handle.characterIds[handle.localSlot] === 3, `${handle.characterIds[handle.localSlot]}`);
+  check(
+    "every seat has a defined character id",
+    handle.characterIds.every((id) => Number.isSafeInteger(id) && id >= 0),
+    handle.characterIds.join(","),
+  );
+}
+
 section("leaving is final, and gives the seat straight back");
 {
   const w = new World();

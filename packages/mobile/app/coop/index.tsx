@@ -23,6 +23,7 @@ import { Chunk, Cobble, Header, Mortar, Pips, Slab, StoneText } from "@/componen
 import { CHAT_KIND, LOBBY_SEAT, MAX_NAME_CHARS, START_BLOCK, SYSTEM_LINE, type ChatLine, type LobbySeatRow } from "@/game/lobby/lobby";
 import { LOBBY_STATUS, LobbySession, createAdmission, type LobbyView } from "@/game/lobby/session";
 import { JOIN_MODE, isCompleteCode, normalizeCode, webSocketFactory, type JoinMode } from "@/game/net/transport";
+import { coopHandoff } from "@/game/net/coop-handoff";
 import { FLAG } from "@/game/config/remote-config";
 import { useFlag } from "@/hooks/use-flag";
 import { useSettings } from "@/hooks/use-settings";
@@ -30,7 +31,7 @@ import { lobbyLinkSource } from "@/game/dev/lobby-probe";
 import { PROTOCOL_VERSION } from "@/game/net/protocol";
 import { attachCoopProbe } from "@/lib/coop-lab-host";
 import { relayConfigured, relayUrl } from "@/lib/relay-url";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -43,6 +44,14 @@ export default function CoopScreen(): ReactNode {
   const settings = useSettings();
   const [session, setSession] = useState<LobbySession | null>(null);
   const [view, setView] = useState<LobbyView | null>(null);
+
+  // Which survivor this player chose on the way in. Character select is the screen before this one and
+  // hands the pick along as a route parameter, exactly the way it hands one to a solo run — so this
+  // screen decides nothing, it only carries the number into the lobby seat. An unreadable or absent value
+  // is the first character, which is what an empty choice has always meant.
+  const params = useLocalSearchParams<{ character?: string }>();
+  const chosenCharacter = Number.parseInt(params.character ?? "", 10);
+  const localCharacterId = Number.isSafeInteger(chosenCharacter) && chosenCharacter >= 0 ? chosenCharacter : 0;
 
   // One session per party. Kept in a ref as well so the cleanup below cannot capture a stale one and
   // leave a socket open — a leaked socket holds a seat, and a held seat blocks a party from starting.
@@ -100,7 +109,44 @@ export default function CoopScreen(): ReactNode {
         // FIDELITY: names come from the generated-name table once it exists — a name is user-generated
         // content, so the default must be generated and a custom one must be opted into and filtered.
         name: "SURVIVOR",
-        characterId: 0,
+        characterId: localCharacterId,
+        // The one thing that turns a lobby into a run. Fired on the host when START is pressed and on
+        // every guest when the host's launch reaches them. It hands the *live* connection to the run —
+        // never a route param, because a socket cannot be flattened to a string and rebuilt without
+        // opening a second connection that races this seat — and then navigates. Everything the run
+        // needs to drive the shared world is in `handOffToRun`; the decision of what to do with it
+        // lives in `game/net/coop-handoff.ts`, not here.
+        onLaunch: (seed, stageId, playerCount) => {
+          const session = live.current;
+          if (session === null) return;
+          const conn = session.handOffToRun();
+          const outcome = coopHandoff.stage({
+            seed,
+            stageId,
+            playerCount,
+            connection: {
+              link: conn.link,
+              localSlot: conn.localSlot,
+              hostSlot: conn.hostSlot,
+              isHost: conn.isHost,
+              // The roster's per-seat characters, agreed on every phone, travel to the run so each seat
+              // begins as its own survivor. No new wire message: they rode the roster the host published.
+              characterIds: conn.characterIds,
+              setReceiver: conn.setReceiver,
+              pump: conn.pump,
+              leave: conn.leave,
+            },
+          });
+          // A busy slot means a stale launch was never taken — free this one's seat rather than leak it,
+          // and stay put. In normal play the slot is always empty by the time a launch fires.
+          if (!outcome.staged) {
+            conn.leave();
+            return;
+          }
+          // Replace, not push: backing out of a run must not land on a dead lobby whose socket the run
+          // now owns.
+          router.replace("/dev/play");
+        },
       });
       const admission = createAdmission();
       admission.mode = mode;
@@ -111,7 +157,7 @@ export default function CoopScreen(): ReactNode {
       setView(next.view());
       next.open(admission);
     },
-    [settings.resolved.chatEnabled, settings.resolved.chatFromNonFriends],
+    [settings.resolved.chatEnabled, settings.resolved.chatFromNonFriends, router, localCharacterId],
   );
 
   const leave = useCallback(() => {

@@ -22,6 +22,9 @@ import { Run } from "../run/run";
 import { MOD_DEV_GODMODE, MODIFIERS_BY_WIRE_ID } from "../sim/modifiers";
 import { MAX_PASSIVES, PASSIVE_TYPES } from "../sim/passives";
 import { STAT, STAT_BASE, Stats } from "../sim/stats";
+import { MAX_WEAPONS, WEAPON_BY_ID } from "../sim/weapons";
+import { firstDivergentTick, makeParty, runParty } from "../net/sim-network";
+import { CARD_ACTION } from "../net/messages";
 import { CHARACTERS } from "./roster";
 import {
   CHARACTER_GROWTH_MODIFIERS,
@@ -313,6 +316,182 @@ section("a second character, so this is not one lucky row");
     `${run.stats.values[STAT.armor]} vs ${armourAtOne + c.growth.add}`,
   );
   check("the player starts on more health than the baseline", run.players.health[0] > STAT_BASE[STAT.maxHealth] / 1000, `${run.players.health[0]}`);
+}
+
+// -------------------------------------------------------------------------------------------------
+section("co-op: every seat is its own survivor");
+
+/**
+ * Build the per-slot character config the app hands `run.begin` in co-op, for a party where each seat
+ * picked a different survivor.
+ *
+ * This is exactly the shape `app/dev/play.tsx startRun` assembles from the roster the lobby handed over,
+ * and the shape `makeParty` passes to every phone's `run.begin` — so what this proves headless is what
+ * ships.
+ */
+function coopConfig(ids: readonly number[]) {
+  const charactersBySlot = ids.map((id) => {
+    const out: RunModifier[] = [];
+    characterLoadout(id, 1, out);
+    return out;
+  });
+  return {
+    charactersBySlot,
+    characterGrowthBySlot: ids.map((id) => CHARACTER_GROWTH_MODIFIERS[id] ?? []),
+    characterGrowthEveryBySlot: ids.map((id) => CHARACTERS[id].growth.everyLevels),
+    startingWeaponIdBySlot: ids.map((id) => characterStartingWeaponId(id, "reapersLash")),
+  };
+}
+
+{
+  // Two seats, two different survivors, chosen so their starting weapons differ and their growth quirks
+  // touch different stats — the only way to tell a genuinely per-seat build apart from one shared one.
+  const A = CHARACTERS.findIndex((c) => c.id === "vesna");
+  const B = CHARACTERS.findIndex((c) => c.id === "grust");
+  const ids = [A, B];
+  const cfg = coopConfig(ids);
+
+  const run = new Run();
+  run.begin({ seed: 24680, playerCount: 2, record: false, ...cfg });
+
+  // Each seat holds its OWN starting weapon, in its own weapon store, not one weapon handed to the party.
+  const weaponA = run.weapons.typeIndex[0 * MAX_WEAPONS];
+  const weaponB = run.weapons.typeIndex[1 * MAX_WEAPONS];
+  check(
+    "seat 0 starts with its own character's weapon",
+    weaponA === WEAPON_BY_ID.get(CHARACTERS[A].startingWeaponId),
+    `${weaponA}`,
+  );
+  check(
+    "seat 1 starts with its own character's weapon",
+    weaponB === WEAPON_BY_ID.get(CHARACTERS[B].startingWeaponId),
+    `${weaponB}`,
+  );
+  check("the two seats did not end up with the same weapon", weaponA !== weaponB, `${weaponA} vs ${weaponB}`);
+
+  // Per-seat growth: level ONLY seat 0 up to earn its first damage step; seat 1 stays at level one and
+  // earns nothing. The shared stat table must move by seat 0's step alone — proof the tier is read off
+  // each seat's own level and ladder, not one shared level.
+  const dmgAtOne = run.stats.values[CHARACTERS[A].growth.stat];
+  const armorAtOne = run.stats.values[CHARACTERS[B].growth.stat];
+  const p0 = run.progFor(0);
+  let guard = 0;
+  while (p0.level < CHARACTERS[A].growth.everyLevels + 1 && guard++ < 10_000) {
+    p0.addXp(p0.xpToNext - p0.xp, run.stats);
+  }
+  p0.pending = 0;
+  p0.droppedPending = 0;
+  run.tick();
+  check(
+    "seat 0's own level earns seat 0's growth step",
+    run.stats.values[CHARACTERS[A].growth.stat] === dmgAtOne + CHARACTERS[A].growth.add,
+    `${run.stats.values[CHARACTERS[A].growth.stat]} vs ${dmgAtOne + CHARACTERS[A].growth.add}`,
+  );
+  check(
+    "and seat 1, still at level one, has earned no step of its own",
+    run.stats.values[CHARACTERS[B].growth.stat] === armorAtOne,
+    `${run.stats.values[CHARACTERS[B].growth.stat]} vs ${armorAtOne}`,
+  );
+
+  // Now level seat 1 to earn its first armour step. Both seats' steps must be folded into the one shared
+  // table together — each read off its own level.
+  const p1 = run.progFor(1);
+  guard = 0;
+  while (p1.level < CHARACTERS[B].growth.everyLevels + 1 && guard++ < 10_000) {
+    p1.addXp(p1.xpToNext - p1.xp, run.stats);
+  }
+  p1.pending = 0;
+  p1.droppedPending = 0;
+  run.tick();
+  check(
+    "seat 1's own level then earns seat 1's growth step",
+    run.stats.values[CHARACTERS[B].growth.stat] === armorAtOne + CHARACTERS[B].growth.add,
+    `${run.stats.values[CHARACTERS[B].growth.stat]} vs ${armorAtOne + CHARACTERS[B].growth.add}`,
+  );
+  check(
+    "seat 0's step is still applied alongside it",
+    run.stats.values[CHARACTERS[A].growth.stat] === dmgAtOne + CHARACTERS[A].growth.add,
+    `${run.stats.values[CHARACTERS[A].growth.stat]}`,
+  );
+
+  section("co-op: every seat's build survives a resync");
+  // Both seats' characters are on the wire, so rehydrating from wire ids alone rebuilds every seat's
+  // survivor. The growth records are derived per seat from each seat's level, so this proves that
+  // derivation happens for both seats, not just seat 0.
+  const wire = new Int32Array(128);
+  const n = run.writeModifierWireIds(wire);
+  let foundA = false;
+  let foundB = false;
+  for (let i = 0; i < n; i++) {
+    if (wire[i] === CHARACTER_MODIFIERS[A].wireId) foundA = true;
+    if (wire[i] === CHARACTER_MODIFIERS[B].wireId) foundB = true;
+  }
+  check("seat 0's character is on the wire", foundA);
+  check("seat 1's character is on the wire", foundB);
+
+  run.rehydrate(ALL_BY_WIRE_ID);
+  check("after rehydrating, both seats' stats still follow from the contents", run.loadoutAgreesWithStats(new Stats()));
+  const after = new Stats();
+  run.loadoutAgreesWithStats(after);
+  check(
+    "and the rebuilt stack still carries seat 0's earned step",
+    after.values[CHARACTERS[A].growth.stat] === dmgAtOne + CHARACTERS[A].growth.add,
+    `${after.values[CHARACTERS[A].growth.stat]}`,
+  );
+  check(
+    "and seat 1's earned step",
+    after.values[CHARACTERS[B].growth.stat] === armorAtOne + CHARACTERS[B].growth.add,
+    `${after.values[CHARACTERS[B].growth.stat]}`,
+  );
+
+  section("co-op: two phones with different survivors stay in lockstep");
+  // The real proof of determinism: two machines, each building the SAME per-slot world from seed + the
+  // same per-slot records, must never disagree. Driven through the actual net harness, over a lossy wire,
+  // with the host answering both seats' card screens so a level-up never deadlocks the party.
+  const party = makeParty({ playerCount: 2, seed: 13579, modifiers: [MOD_DEV_GODMODE], ...cfg });
+  const hostWeapon0 = party.host.run.weapons.typeIndex[0 * MAX_WEAPONS];
+  const hostWeapon1 = party.host.run.weapons.typeIndex[1 * MAX_WEAPONS];
+  check("the host built seat 0's weapon", hostWeapon0 === WEAPON_BY_ID.get(CHARACTERS[A].startingWeaponId));
+  check("the host built seat 1's weapon", hostWeapon1 === WEAPON_BY_ID.get(CHARACTERS[B].startingWeaponId));
+  const guest = party.guests[0] as (typeof party.guests)[number];
+  check("the guest built the identical seat 0 weapon", guest.run.weapons.typeIndex[0 * MAX_WEAPONS] === hostWeapon0);
+  check("the guest built the identical seat 1 weapon", guest.run.weapons.typeIndex[1 * MAX_WEAPONS] === hostWeapon1);
+
+  let done = 0;
+  let screensAnswered = 0;
+  let diverged = { tick: -1, slot: -1 };
+  const total = 5400;
+  while (done < total && diverged.tick < 0) {
+    const n = Math.min(240, total - done);
+    runParty(party, n, (t, p) => {
+      // Both seats walk different arcs through the same crowd so each collects its OWN gems in-sim and
+      // levels on them — the only deterministic way to earn a level, since injected XP would move one
+      // phone and not the other.
+      const a = ((done + t) / 260) * Math.PI * 2;
+      p.host.setLocalInput(Math.cos(a), Math.sin(a), 0);
+      const g = p.guests[0] as (typeof p.guests)[number];
+      g.setLocalInput(Math.cos(a + Math.PI / 2), Math.sin(a + Math.PI / 2), 0);
+      // Each seat answers ITS OWN screen, the way the two-player card path is meant to work: the host
+      // picks its own card byte, the guest's pick rides the wire into its own. Answering per seat is what
+      // keeps a party with two open screens from freezing on the second one.
+      if (p.host.run.pausedFor(p.host.localSlot)) {
+        p.host.requestCardAction(CARD_ACTION.PICK_0);
+        screensAnswered++;
+      }
+      if (p.host.run.pausedFor(g.slot)) {
+        g.requestCardAction(CARD_ACTION.PICK_0);
+        screensAnswered++;
+      }
+    });
+    done += n;
+    diverged = firstDivergentTick(party);
+  }
+  check(
+    "two survivors, two phones, never disagree",
+    diverged.tick < 0,
+    diverged.tick < 0 ? `in lockstep for ${done} ticks` : `slot ${diverged.slot} at tick ${diverged.tick}`,
+  );
+  check("and at least one seat answered a card screen while they ran", screensAnswered > 0, `${screensAnswered}`);
 }
 
 console.log(failures === 0 ? "\nPASS — a character inside a real run" : `\nFAIL — ${failures} check(s) failed`);

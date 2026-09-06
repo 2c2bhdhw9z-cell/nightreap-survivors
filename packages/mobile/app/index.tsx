@@ -233,13 +233,6 @@ export default function Title() {
 
         <View style={styles.buttons}>
           <PlayButton onPress={() => router.push("/stages")} />
-          {/*
-           * Playing with friends sits directly under PLAY, above the between-runs grid, because it is
-           * the second thing a player comes here to do, not a screen they visit between runs. Gold, so
-           * it reads as an action and not another shelf item, but full-width and unlit rather than the
-           * filled, breathing PLAY, so it never competes with the one button that owns the bottom.
-           */}
-          <Chunk label="CO-OP" weight="gold" onPress={() => router.push("/coop")} />
           <View style={styles.row}>
             <Chunk
               label="CHARACTERS"

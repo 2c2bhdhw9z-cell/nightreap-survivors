@@ -167,6 +167,26 @@ export default function StageScreen(): ReactNode {
         })}
       </ScrollView>
 
+      {/*
+       * WHY CO-OP LIVES HERE, NOT ON THE TITLE SCREEN
+       *
+       * Playing with friends is a way to play, not a place you visit between runs, so it belongs inside
+       * the play flow: you hit PLAY, you land here, and this is where the road forks. Solo goes down the
+       * gold CHOOSE A SURVIVOR below; together goes through CO-OP. Full-width and above the exits so it
+       * sits with the going-onward buttons and never competes with a stage card. It decides nothing — it
+       * only opens the co-op screen, which owns the lobby.
+       */}
+      <Chunk
+        label="CO-OP · PLAY WITH FRIENDS"
+        weight="gold"
+        style={styles.coop}
+        // Co-op forks through the same character select solo does — who first, then the lobby — so a
+        // player picks their own survivor before ever seeing a room. The `coop` flag tells that screen to
+        // route the chosen character on to the lobby instead of straight into a run. The stage is the
+        // host's to pick in the lobby, so unlike the solo road it does not travel from here.
+        onPress={() => router.push("/characters?coop=1")}
+      />
+
       <View style={styles.exits}>
         <Chunk
           label={chosenOpen ? "CHOOSE A SURVIVOR" : "LOCKED"}
@@ -223,6 +243,9 @@ const styles = StyleSheet.create({
   rowText: {
     flex: 1,
     gap: 3,
+  },
+  coop: {
+    marginBottom: Grid,
   },
   exits: {
     flexDirection: "row",
