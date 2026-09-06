@@ -223,5 +223,39 @@ export const CONFIRM_INTERVAL_TICKS = 3;
  * How far behind the confirmed horizon a guest may fall before it stops waiting and asks for a
  * snapshot instead. Beyond this the missing records have aged out of the retransmission window, so
  * waiting longer cannot help.
+ *
+ * This is the ceiling on patience for the *old* stall path, kept as a last resort. In practice a
+ * stalled guest now asks far sooner — see `RESYNC_AFTER_AGED_OUT_TICKS` — because the true signal
+ * that waiting cannot help is not "how long have I been stuck" but "is the record I am blocked on
+ * already older than the host will ever resend". A screenshot pause is exactly that case: the guest
+ * comes back needing a tick that has already scrolled out of the confirm window, and waiting ninety
+ * ticks for a confirm that can never carry it is what pinned the sprite at the drift ceiling.
  */
 export const RESYNC_AFTER_STALL_TICKS = 90;
+
+/**
+ * How many ticks past the retransmission window a guest tolerates before it stops waiting and asks
+ * for a snapshot. Once the tick a guest needs next is this far below the horizon, the confirms that
+ * are still arriving cannot contain it — it aged out of `CONFIRM_REDUNDANCY_TICKS` of history — so
+ * there is nothing to wait for. A few ticks of slack above the window absorbs a confirm that is in
+ * flight but not yet applied; beyond it, a snapshot is the only thing that can move the guest.
+ *
+ * This is the screenshot fix: a guest that returns from a pause needing a record older than the
+ * window asks for the truth within a handful of ticks instead of after ninety, so it snaps forward
+ * and becomes controllable at once rather than sitting frozen while `lead` pins at the ceiling.
+ */
+export const RESYNC_AFTER_AGED_OUT_TICKS = CONFIRM_REDUNDANCY_TICKS + 8;
+
+/**
+ * Hard ceiling on confirmed records a guest may apply in a single catch-up burst.
+ *
+ * The steady state applies at most `MAX_CATCHUP_TICKS` (6) per frame — that is all a healthy guest
+ * is ever behind, and applying more would spend a burst of CPU it does not need. But a guest that
+ * fell behind during a hitch and whose missing records are all still in the ring should converge in
+ * a frame or two, not crawl back six ticks at a time for a second. When the backlog of *present*
+ * records is larger than the steady cap, the guest is allowed to apply up to this many, which is the
+ * whole retransmission window plus slack: everything a single confirm could have delivered. This is
+ * pure replay of already-confirmed records, so it is exactly as deterministic as the steady path —
+ * no tick is invented, the order is unchanged, only the per-frame budget widens while catching up.
+ */
+export const MAX_BURST_CATCHUP_TICKS = CONFIRM_REDUNDANCY_TICKS + 8;

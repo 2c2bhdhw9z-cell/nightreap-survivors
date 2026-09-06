@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   Platform,
   Pressable,
   ScrollView,
@@ -355,6 +356,9 @@ export default function PlayScreen() {
   if (coopRef.current === undefined) coopRef.current = coopHandoff.take();
   // The net run driver, live only on a co-op run. Built in `startRun`.
   const netRunRef = useRef<NetRun | null>(null);
+  // The fixed-loop clock, held so the AppState handler can re-anchor it on resume without reaching
+  // into the render loop's closure. Set once the loop is built in `onContextCreate`.
+  const loopRef = useRef<FixedLoop | null>(null);
   const rafRef = useRef<number | null>(null);
   /** Current stick vector, -1..1, already deadzoned. Read once per sim tick. */
   const stickRef = useRef<StickState>({ x: 0, y: 0, active: false, originX: 0, originY: 0, knobX: 0, knobY: 0 });
@@ -433,6 +437,30 @@ export default function PlayScreen() {
     },
     [],
   );
+
+  // Coming back to the foreground after a background spell — a screenshot, a task switch, the screen
+  // sleeping — is the one moment the guest is guaranteed to be behind: the host kept sealing ticks the
+  // whole time and this phone applied none. Two things happen on the way back in, and only these two.
+  //
+  // First, re-anchor the fixed-loop clock to now while keeping its tick count, exactly as the pause
+  // path does every frame it is held: without it, `advance` would see one huge gap, and although the
+  // loop caps that gap it is cleaner to start the resumed run from a known anchor. This is done for
+  // host and guest alike — the host is authoritative and needs nothing more.
+  //
+  // Second, for a guest only, trigger the net-layer recovery. The rule of what recovery means — a fast
+  // catch-up if the records are still in the ring, a snap-forward through the existing snapshot path if
+  // they aged out — lives entirely in `GuestSession.onResumedFromBackground`; the screen only says
+  // "we are back". That is what stops the returning guest pinning at the drift ceiling waiting for a
+  // host that may not be moving.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") return;
+      const loop = loopRef.current;
+      if (loop !== null) loop.reset(nowMs(), loop.stats.tick);
+      netRunRef.current?.onResumedFromBackground();
+    });
+    return () => sub.remove();
+  }, []);
 
   const restart = useCallback(() => {
     restartRef.current++;
@@ -656,6 +684,9 @@ export default function PlayScreen() {
         // is predicted. Display-only: `enemyView` never feeds the sim or the wire.
         enemyView.sample(run.enemies.slots, run.enemies.count, run.enemies.x, run.enemies.y);
       });
+      // Held so the AppState resume handler can re-anchor this same clock without capturing the loop
+      // in its own closure. The render loop below still reads the local `loop`; they are one object.
+      loopRef.current = loop;
 
       let lastFrame = -1;
       let frameMsSum = 0;
