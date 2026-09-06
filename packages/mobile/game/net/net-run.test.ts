@@ -19,7 +19,9 @@
  *   2. Stick input actually moves the players: a held stick walks both the host's and the guest's own
  *      seat, so the driver is really feeding input and not just holding still.
  *   3. A guest's `renderX/renderY` lead its authoritative position while it holds unsent input — the
- *      `LocalView` is wired — while a host draws exactly the simulation.
+ *      `LocalView` is wired and its `lead` climbs above zero — while a host draws exactly the simulation
+ *      and reports zero lead. The `lead`/`snaps` accessors are what the dev panel reads to prove on a
+ *      real phone that prediction actually engaged.
  *   4. `netRunFromLaunch` does the one-time wiring (host admits, guest says hello, receiver installed)
  *      such that a run built from a launch handle reaches agreement with no manual admit/hello.
  */
@@ -174,6 +176,24 @@ section("3. A guest predicts its own feet; a host draws the simulation");
   const drawnGuestX = pair.guest.renderX(1);
   check("the guest draws at or ahead of its confirmed feet", drawnGuestX >= authGuestX - 0.001, `drawn ${drawnGuestX} auth ${authGuestX}`);
   check("the guest has a LocalView", pair.guest.localView !== null);
+
+  // Prediction is engaged, not just present: while the guest holds a stick under real latency it draws
+  // ahead of its confirmed feet by a non-zero lead. This is exactly the number the dev panel surfaces
+  // through `NetRun.lead`, so a green here is a guarantee the phone readout can prove prediction on a
+  // real device — a guest stuck at lead 0 while moving would fail this and read as the old lag bug.
+  let sawLead = false;
+  for (let i = 0; i < 60; i++) {
+    // Record the intent, then step the pair. The guest keeps sending input the host has not sealed yet
+    // (input delay plus the wire), so at each applied tick there are unsealed intents ahead to replay —
+    // `lead` is recomputed on that tick and climbs above zero. `lead` lives on `LocalView.onTick`, which
+    // only runs when the guest actually advances, which is why the wire has to move.
+    pair.guest.setLocalInput(1, 0, 0);
+    pair.host.setLocalInput(0, 0, 0);
+    stepPair(pair);
+    if (pair.guest.lead > 0) sawLead = true;
+  }
+  check("the guest accumulates lead while holding a stick", sawLead, `lead ${pair.guest.lead}`);
+  check("a host reports zero lead (no prediction)", pair.host.lead === 0, `lead ${pair.host.lead}`);
 
   // The host has no LocalView and draws exactly what its simulation says.
   check("the host has no LocalView", pair.host.localView === null);

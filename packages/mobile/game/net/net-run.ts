@@ -124,7 +124,10 @@ export class NetRun {
    * Feed the local phone's stick for the tick about to be sealed.
    *
    * Records the intent into `LocalView` first, at the moment of capture, because that is the whole
-   * point of dead reckoning: the phone knows its own thumb long before the host confirms it.
+   * point of dead reckoning: the phone knows its own thumb long before the host confirms it. The intent
+   * is recorded against the tick the guest is *sending* for — `leadTicks` ahead of the applied tick, not
+   * one ahead — so the pending span the dead-reckoner replays matches the real input-delay-plus-RTT lag
+   * it is hiding. Nothing recorded here ever reaches the wire or the simulation.
    */
   setLocalInput(x: number, y: number, buttons: number): void {
     if (this.host !== null) {
@@ -132,8 +135,23 @@ export class NetRun {
       return;
     }
     const g = this.guest as GuestSession;
-    // Record the intent for the next tick the guest will send, so the replay lines up with the world.
-    this.localView?.record(g.tick + 1, x, y);
+    // Record the intent against every tick from just past the newest one already held up to the tick
+    // the guest is actually sending this input for. That send tick sits `leadTicks` — the input delay
+    // plus a round trip — ahead of the tick being applied, and that whole span is the pending intent
+    // dead reckoning replays to draw the local player where the thumb already is. Recording only the
+    // applied tick + 1 (as an earlier cut did) leaves a single tick of lead, so the guest still looks
+    // lagged; filling the span the way `sendInput` writes redundant ticks lines the prediction up with
+    // the very inputs the host will confirm. Display only — nothing here reaches the wire or the sim.
+    const view = this.localView;
+    if (view !== null) {
+      const send = Math.max(0, g.predictTick);
+      // Fill every tick from just past the newest one already held up to the send tick, so a walk has a
+      // continuous run of intents to replay rather than a single one at the far end with a gap of zeros
+      // behind it. When the horizon has not advanced this frame the loop refreshes only the send tick,
+      // keeping the newest intent on the current thumb.
+      const from = Math.min(send, Math.max(g.tick + 1, view.newestIntentTick + 1));
+      for (let t = from; t <= send; t++) view.record(t, x, y);
+    }
     g.setLocalInput(x, y, buttons);
   }
 
@@ -188,6 +206,21 @@ export class NetRun {
   renderY(alpha: number): number {
     if (this.localView === null) return this.run.players.y[this.localSlot] ?? 0;
     return this.localView.renderY(alpha);
+  }
+
+  /**
+   * How far ahead of its confirmed feet a guest is currently drawing, and how often prediction had to
+   * cut rather than glide. `lead` is the number of unsealed intents replayed on the most recent tick;
+   * a guest that is genuinely predicting sits at a lead above zero while its stick is held, and a guest
+   * stuck at zero lead is a guest whose prediction never engaged. Zero on a host and solo, which have no
+   * `LocalView` and draw the simulation exactly. Read by the dev panel so this is visible on a phone.
+   */
+  get lead(): number {
+    return this.localView?.stats.lead ?? 0;
+  }
+
+  get snaps(): number {
+    return this.localView?.stats.snaps ?? 0;
   }
 
   /**

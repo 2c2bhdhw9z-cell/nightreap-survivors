@@ -154,6 +154,16 @@ interface Readout {
   /** Live stick vector. On screen because "is my thumb even reaching the sim" must be answerable. */
   stickX: number;
   stickY: number;
+  /**
+   * Guest dead-reckoning telemetry. `lead` is how many unsealed intents the `LocalView` is replaying —
+   * i.e. how far ahead of its confirmed feet a guest is drawing right now. On a real phone this is the
+   * one number that answers "is prediction actually engaged": a guest that holds a stick and stays at
+   * lead 0 is a guest drawing the laggy authoritative position, which is the whole bug this fixes.
+   * `snaps` counts the times prediction cut to the truth rather than gliding. Both are zero on a host
+   * and on solo, which have no `LocalView`.
+   */
+  lead: number;
+  snaps: number;
 }
 
 const EMPTY_READOUT: Readout = {
@@ -174,6 +184,8 @@ const EMPTY_READOUT: Readout = {
   weapons: "",
   stickX: 0,
   stickY: 0,
+  lead: 0,
+  snaps: 0,
 };
 
 /** What the card overlay needs. Copied out of the sim so React never holds a live sim reference. */
@@ -609,7 +621,17 @@ export default function PlayScreen() {
         }
         // Ticked every time, paused or not: while a card screen is open the player does not move,
         // so the camera converges and interpolation has nothing to smear.
-        renderer.camera.tick(run.players.x[0], run.players.y[0]);
+        //
+        // Follow the seat this phone is playing, not slot 0 — a guest is not slot 0 — and on a guest
+        // follow its DEAD-RECKONED position, so the camera tracks the responsive feet the guest draws
+        // rather than the authoritative position that lags half a round trip behind the thumb. NetRun
+        // returns the plain authoritative local position on the host and on solo (no `LocalView`), so
+        // this is one code path; solo has no `netRun` at all and follows the authoritative local slot.
+        if (netRun !== null) {
+          renderer.camera.tick(netRun.renderX(1), netRun.renderY(1));
+        } else {
+          renderer.camera.tick(run.players.x[localSlot], run.players.y[localSlot]);
+        }
       });
 
       let lastFrame = -1;
@@ -638,7 +660,10 @@ export default function PlayScreen() {
             walk.reset();
             chestClock = -1;
             chestRows.length = 0;
-            renderer.camera.snapTo(run.players.x[0], run.players.y[0]);
+            // Snap to the seat this phone plays, matching the initial snap above. A restart is a
+            // solo path (a co-op seed comes from the host), so `localSlot` is 0 here in practice, but
+            // following the local slot keeps the one rule in one shape.
+            renderer.camera.snapTo(run.players.x[localSlot], run.players.y[localSlot]);
             cardsWereOpen = false;
             arcanaWasOpen = false;
             reportedEnd = RUN_END.running;
@@ -735,9 +760,20 @@ export default function PlayScreen() {
           {
             const b = renderer.layer("player");
             const pl = run.players;
+            const netRun = netRunRef.current;
             for (let i = 0; i < pl.count; i++) {
-              const x = pl.prevX[i] + (pl.x[i] - pl.prevX[i]) * alpha;
-              const y = pl.prevY[i] + (pl.y[i] - pl.prevY[i]) * alpha;
+              // Every seat draws its authoritative interpolated position — except the seat this phone is
+              // playing on a co-op run, which draws its DEAD-RECKONED position instead. That is the whole
+              // point of the guest fix: the local player's own feet must respond to the thumb now, not
+              // half a round trip later. NetRun returns the plain authoritative local position on the
+              // host and solo, so the same call is correct everywhere; only a guest actually leads.
+              const local = netRun !== null && i === localSlot;
+              const x = local
+                ? netRun.renderX(alpha)
+                : pl.prevX[i] + (pl.x[i] - pl.prevX[i]) * alpha;
+              const y = local
+                ? netRun.renderY(alpha)
+                : pl.prevY[i] + (pl.y[i] - pl.prevY[i]) * alpha;
               // The character's own body, drawn as drawn while nothing is happening to them. Being hit
               // and being down still wash the sprite, because those two have to be unmissable.
               const colour =
@@ -910,6 +946,8 @@ export default function PlayScreen() {
             weapons: describeWeapons(run),
             stickX: stickRef.current.x,
             stickY: stickRef.current.y,
+            lead: netRunRef.current?.lead ?? 0,
+            snaps: netRunRef.current?.snaps ?? 0,
           });
         }
       };
@@ -1034,6 +1072,17 @@ export default function PlayScreen() {
             {settings.ready ? "" : " (defaults)"}
           </Text>
           <Text style={styles.dim}>{readout.weapons}</Text>
+          {coopRef.current !== null ? (
+            // Co-op netcode readout. `lead` is how far ahead of its confirmed feet this phone is drawing
+            // via dead reckoning: a guest holding a stick should show a lead above zero, and a lead
+            // stuck at zero while moving is the tell that prediction never engaged. Zero on the host,
+            // which draws the simulation exactly. This is the number the two-phone test watches.
+            <Text style={styles.dim}>
+              {coopRef.current?.connection.isHost ? "host" : "guest"} slot{" "}
+              {coopRef.current?.connection.localSlot ?? 0} · lead {readout.lead} · snaps{" "}
+              {readout.snaps}
+            </Text>
+          ) : null}
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </View>
 

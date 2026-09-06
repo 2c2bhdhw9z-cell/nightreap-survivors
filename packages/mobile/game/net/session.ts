@@ -831,6 +831,23 @@ export class GuestSession {
   }
 
   /**
+   * The tick the *next* local input will be sent for.
+   *
+   * The guest does not send its thumb for the tick it is applying now; it sends it ahead of the
+   * confirmed horizon by `leadTicks` — the input delay plus a round trip — so the host has it in hand
+   * by the time that tick is sealed. That gap between the tick being applied (`tick`) and the tick
+   * being sent for (this value) is exactly the span of pending intents dead reckoning must replay to
+   * draw the local player where the thumb already is. `LocalView` records against this tick, not the
+   * applied one, or it would only ever hold a single tick of lead and the guest would still look lagged.
+   *
+   * Read-only and display-facing: it reports the same `want` `sendInput` computes, so recording at it
+   * lines the prediction up with the very inputs the host will confirm. It never changes what is sent.
+   */
+  get predictTick(): number {
+    return Math.max(this.horizon + this.leadTicks(), this.sendTick + 1);
+  }
+
+  /**
    * One frame of guest work: send input, then simulate whatever the host has already confirmed.
    *
    * The guest never simulates a tick it has not been given. That is the whole reason it cannot
