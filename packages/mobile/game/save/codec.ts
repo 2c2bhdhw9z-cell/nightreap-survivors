@@ -184,7 +184,13 @@ function packSettings(view: DataView, at: number, s: SaveSettings): void {
   if (s.guideOffered) flags2 |= 1 << 0;
   if (s.guideArmed) flags2 |= 1 << 1;
   view.setUint8(at + 36, flags2 & 0xff);
-  // 37..47 reserved, left zero.
+  // Byte 37: the render frame-rate mode (`FRAME_RATE_MODE`). Stored with a +1 offset so that a zero in
+  // this byte means "unset" — which is exactly what an existing save (written before this setting) has,
+  // and what a brand-new zeroed reserved byte has. `unpackSettings` reads a zero as the DYNAMIC default
+  // rather than as HZ_60, so nobody's phone silently drops from 120 to 60 on upgrade. A real stored mode
+  // is 1..3 here (HZ_60 -> 1, HZ_120 -> 2, DYNAMIC -> 3). Still inside the v2-reserved tail, so no bump.
+  view.setUint8(at + 37, (s.frameRateMode + 1) & 0xff);
+  // 38..47 reserved, left zero.
 }
 
 function unpackSettings(view: DataView, at: number, version: number): SaveSettings {
@@ -236,6 +242,11 @@ function unpackSettings(view: DataView, at: number, version: number): SaveSettin
   const flags2 = view.getUint8(at + 36);
   s.guideOffered = (flags2 & (1 << 0)) !== 0;
   s.guideArmed = (flags2 & (1 << 1)) !== 0;
+  // Byte 37 is the +1-offset frame-rate mode. Zero is "unset" — an old save, or a fresh reserved byte —
+  // and reads as the default that `defaultSettings()` already put in `s.frameRateMode` (DYNAMIC). A
+  // stored 1..3 maps back to 0..2; anything else is treated as unset rather than trusted.
+  const rawFrameRate = view.getUint8(at + 37);
+  if (rawFrameRate >= 1 && rawFrameRate <= 3) s.frameRateMode = rawFrameRate - 1;
   return s;
 }
 

@@ -26,7 +26,8 @@
  * In and out in points, not pixels. Device pixel ratio belongs to the renderer.
  */
 
-import { CHAT_KEYBOARD, HUD_ALIGN, defaultSettings, type SaveSettings } from "../save/schema";
+import { CHAT_KEYBOARD, FRAME_RATE_MODE, HUD_ALIGN, defaultSettings, type SaveSettings } from "../save/schema";
+import { DYNAMIC_TARGET_FPS } from "../core/frame-gate";
 
 /** Scale clamps. A layout editor that lets the player make the pause button 4 points wide is a trap. */
 export const SCALE_MIN = 60;
@@ -63,6 +64,28 @@ export const PASSIVE_SLOTS = 6;
 /** Frame rate cap when battery saver is on. Half rate, which the sim's fixed 60Hz tick is unaffected by. */
 export const BATTERY_SAVER_FPS = 30;
 export const NORMAL_FPS = 60;
+/** The 120Hz cap, for the phones that can do it. */
+export const HIGH_FPS = 120;
+
+/**
+ * Turn the stored frame-rate mode into a render cap in Hz. DYNAMIC resolves to the uncapped sentinel
+ * (`DYNAMIC_TARGET_FPS`, zero), which the render loop reads as "draw every frame the display offers".
+ * The simulation is 60Hz no matter what this returns.
+ */
+export function fpsForMode(mode: number): number {
+  switch (mode) {
+    case FRAME_RATE_MODE.HZ_60:
+      return NORMAL_FPS;
+    case FRAME_RATE_MODE.HZ_120:
+      return HIGH_FPS;
+    case FRAME_RATE_MODE.DYNAMIC:
+      return DYNAMIC_TARGET_FPS;
+    default:
+      // An unknown mode from a newer build falls back to DYNAMIC rather than to a fixed cap: following
+      // the display is the safe answer on any panel, where guessing 60 could halve a 120Hz phone.
+      return DYNAMIC_TARGET_FPS;
+  }
+}
 
 export interface DeviceFacts {
   /** Safe-area width and height in points — already inset for notches and home bars. */
@@ -197,7 +220,10 @@ export function resolve(stored: SaveSettings, device: DeviceFacts): ResolvedSett
     screenFlash: trim(stored.screenFlash),
     screenShake: trim(stored.screenShake),
     vfxLevel: saver ? Math.max(1, clamp(stored.vfxLevel, 0, 2)) : clamp(stored.vfxLevel, 0, 2),
-    targetFps: saver ? BATTERY_SAVER_FPS : NORMAL_FPS,
+    // Battery saver CAPS the frame rate to 30 and never raises it — DYNAMIC's uncapped sentinel and a
+    // chosen 60/120 all collapse to 30 with it on. With it off, the player's chosen mode decides, where
+    // DYNAMIC is the uncapped sentinel the render loop reads as "follow the display".
+    targetFps: saver ? BATTERY_SAVER_FPS : fpsForMode(stored.frameRateMode),
     autoAim: stored.autoAim,
     insectFreeSprites: stored.insectFreeSprites,
     speedrunToolkit: stored.speedrunToolkit,

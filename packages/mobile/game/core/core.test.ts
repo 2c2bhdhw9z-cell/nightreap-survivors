@@ -52,6 +52,7 @@ import {
   fxToInt,
 } from "./fx";
 import { MAX_CATCHUP_TICKS, FixedLoop, FrameTimer, TICK_MS } from "./loop";
+import { DYNAMIC_TARGET_FPS, RefreshEstimator, shouldDrawFrame } from "./frame-gate";
 import { EntityPool, NULL_HANDLE, POOL_BUDGETS, handleGen, handleSlot } from "./pool";
 import { RNG_STREAMS, Rng, RngSet, hashName } from "./rng";
 import { SpatialHash } from "./spatial-hash";
@@ -979,6 +980,103 @@ function testLoop(): void {
 }
 
 // ---------------------------------------------------------------------------
+// 14b. The render frame gate — decoupled from the sim tick
+// ---------------------------------------------------------------------------
+
+function testFrameGate(): void {
+  section("14b. Frame gate — render rate without touching the sim");
+
+  // Feed a synthetic stream of rAF timestamps at the display's real cadence and count how many frames
+  // the gate lets through at each cap. The display below ticks at 120Hz; a 60Hz cap should thin it to
+  // about half, a 120Hz cap should pass nearly all, and DYNAMIC should pass every single one.
+  function countDrawn(targetFps: number, displayHz: number, seconds: number): number {
+    const step = 1000 / displayHz;
+    let lastDrawn = -1;
+    let drawn = 0;
+    const frames = Math.round(displayHz * seconds);
+    for (let i = 1; i <= frames; i++) {
+      const now = i * step;
+      if (shouldDrawFrame(now, lastDrawn, targetFps)) {
+        drawn++;
+        lastDrawn = now;
+      }
+    }
+    return drawn;
+  }
+
+  const on120at60 = countDrawn(60, 120, 1);
+  check("a 60 cap on a 120Hz display draws about 60", Math.abs(on120at60 - 60) <= 2, `${on120at60}`);
+  const on120at120 = countDrawn(120, 120, 1);
+  check("a 120 cap on a 120Hz display draws about 120", on120at120 >= 118, `${on120at120}`);
+  const dyn120 = countDrawn(DYNAMIC_TARGET_FPS, 120, 1);
+  check("dynamic on a 120Hz display draws every frame", dyn120 === 120, `${dyn120}`);
+  const dyn144 = countDrawn(DYNAMIC_TARGET_FPS, 144, 1);
+  check("dynamic on a 144Hz display draws every frame", dyn144 === 144, `${dyn144}`);
+  const on60at60 = countDrawn(60, 60, 1);
+  check("a 60 cap on a 60Hz display still draws about 60, not 30", Math.abs(on60at60 - 60) <= 2, `${on60at60}`);
+
+  check("the first frame always draws", shouldDrawFrame(0, -1, 60));
+  check("dynamic ignores the elapsed time entirely", shouldDrawFrame(1, 0.5, DYNAMIC_TARGET_FPS));
+  check("a non-finite cap is treated as dynamic", shouldDrawFrame(1, 0.5, Number.NaN));
+  check("a backwards clock does not force an extra draw under a cap", !shouldDrawFrame(100, 200, 60));
+
+  // THE DECOUPLING PROOF. Drive one FixedLoop across a fixed wall-clock span at a fine timestamp
+  // resolution, stepping the sim on EVERY timestamp regardless of the render cap, and confirm the sim
+  // tick count is identical whether the render cap is 60, 120 or dynamic. The play screen does exactly
+  // this: it calls advance() every rAF callback and only gates the DRAW, so the sim never sees the cap.
+  function simTicksUnder(targetFps: number, displayHz: number, seconds: number): number {
+    const step = 1000 / displayHz;
+    let ticked = 0;
+    const loop = new FixedLoop(() => {
+      ticked++;
+    });
+    loop.reset(0);
+    let lastDrawn = -1;
+    const frames = Math.round(displayHz * seconds);
+    for (let i = 1; i <= frames; i++) {
+      const now = i * step;
+      // Sim advances on every callback, cap or no cap.
+      loop.advance(now);
+      // The gate only decides whether we would DRAW — it must not feed back into the sim.
+      if (shouldDrawFrame(now, lastDrawn, targetFps)) lastDrawn = now;
+    }
+    return ticked;
+  }
+
+  const ticks60 = simTicksUnder(60, 120, 2);
+  const ticks120 = simTicksUnder(120, 120, 2);
+  const ticksDyn = simTicksUnder(DYNAMIC_TARGET_FPS, 120, 2);
+  check("the sim runs the same ticks at a 60 cap as at 120", ticks60 === ticks120, `${ticks60} vs ${ticks120}`);
+  check("and the same as dynamic", ticks120 === ticksDyn, `${ticks120} vs ${ticksDyn}`);
+  // Two wall-clock seconds of 60Hz sim is ~120 ticks; the loop's catch-up cap keeps it a hair under on
+  // a coarse stream, but the point is that the cap does not change it.
+  check("and it is about 120 ticks for two seconds", Math.abs(ticksDyn - 120) <= 4, `${ticksDyn}`);
+
+  section("14c. Refresh estimator — reading the panel's real rate");
+
+  function measure(displayHz: number, frames: number): number {
+    const est = new RefreshEstimator();
+    const step = 1000 / displayHz;
+    for (let i = 1; i <= frames; i++) est.sample(i * step);
+    return est.hz;
+  }
+
+  check("measures a 60Hz panel", Math.abs(measure(60, 30) - 60) < 1, `${measure(60, 30).toFixed(1)}`);
+  check("measures a 120Hz panel", Math.abs(measure(120, 30) - 120) < 1, `${measure(120, 30).toFixed(1)}`);
+  check("measures a 144Hz panel", Math.abs(measure(144, 30) - 144) < 1, `${measure(144, 30).toFixed(1)}`);
+  check("measures a 165Hz panel — higher than 120 is detected", Math.abs(measure(165, 30) - 165) < 2, `${measure(165, 30).toFixed(1)}`);
+  check("says nothing until it has two frames", new RefreshEstimator().hz === 0);
+
+  // A single backgrounded gap must not drag the median off the real rate.
+  const est = new RefreshEstimator();
+  const step = 1000 / 120;
+  for (let i = 1; i <= 20; i++) est.sample(i * step);
+  est.sample(20 * step + 5000); // a huge gap — dropped, not measured
+  for (let i = 21; i <= 30; i++) est.sample(i * step + 5000);
+  check("a background gap does not poison the estimate", Math.abs(est.hz - 120) < 2, `${est.hz.toFixed(1)}`);
+}
+
+// ---------------------------------------------------------------------------
 // 15. Allocation
 // ---------------------------------------------------------------------------
 
@@ -1042,6 +1140,7 @@ testRngShuffleAndState();
 testPool();
 testSpatialHash();
 testLoop();
+testFrameGate();
 testNoAllocation();
 
 console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);

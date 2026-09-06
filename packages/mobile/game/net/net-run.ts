@@ -78,6 +78,13 @@ export class NetRun {
   /** True once the guest has been welcomed into the run. Always true for a host. */
   private helloSent = false;
 
+  /**
+   * The guest's restore count as of the last `step`. When it moves, a snapshot cut the world to a new
+   * truth at a new tick without going through the per-tick apply path, so the display-only `LocalView`
+   * must be snapped to match rather than left dead-reckoning ahead of a position that no longer exists.
+   */
+  private seenRestores = 0;
+
   constructor(options: NetRunOptions) {
     this.run = options.run;
     this.playerCount = options.playerCount;
@@ -185,8 +192,43 @@ export class NetRun {
     const g = this.guest as GuestSession;
     const before = g.tick;
     const advanced = g.pump();
+    // A snapshot restore inside `pump`'s message handling (a resync, a snap-forward after a stall)
+    // moves the world to a new tick without applying records one at a time, so the dead-reckoned local
+    // sprite would be left gliding toward a position that no longer exists — the "frozen ahead" feel.
+    // Cut the view to the restored truth before feeding any freshly applied ticks, exactly as a spawn
+    // or a stage load already cuts it.
+    if (g.restores !== this.seenRestores) {
+      this.seenRestores = g.restores;
+      this.snapLocalViewToTruth();
+    }
     if (advanced > 0 && this.localView !== null) this.onGuestTicks(before + 1, g.tick);
     return advanced;
+  }
+
+  /**
+   * Recover a guest that came back from the background.
+   *
+   * The screen calls this on an AppState background→active transition, after it has re-anchored the
+   * fixed-loop clock. The rule of *what* recovery means — catch up if the gap is small, snap forward
+   * through a snapshot if the records aged out — lives in `GuestSession`, so it stays tested without a
+   * phone. No-op on a host, which is authoritative and needs only the clock re-anchor the screen did.
+   */
+  onResumedFromBackground(): void {
+    this.guest?.onResumedFromBackground();
+  }
+
+  /**
+   * Cut the display-only `LocalView` to the local player's authoritative position after a restore.
+   *
+   * A `reset` clears the pending intents and puts the drawn sprite exactly on the truth, which is the
+   * right thing after a world cut: the intents belonged to a world that no longer applies, and the
+   * sprite becomes controllable again from the new position instead of straining toward a stale one.
+   */
+  private snapLocalViewToTruth(): void {
+    const view = this.localView;
+    if (view === null) return;
+    const players = this.run.players;
+    view.reset(players.x[this.localSlot] ?? 0, players.y[this.localSlot] ?? 0);
   }
 
   /**

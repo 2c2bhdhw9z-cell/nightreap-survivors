@@ -399,6 +399,90 @@ section("14. A sub-pixel disagreement is left alone, not chased into a shimmer")
   );
 }
 
+section("15. A bursty confirm cadence draws smooth motion, not a stutter");
+{
+  // This is the residual-jitter fix (item 3, "not as bad but still jitters"). Decoupling the glide onto
+  // the render clock (section 13) stopped the sprite moving *inside* `onTick`, but one lurch survived:
+  // `advance` fed the target's whole motion since the last render step forward at once. A guest applies
+  // a bursty count of confirmed ticks per render frame — the classic [0,0,3,0,1,2] pattern below — so
+  // on the 3-tick frame the target jumped 3px and the old code drew all 3px in that one render step,
+  // then drew ~0 on the starved frames around it. The underlying walk is perfectly steady (1px/tick),
+  // yet the drawn motion stuttered fast-slow-fast at the confirm cadence. That is the jitter.
+  //
+  // The fix caps the feed-forward at one sim-tick of motion per render step and banks the rest, so a
+  // three-tick burst is paid out over the render steps that follow. We drive that exact cadence here,
+  // walking a straight line with no pending intent (so `predX` is the authoritative truth and the
+  // feed-forward path is what is under test, not the dead-reckoning), sample the drawn position once
+  // per render frame, and assert the per-frame displacement is smooth: bounded frame-to-frame jerk (the
+  // second difference) and never a lurch of more than about one tick, with no overshoot past the truth.
+  const cadence = [0, 0, 3, 0, 1, 2]; // applied ticks per render frame; sums to one tick/frame on average
+  const lv = new LocalView();
+  lv.reset(0, 0);
+
+  // Warm the glide up to a steady 1px/tick walk over a few clean ticks so the cap has settled before we
+  // start measuring — we are testing the burst response of an established walk, not the cold start.
+  let tick = 0;
+  let authX = 0;
+  for (let i = 0; i < 20; i++) {
+    tick++;
+    authX += 1;
+    lv.onTick(tick, authX, 0, SPEED, true);
+    lv.advance();
+  }
+
+  // Now run the bursty cadence for many cycles, sampling the drawn X once per render frame (`renderX(1)`
+  // is the end-of-step drawn position, which is what the frame shows). The truth keeps advancing 1px
+  // per applied tick throughout, at a constant rate — only the *grouping* of ticks into frames is
+  // bursty, exactly as a real guest's `pump()` delivers them.
+  const drawn: number[] = [];
+  for (let cycle = 0; cycle < 40; cycle++) {
+    for (const applied of cadence) {
+      for (let k = 0; k < applied; k++) {
+        tick++;
+        authX += 1;
+        lv.onTick(tick, authX, 0, SPEED, true);
+      }
+      lv.advance();
+      drawn.push(lv.renderX(1));
+    }
+  }
+
+  check("the bursty walk never had to cut", lv.stats.snaps === 0, `snaps ${lv.stats.snaps}`);
+
+  // Per-frame drawn displacement, and its frame-to-frame change (jerk). Skip the first couple of cycles
+  // so the measurement is of the steady-state burst response, not the transient as the pending settles.
+  const skip = cadence.length * 3;
+  const disp: number[] = [];
+  for (let i = skip + 1; i < drawn.length; i++) disp.push(drawn[i] - drawn[i - 1]);
+
+  let maxDisp = 0;
+  let maxJerk = 0;
+  let minDisp = Infinity;
+  for (let i = 0; i < disp.length; i++) {
+    if (disp[i] > maxDisp) maxDisp = disp[i];
+    if (disp[i] < minDisp) minDisp = disp[i];
+    if (i > 0) {
+      const jerk = Math.abs(disp[i] - disp[i - 1]);
+      if (jerk > maxJerk) maxJerk = jerk;
+    }
+  }
+
+  // The average frame draws exactly one tick of motion (one applied tick per frame on average), and the
+  // fix holds every frame close to that instead of the old [~0,~0,~3,~0,~1,~2] stutter. A single tick is
+  // 1px at SPEED; allow a little headroom for the glide easing the banked remainder out.
+  check("no frame lurches more than about one tick of motion", maxDisp <= 1.5, `maxDisp ${maxDisp.toFixed(3)}`);
+  // The drawn sprite always moves forward on a forward walk — never stalls dead and never reverses.
+  check("the sprite never stalls or reverses on a starved frame", minDisp > 0.3, `minDisp ${minDisp.toFixed(3)}`);
+  // Frame-to-frame jerk stays small: this is the number the eye reads as smoothness. The old code hit a
+  // jerk of ~3px (a 3px burst frame next to a 0px starved one); the fix keeps it well under a tick.
+  check("frame-to-frame jerk stays small (smooth motion)", maxJerk <= 0.75, `maxJerk ${maxJerk.toFixed(3)}`);
+  // And there is no overshoot: the drawn position never runs past the authoritative truth on a straight
+  // walk — a rate limiter that over-released would sail ahead and then get pulled back, an oscillation.
+  const finalGap = drawn[drawn.length - 1] - authX;
+  check("no overshoot past the truth", finalGap <= 0.75, `finalGap ${finalGap.toFixed(3)}`);
+  check("and it keeps near-zero lag behind the truth", finalGap >= -2, `finalGap ${finalGap.toFixed(3)}`);
+}
+
 console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
 if (failures > 0) {
   const host = globalThis as unknown as { process?: { exit?: (code: number) => void } };

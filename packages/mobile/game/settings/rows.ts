@@ -135,6 +135,9 @@ export const VFX_WORDS = ["Full", "Reduced", "Minimal"] as const;
 /** Colour-blind modes in the order the number stores them. */
 export const COLORBLIND_WORDS = ["Off", "Deuteranopia", "Protanopia", "Tritanopia"] as const;
 
+/** Frame-rate modes in the order `FRAME_RATE_MODE` stores them: 60, 120, then Dynamic. */
+export const FRAME_RATE_WORDS = ["60", "120", "Dynamic"] as const;
+
 /** Next entry in a wrapping list. A count of zero gives zero rather than dividing by nothing. */
 export function nextChoice(current: number, count: number): number {
   if (count <= 0) return 0;
@@ -272,6 +275,15 @@ export const SETTING_ROWS: readonly SettingRow[] = [
     (s) => s.autoAim,
     (s, v) => ({ ...s, autoAim: v }),
   ),
+  {
+    id: "frameRate",
+    group: "Playing",
+    kind: ROW_KIND.choice,
+    label: "Frame rate",
+    help: "How often the screen is drawn: 60, 120, or Dynamic (matches your display). The game speed is unchanged.",
+    value: (s) => FRAME_RATE_WORDS[snapChoice(s.frameRateMode, FRAME_RATE_WORDS.length)] ?? FRAME_RATE_WORDS[0],
+    apply: (s) => ({ ...s, frameRateMode: nextChoice(s.frameRateMode, FRAME_RATE_WORDS.length) }),
+  },
   toggle(
     "batterySaver",
     "Playing",

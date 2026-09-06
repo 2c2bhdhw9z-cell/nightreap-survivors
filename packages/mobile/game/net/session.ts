@@ -73,11 +73,13 @@ import {
   INPUT_DELAY_TICKS,
   INPUT_HISTORY_TICKS,
   HOST_SLOT,
+  MAX_BURST_CATCHUP_TICKS,
   MAX_MESSAGE_BYTES,
   MAX_NACK_CHUNKS,
   MAX_PLAYERS,
   MSG,
   RELAY_BROADCAST,
+  RESYNC_AFTER_AGED_OUT_TICKS,
   RESYNC_AFTER_STALL_TICKS,
   RESYNC_KEEP_TICKS,
   RESYNC_NACK_WAIT_TICKS,
@@ -736,7 +738,17 @@ export const INPUT_REDUNDANCY_TICKS = 12;
 /** Ticks between RTT probes. Half a second is plenty to keep the lead estimate honest. */
 export const PING_INTERVAL_TICKS = 30;
 
-/** Most ticks a guest will simulate in one pump while catching up. */
+/**
+ * Most confirmed records a guest applies in one pump in the steady state.
+ *
+ * A healthy guest is never more than a round trip behind the horizon, so six is plenty and applying
+ * more would burn CPU it does not need. A guest that fell behind during a hitch — a screenshot, a GC
+ * pause, a backgrounded app — is a different case: its missing records are all still sitting in the
+ * ring, and it should converge in a frame or two rather than crawl back six ticks at a time. That
+ * wider budget is `MAX_BURST_CATCHUP_TICKS`, taken only while the backlog of *present* records
+ * exceeds this steady cap. Both paths replay only host-confirmed records, so the wider one is exactly
+ * as deterministic as the narrow one — see `pump`.
+ */
 export const MAX_CATCHUP_TICKS = 6;
 
 export class GuestSession {
@@ -754,6 +766,13 @@ export class GuestSession {
   joined = false;
   /** True while a snapshot is being assembled — the guest holds still rather than guessing. */
   resyncing = false;
+  /**
+   * How many times a snapshot has been restored into this guest's world. Bumped on every clean
+   * restore — a resync, a rehost, a snap-forward after a stall. The driver above (`NetRun`) watches
+   * it to know a restore happened and cut its display-only `LocalView` to the new truth, since a
+   * restore moves `tick` forward without going through the per-tick `pump` path the view samples.
+   */
+  restores = 0;
 
   private readonly local = new InputHistory(INPUT_HISTORY_TICKS);
   private readonly writer = new Writer(MAX_MESSAGE_BYTES);
@@ -865,8 +884,17 @@ export class GuestSession {
     this.maybePing();
     this.chaseResync();
 
+    // How far behind the confirmed horizon this guest is. When it is more than the steady cap and the
+    // records that close the gap are already in the ring, this frame is allowed to apply a whole burst
+    // rather than crawl — a guest that fell behind during a hitch converges in a frame or two instead
+    // of six ticks at a time. This is pure replay of host-confirmed records: no tick is invented, the
+    // order is unchanged, only the per-frame budget widens. A healthy guest, never more than a round
+    // trip behind, stays on the six-tick steady path.
+    const behind = this.horizon - this.tick;
+    const budget = behind > MAX_CATCHUP_TICKS ? MAX_BURST_CATCHUP_TICKS : MAX_CATCHUP_TICKS;
+
     let advanced = 0;
-    while (advanced < MAX_CATCHUP_TICKS && !this.run.over) {
+    while (advanced < budget && !this.run.over) {
       const next = this.tick + 1;
       if (!this.ring.has(next)) break;
       applyRecord(this.run, this.ring, next, this.playerCount);
@@ -879,13 +907,49 @@ export class GuestSession {
     if (advanced === 0 && this.joined && !this.run.over) {
       this.stats.stalledTicks++;
       this.stalledFor++;
-      if (this.stalledFor > RESYNC_AFTER_STALL_TICKS && !this.resyncing && this.horizon > this.tick) {
-        this.requestResync(0, 0);
-      }
+      this.maybeSnapForward();
     } else {
       this.stalledFor = 0;
     }
     return advanced;
+  }
+
+  /**
+   * Ask for a snapshot when waiting for the next confirm cannot possibly help.
+   *
+   * Two signals, either one is enough. First: the record the guest is blocked on has aged out of the
+   * retransmission window — the horizon is more than `RESYNC_AFTER_AGED_OUT_TICKS` above the tick the
+   * guest needs next, so no confirm still arriving can carry it. That is precisely the screenshot
+   * case: the guest returns from a pause needing a tick the host stopped resending long ago, and the
+   * old code sat waiting ninety ticks for a confirm that could never contain it, pinning the sprite at
+   * the drift ceiling. Now it asks within a handful of ticks and snaps forward. Second, as a backstop:
+   * the guest has simply been stalled longer than `RESYNC_AFTER_STALL_TICKS`, which still catches any
+   * stall the aged-out test somehow missed. A snapshot goes through the existing resync path — the same
+   * chunked restore mid-run resume uses — so no new wire message and no invented tick is involved.
+   */
+  private maybeSnapForward(): void {
+    if (this.resyncing || this.horizon <= this.tick) return;
+    // Only snapshot when the record blocking progress has genuinely aged out: the next tick is not in
+    // the ring (so burst catch-up cannot use it) AND the horizon is far enough past it that no confirm
+    // still in flight can carry it. A large gap whose next record IS present is repaired by the burst
+    // catch-up in `pump`, not by a snapshot — asking for one there would throw away a world the guest
+    // could rebuild for free. The stall ceiling stays as a last-resort backstop.
+    if (this.agedOutBeyondWindow() || this.stalledFor > RESYNC_AFTER_STALL_TICKS) {
+      this.requestResync(0, 0);
+    }
+  }
+
+  /**
+   * True when the next record this guest needs is missing from the ring and sits so far below the
+   * confirmed horizon that no confirm still arriving can contain it — it aged out of the host's
+   * retransmission window. This is the one condition under which waiting cannot help and a snapshot is
+   * the only way forward, which is exactly the state a guest is in after a screenshot-length pause.
+   */
+  private agedOutBeyondWindow(): boolean {
+    if (this.horizon <= this.tick) return false;
+    const next = this.tick + 1;
+    if (this.ring.has(next)) return false;
+    return this.horizon - next >= RESYNC_AFTER_AGED_OUT_TICKS;
   }
 
   /**
@@ -1001,6 +1065,31 @@ export class GuestSession {
     this.requestResync(0, 0);
   }
 
+  /**
+   * The app just came back to the foreground after being backgrounded (a screenshot, a task switch,
+   * the screen going to sleep). While it was away the host kept sealing ticks and this guest applied
+   * none, so it is now behind — possibly far enough that the records it needs have aged out of the
+   * retransmission window and no confirm still arriving can repair the hole.
+   *
+   * Rather than wait for the next `pump` to notice the stall tick by tick, decide right now: if the
+   * gap to the horizon is already past the window, ask for a snapshot immediately so the guest snaps
+   * forward and is controllable on the very next frame. If the gap is small the confirms in the ring
+   * (or arriving) still cover it, so the burst catch-up in `pump` closes it on its own and nothing is
+   * requested. The clock is re-anchored by the screen (the same re-anchor the pause path does); this
+   * method owns only the net-layer recovery, so the rule stays tested and out of the screen.
+   *
+   * No-op before the guest has joined, once the run is over, or while a resync is already in flight.
+   * The `horizon` here is the last confirm seen before the pause; a confirm that arrives moments after
+   * resuming only raises it, which can only make the aged-out test fire sooner, never later.
+   */
+  onResumedFromBackground(): void {
+    if (!this.joined || this.run.over || this.resyncing) return;
+    // Same rule as the stall path: snapshot only if the next record genuinely aged out. If the guest
+    // fell behind but its records are still in the ring, `pump`'s burst catch-up closes the gap on the
+    // next frame with no snapshot needed, so resuming asks for nothing.
+    if (this.agedOutBeyondWindow()) this.requestResync(0, 0);
+  }
+
   /** Feed one message received from the host. */
   receive(bytes: Uint8Array): void {
     this.stats.bytesReceived += bytes.byteLength;
@@ -1113,12 +1202,17 @@ export class GuestSession {
       return;
     }
     this.tick = h.tick;
+    if (this.tick > this.horizon) this.horizon = this.tick;
     this.stats.snapshotBytes = this.snapshotTotalBytes;
     this.trail.clear();
     this.trail.record(this.tick, this.run.hashState(HASH_SEED));
     this.pendingHashTick = -1;
     this.stalledFor = 0;
     this.resyncing = false;
+    // A restore cut the world to the host's truth at a new tick. The drawn local player must cut with
+    // it — see `NetRun`, which reads this counter and snaps its `LocalView` — because the sprite was
+    // dead-reckoned ahead of a position that no longer exists.
+    this.restores++;
   }
 
   get lastRestoreError(): SnapshotError {

@@ -45,6 +45,19 @@
  * jitter this file exists to remove: the crowd was already fixed this way, and the one sprite left
  * shimmering was the local player, still gliding per applied tick.
  *
+ * BURST FEED-FORWARD IS RATE-LIMITED, NOT DUMPED IN ONE STEP
+ * Decoupling the two clocks stops the sprite gliding *inside* `onTick`, but a subtler lurch survived:
+ * `advance` fed the target's motion since the previous render step forward in full. On a frame where
+ * `pump()` applied three confirmed ticks the target jumped ~3px, so that one `advance` drew ~3px of
+ * feed-forward, and the next starved frame (zero applied ticks) drew ~0 — a fast-slow-fast stutter at
+ * the confirm cadence even though the underlying walk is perfectly steady. The fix is to carry the
+ * outstanding target motion in a small pending accumulator and release at most one sim-tick of motion
+ * per render step: a three-tick burst is spread over the next three render steps instead of shown at
+ * once. The per-step budget is a smoothed estimate of one render step's worth of target motion, so a
+ * steady walk (one applied tick per step) still draws its full pixel with zero lag, and only bursts
+ * are flattened. This is NOT per-applied-tick gliding — the glide still runs once per render step in
+ * `advance`; only the *velocity* being fed into it is steadied so it stops tracking the bursty cadence.
+ *
  * ZERO ALLOCATION
  * A fixed intent ring of `RING` ticks, all typed arrays, no objects returned. `new` inside a frame
  * is a bug here as much as anywhere else in the engine.
@@ -81,6 +94,14 @@ export const LOCAL_VIEW_DEFAULTS = {
    * glides closed.
    */
   deadzonePx: 0.5,
+  /**
+   * How quickly the per-step feed-forward cap (`stepCap`) eases *down* toward a slower per-applied-tick
+   * target speed. The cap rises instantly (fast attack) so a walk reaches full feed-forward at once and
+   * never lags, but decays by this fraction per applied tick, so a single slow or downed tick does not
+   * collapse the cap and make the next burst lurch again. Low enough to ride through the momentary
+   * dips of a bursty confirm cadence, high enough that a genuine slow-down settles within a few ticks.
+   */
+  budgetSmoothing: 0.15,
 } as const;
 
 export interface LocalViewOptions {
@@ -88,6 +109,7 @@ export interface LocalViewOptions {
   snapDistancePx?: number;
   catchUpPerTick?: number;
   deadzonePx?: number;
+  budgetSmoothing?: number;
 }
 
 export interface LocalViewStats {
@@ -106,6 +128,7 @@ export class LocalView {
   readonly snapDistancePx: number;
   readonly catchUpPerTick: number;
   readonly deadzonePx: number;
+  readonly budgetSmoothing: number;
 
   /** Recorded local intents, unit-clamped, indexed by `tick & RING_MASK`. */
   private readonly intentX = new Float32Array(RING);
@@ -130,6 +153,35 @@ export class LocalView {
   private lastPredY = 0;
 
   /**
+   * Target motion that has been confirmed but not yet fed into the drawn glide. A burst frame — where
+   * `pump` applied several confirmed ticks at once — moves the target several sim-ticks in one lump;
+   * only one sim-tick of that is drawn this render step and the rest is banked here and drawn over the
+   * following steps, so the drawn feed-forward velocity is the target's steady average rather than the
+   * bursty confirm cadence. This is *motion* owed, kept separate from the standing prediction *error*
+   * the glide closes, so the two never double-count.
+   */
+  private pendingX = 0;
+  private pendingY = 0;
+
+  /**
+   * Smoothed estimate of ONE SIM-TICK's worth of target motion, in world px — the per-render-step
+   * feed-forward cap. Crucially this is an EMA of motion-per-*applied-tick* (`rawMag / appliedTicks`),
+   * not motion-per-render-step: a three-tick burst and a one-tick step both report ~1px of per-tick
+   * motion, so the cap holds steady at the true walk speed instead of being dragged up by bursts. One
+   * applied tick maps to one render step on a matched clock, so releasing up to one tick's motion per
+   * render step drains a steady walk's pending completely (zero lag) while spreading a burst over the
+   * render steps that follow. Derived entirely on the render clock, so no move speed need be passed in.
+   */
+  private stepCap = 0;
+
+  /**
+   * Applied ticks since the last `advance`. `onTick` bumps it (each confirmed tick that moves the
+   * target), `advance` reads it to turn this step's lumped target motion into a per-tick figure for the
+   * cap, then clears it. Zero on a starved render frame, several on a burst frame.
+   */
+  private appliedTicks = 0;
+
+  /**
    * Whether the last applied tick reported the player alive. A downed or dead player's target does not
    * *move* — it jumps back to the truth the world stopped it at — so its velocity must not be fed
    * forward (that would teleport the sprite onto the corpse). Instead the sprite glides back with a
@@ -150,6 +202,7 @@ export class LocalView {
     this.snapDistancePx = options.snapDistancePx ?? LOCAL_VIEW_DEFAULTS.snapDistancePx;
     this.catchUpPerTick = options.catchUpPerTick ?? LOCAL_VIEW_DEFAULTS.catchUpPerTick;
     this.deadzonePx = options.deadzonePx ?? LOCAL_VIEW_DEFAULTS.deadzonePx;
+    this.budgetSmoothing = options.budgetSmoothing ?? LOCAL_VIEW_DEFAULTS.budgetSmoothing;
     this.intentTick.fill(-1);
   }
 
@@ -167,6 +220,10 @@ export class LocalView {
     this.curY = y;
     this.prevX = x;
     this.prevY = y;
+    this.pendingX = 0;
+    this.pendingY = 0;
+    this.stepCap = 0;
+    this.appliedTicks = 0;
     this.alive = true;
     this.latestTick = -1;
     this.intentTick.fill(-1);
@@ -219,6 +276,10 @@ export class LocalView {
    */
   onTick(tick: number, authX: number, authY: number, speedPxPerSec: number, alive: boolean): void {
     this.alive = alive;
+    // Count this applied tick so the next `advance` can turn its lumped target motion into a per-tick
+    // figure for the feed-forward cap. Counted whether alive or downed: a downed tick still consumed a
+    // render step's worth of the confirm cadence, and its zero motion should pull the cap toward a stop.
+    this.appliedTicks++;
 
     if (!alive) {
       this.predX = authX;
@@ -260,7 +321,10 @@ export class LocalView {
    * sprite moves on the exact clock and `alpha` the camera and the crowd interpolate with. Because it
    * is decoupled from how many authoritative ticks `onTick` applied this frame, a burst of confirmed
    * ticks no longer lurches the sprite two steps while a starved frame freezes it — the two failure
-   * modes that read as the local player jittering while the rest of the scene glides.
+   * modes that read as the local player jittering while the rest of the scene glides. The feed-forward
+   * itself is rate-limited too: the target's motion since the last step is banked and only one sim-tick's
+   * worth (`stepCap`) is released per render step, so a three-tick burst is spread over the next three
+   * steps rather than shown as one lurch, while a steady walk still draws its full step per step.
    *
    * A gap above `snapDistancePx` cuts (a revive, a stage load, a boss yank); a gap below `deadzonePx`
    * is left untouched, so a prediction that already agrees to a fraction of a pixel is not chased into
@@ -270,13 +334,52 @@ export class LocalView {
     this.prevX = this.curX;
     this.prevY = this.curY;
 
-    // How far the dead-reckoned target moved since the previous render step. While alive this is the
-    // walk velocity and is fed forward in full so a steady walk tracks with zero lag; a corpse's target
-    // does not walk, it jumps back to where the world stopped it, so its "velocity" is not fed forward.
-    const deltaX = this.alive ? this.predX - this.lastPredX : 0;
-    const deltaY = this.alive ? this.predY - this.lastPredY : 0;
+    // How far the dead-reckoned target moved since the previous render step. On a steady walk this is
+    // one tick of motion; on a burst frame where `pump` applied several confirmed ticks at once it is
+    // several ticks in one lump, and on a starved frame it is zero. A corpse's target does not walk —
+    // it jumps back to where the world stopped it — so its motion is not banked or fed forward.
+    const rawX = this.alive ? this.predX - this.lastPredX : 0;
+    const rawY = this.alive ? this.predY - this.lastPredY : 0;
     this.lastPredX = this.predX;
     this.lastPredY = this.predY;
+
+    // Bank every pixel of target motion owed, and grow the per-step cap toward one sim-tick's motion.
+    // The cap tracks motion-per-*applied-tick*, not per render step, so a burst (three ticks of motion
+    // at once) reports the same ~1px/tick as a lone step and does not drag the cap up: the cap stays at
+    // the true walk speed. A render step that applied ticks contributes its per-tick motion to the EMA;
+    // a starved step (no applied tick) leaves the cap where it is, so the sprite keeps coasting at the
+    // established speed while it drains the pending a burst left behind rather than stalling.
+    this.pendingX += rawX;
+    this.pendingY += rawY;
+    const applied = this.appliedTicks;
+    this.appliedTicks = 0;
+    if (applied > 0) {
+      const perTickMag = Math.sqrt(rawX * rawX + rawY * rawY) / applied;
+      // Fast attack, slow decay. The cap rises to a faster per-tick speed at once — so a steady walk
+      // reaches full feed-forward on its very first applied tick and tracks with zero lag, and a real
+      // speed-up (a boot upgrade) is followed immediately rather than lagged. It only eases *down*
+      // gently, so a momentary slow tick or a downed frame does not collapse the cap and re-lurch the
+      // sprite on the next burst. A burst reports the same per-tick motion as a lone step, so it never
+      // inflates the cap: only genuine per-tick speed does.
+      this.stepCap =
+        perTickMag >= this.stepCap
+          ? perTickMag
+          : this.stepCap + (perTickMag - this.stepCap) * this.budgetSmoothing;
+    }
+
+    // Release at most one step's cap of the banked motion this render step, along the pending vector.
+    // What is left stays banked for the next steps — this is the whole rate limiter: a three-tick burst
+    // is paid out over the three steps that follow instead of lurching the sprite in one.
+    const pendMag = Math.sqrt(this.pendingX * this.pendingX + this.pendingY * this.pendingY);
+    let deltaX = this.pendingX;
+    let deltaY = this.pendingY;
+    if (pendMag > this.stepCap && pendMag > 1e-9) {
+      const scale = this.stepCap / pendMag;
+      deltaX = this.pendingX * scale;
+      deltaY = this.pendingY * scale;
+    }
+    this.pendingX -= deltaX;
+    this.pendingY -= deltaY;
 
     // The whole gap between where the sprite is drawn and where the world now says it is. The snap
     // decision reads this, not the residual after velocity — a revive across the map or a boss yank
@@ -292,15 +395,21 @@ export class LocalView {
       this.curY = this.predY;
       this.prevX = this.predX;
       this.prevY = this.predY;
+      this.pendingX = 0;
+      this.pendingY = 0;
       return;
     }
 
-    // The standing error that remains once this step's velocity is applied. This — not the whole gap —
-    // is what the glide closes, so a steady walk (where the sprite already keeps pace with `deltaX`) has
-    // zero error to chase and sits exactly on the truth rather than hunting around it. For a corpse
-    // `deltaX` is zero, so this is the whole standing gap and the sprite eases back onto the body.
-    const errX = this.predX - (this.curX + deltaX);
-    const errY = this.predY - (this.curY + deltaY);
+    // The standing prediction error, once this step's feed-forward AND the motion still banked for the
+    // steps to come are both accounted for. Subtracting `pending` is what keeps the rate limiter from
+    // fighting the glide: banked motion is valid target motion that will be drawn shortly, not a
+    // disagreement to be chased now, so folding it in would let `catchUpPerTick` yank it forward this
+    // step and undo the smoothing (and double-count it). So a steady walk (pending empty, sprite pacing
+    // `deltaX`) has zero error and sits exactly on the truth, while a burst leaves only its banked
+    // remainder behind, not an error. For a corpse `deltaX` and `pending` are both zero, so this is the
+    // whole standing gap and the sprite eases back onto the body.
+    const errX = this.predX - (this.curX + deltaX + this.pendingX);
+    const errY = this.predY - (this.curY + deltaY + this.pendingY);
     const err = Math.sqrt(errX * errX + errY * errY);
 
     // A sub-pixel standing error is not worth chasing: closing it only makes the sprite hunt around the

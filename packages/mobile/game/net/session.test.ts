@@ -33,8 +33,11 @@ import { CARD_ACTION, tickConfirmBytes } from "./messages";
 import {
   CONFIRM_REDUNDANCY_TICKS,
   MAX_MESSAGE_BYTES,
+  RESYNC_AFTER_AGED_OUT_TICKS,
+  RESYNC_AFTER_STALL_TICKS,
   STATE_HASH_INTERVAL_TICKS,
 } from "./protocol";
+import { MAX_CATCHUP_TICKS } from "./session";
 import {
   AWFUL_CONDITIONS,
   DEFAULT_CONDITIONS,
@@ -120,6 +123,32 @@ function runChecked(
     if (d.tick >= 0) return d;
   }
   return { tick: -1, slot: -1 };
+}
+
+/**
+ * Advance the host and the wire for `ticks`, but never pump the guests.
+ *
+ * This is what a backgrounded phone looks like: its render loop is stopped, so its session's `pump`
+ * is not being called and its stall counter is not advancing — yet the host keeps sealing ticks and
+ * broadcasting confirms the whole time. On resume the guest is far behind the horizon but has a stall
+ * count of zero, which is exactly the screenshot case the recovery must handle without waiting out the
+ * old ninety-tick ceiling. A lossy connection is the opposite (the guest keeps pumping and stalling),
+ * and `runParty` already covers that.
+ */
+function driveGuestlessBlackout(party: Party, ticks: number): void {
+  // Sever slot 1 for the duration: a backgrounded app is not servicing its socket, so the confirms the
+  // host broadcasts while it is away never reach it and never land in its ring. On resume the guest's
+  // ring still ends where it stalled, and the first confirm it hears covers only the recent window — so
+  // the record it needs next has genuinely aged out, which is the real screenshot state. (A background
+  // spell that merely stopped rendering but kept buffering the socket would instead leave the ring full
+  // and be repaired by burst catch-up; that milder case is what section 10 covers.)
+  party.net.sever(1);
+  for (let i = 0; i < ticks; i++) {
+    defaultDrive(i, party);
+    party.host.step();
+    party.net.pump();
+  }
+  party.net.restore(1);
 }
 
 /** How many ticks of the host's world the slowest guest has not applied yet. */
@@ -631,6 +660,234 @@ function testResyncRepair(): void {
   );
 }
 
+/* ---------------------------------------------------------------------------------------------- */
+/* 10. A guest that hitched but stayed inside the window catches up fast, without a resync            */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The screenshot bug, half one. A guest misses a burst of confirmed ticks — a hitch short enough that
+ * the records it missed are all still in the confirm ring when it comes back — and must converge back
+ * to the host horizon in a handful of pumps, NOT crawl six ticks a frame.
+ *
+ * The wire is severed only long enough to fall a couple of dozen ticks behind, well inside the
+ * retransmission window, then restored. Under the old six-tick-per-frame cap a backlog of, say,
+ * twenty-five ticks takes five frames of nothing-but-catch-up to close; the burst path closes it in
+ * one or two. The assertion — converged within a small bounded number of pumps and without ever
+ * asking for a snapshot — fails under the old crawl cap, which is the point.
+ */
+function testStallBurstCatchup(): void {
+  section("10. A guest that hitched inside the window catches up in a burst, not a crawl");
+
+  const party = makeParty({ playerCount: 2, seed: 8123, conditions: PERFECT_CONDITIONS });
+  runParty(party, 300, defaultDrive);
+
+  const guest = party.guests[0] as (typeof party.guests)[number];
+  const resyncsBefore = guest.stats.resyncsRequested;
+
+  // A hitch short enough that everything missed is still resendable. The host keeps advancing and the
+  // wire keeps flowing to everyone else; only this guest's link is cut, exactly like an app that
+  // briefly stopped pumping its socket. On a perfect wire the backlog is precisely the blackout length,
+  // kept inside the steady confirm window so the very next confirm the guest hears carries the whole
+  // hole. Under the old six-tick cap the guest would then crawl the backlog closed six ticks a frame,
+  // never keeping pace with a host that is still moving; the burst path swallows it in one confirm.
+  const blackout = 20;
+  party.net.sever(1);
+  runParty(party, blackout, defaultDrive);
+  party.net.restore(1);
+
+  const behindAfter = party.host.tick - guest.tick;
+  check(
+    "the guest really fell behind during the hitch",
+    behindAfter > MAX_CATCHUP_TICKS,
+    `${behindAfter} ticks behind, steady cap is ${MAX_CATCHUP_TICKS}`,
+  );
+
+  // The realistic recovery: the host carries on, and within a couple of frames of the guest hearing a
+  // fresh confirm the gap must be back to steady state. `runParty` steps the host, moves the wire, and
+  // pumps the guest once each tick — exactly the app's cadence. The burst path swallows the whole
+  // 20-tick hole in the one or two frames it takes a confirm to arrive, so the guest is level with the
+  // host almost at once. The old six-tick cap nets only five ticks a frame against a still-moving host,
+  // so two frames later it would still owe about ten — well above the steady cap. Bounding convergence
+  // to two frames is therefore something only the burst path can clear.
+  const settleFrames = 2;
+  runParty(party, settleFrames, defaultDrive);
+
+  const lagNow = worstLag(party);
+  check(
+    "the guest is back to steady-state lag within two frames",
+    lagNow <= MAX_CATCHUP_TICKS,
+    `${lagNow} ticks behind after ${settleFrames} frames (the old crawl would still owe most of ${behindAfter})`,
+  );
+  check(
+    "and it never needed a snapshot for a gap it could replay",
+    guest.stats.resyncsRequested === resyncsBefore,
+    `${guest.stats.resyncsRequested - resyncsBefore} resyncs requested`,
+  );
+
+  const diverged = runChecked(party, 300);
+  check(
+    "the world still agrees after the burst catch-up",
+    diverged.tick < 0,
+    diverged.tick < 0 ? "" : `slot ${diverged.slot} at tick ${diverged.tick}`,
+  );
+}
+
+/* ---------------------------------------------------------------------------------------------- */
+/* 11. A guest whose records aged out snaps forward promptly, not after ninety stalled ticks        */
+/* ---------------------------------------------------------------------------------------------- */
+
+/**
+ * The screenshot bug, half two. A guest is away long enough — a screenshot pause, a task switch —
+ * that the records it needs next have aged out of the retransmission window. No confirm still arriving
+ * can carry them, so waiting is pointless; the guest must ask for a snapshot promptly and snap forward
+ * to become controllable, rather than sitting frozen for ninety stalled ticks while its predicted lead
+ * pins at the drift ceiling.
+ *
+ * This asserts the prompt request on two triggers: the ordinary `pump` path noticing the aged-out gap,
+ * and the explicit `onResumedFromBackground` the AppState handler calls, which must fire on the very
+ * first attempt without waiting out any stall counter. Both fail under the old ninety-tick rule.
+ */
+function testStallSnapForward(): void {
+  section("11. A guest past the window snaps forward promptly, not after ninety stalled ticks");
+
+  const party = makeParty({ playerCount: 2, seed: 9241, conditions: PERFECT_CONDITIONS });
+  runParty(party, 400, defaultDrive);
+
+  const guest = party.guests[0] as (typeof party.guests)[number];
+  const tickBefore = guest.tick;
+
+  // A blackout longer than the whole retransmission window: whatever the guest needs next when it comes
+  // back has been overwritten in the host's ring by newer records. Comfortably shorter than the old
+  // ninety-tick stall ceiling, so a test that passes here proves the resync fired on the aged-out
+  // signal and not on the fallback timer.
+  const blackout = RESYNC_AFTER_AGED_OUT_TICKS + 20;
+  check(
+    "the blackout aged the records out but stayed under the old stall ceiling",
+    blackout > CONFIRM_REDUNDANCY_TICKS && blackout < RESYNC_AFTER_STALL_TICKS,
+    `${blackout} ticks: window ${CONFIRM_REDUNDANCY_TICKS}, old ceiling ${RESYNC_AFTER_STALL_TICKS}`,
+  );
+
+  // A screenshot backgrounds the app: its render loop stops, so the guest's `pump` is NOT called while
+  // it is away — its stall counter does not tick up during the pause. Model that by advancing only the
+  // host and the wire during the blackout, never the guest. This is the crucial difference from a lossy
+  // connection (where the guest keeps pumping and stalling): on resume the guest starts from a stall
+  // count of zero, so the old ninety-tick ceiling has the full ninety still to run before it would ever
+  // fire. Only the aged-out signal recovers a backgrounded guest promptly.
+  driveGuestlessBlackout(party, blackout);
+
+  // With the socket back, let a couple of confirms land so the guest's horizon jumps up to the host —
+  // but do NOT pump the guest, so no stall counter runs and the recovery we prove is the resume nudge,
+  // not the fallback timer. The record the guest needs next is not in these confirms (it aged out), so
+  // once the horizon has risen the guest is stuck exactly as a returning screenshot leaves it.
+  let settle = 0;
+  while (guest.horizon - guest.tick <= RESYNC_AFTER_AGED_OUT_TICKS && settle < 30) {
+    driveSticks(500 + settle, party);
+    answerCards(party);
+    party.host.step();
+    party.net.pump();
+    settle++;
+  }
+  const resyncsBefore = guest.stats.resyncsRequested;
+  const behind = guest.horizon - guest.tick;
+  check(
+    "the guest is stuck behind the confirmed horizon on a record it will never be resent",
+    behind > RESYNC_AFTER_AGED_OUT_TICKS,
+    `${behind} ticks behind the horizon`,
+  );
+
+  // The AppState resume path: one explicit call must ask for the truth at once, before any stall timer
+  // has had a chance to run out. This is the "returning from a screenshot" moment.
+  guest.onResumedFromBackground();
+  check(
+    "resuming from background asks for a snapshot immediately",
+    guest.stats.resyncsRequested > resyncsBefore,
+    `${guest.stats.resyncsRequested - resyncsBefore} requested on resume`,
+  );
+  check("and the guest is now resyncing", guest.resyncing);
+
+  // Let the snapshot stream over and restore. Well under ninety ticks of run — the whole point.
+  const restoresBefore = guest.restores;
+  runChecked(party, 300);
+
+  check(
+    "the guest restored and snapped forward",
+    guest.restores > restoresBefore,
+    `${guest.restores - restoresBefore} restores`,
+  );
+  check(
+    "the guest is running again, far past where it stalled",
+    guest.tick > tickBefore + blackout,
+    `guest ${guest.tick}, stalled at ${tickBefore}`,
+  );
+  check("the guest is not still resyncing", !guest.resyncing);
+  check(
+    "and it agrees with the host again",
+    firstDivergentTick(party).tick < 0,
+    `guest ${guest.tick}, host ${party.host.tick}`,
+  );
+}
+
+/**
+ * The same aged-out stall, but left to the ordinary `pump` path with no AppState nudge, proving the
+ * snap-forward fires from the stall detection itself well before the old ninety-tick ceiling.
+ *
+ * A perfect wire and a fresh party keep any state-hash checkpoint from muddying the attribution: the
+ * only thing that can request a resync in this window is the aged-out gap the pump path now watches.
+ * Under the old rule the pump path would sit stalled until `stalledFor` crossed ninety, so bounding
+ * the request to well under that ceiling is a check only the new aged-out signal can pass.
+ */
+function testStallSnapForwardWithoutNudge(): void {
+  section("12. The pump path itself asks for a resync once the gap ages out, before the old ceiling");
+
+  const party = makeParty({ playerCount: 2, seed: 9242, conditions: PERFECT_CONDITIONS });
+  // Start just after a hash checkpoint so the ~120-tick interval does not land inside the measurement
+  // window: the resync we count must be the aged-out one, not a hash mismatch (there is none — a
+  // severed guest's world is simply behind, not wrong).
+  runParty(party, STATE_HASH_INTERVAL_TICKS * 3 + 4, defaultDrive);
+
+  const guest = party.guests[0] as (typeof party.guests)[number];
+  const hashMismatchesBefore = guest.stats.hashMismatches;
+  const blackout = RESYNC_AFTER_AGED_OUT_TICKS + 20;
+
+  // Backgrounded guest: host and wire advance, the guest does not pump, so it resumes with a stall
+  // count of zero and the old ninety-tick ceiling would have the full ninety still to run.
+  driveGuestlessBlackout(party, blackout);
+
+  const resyncsBefore = guest.stats.resyncsRequested;
+  // Count how many guest pumps it takes, with the host running and the wire flowing again, to decide it
+  // must resync. The host keeps sealing and confirming, so the guest's horizon rises above its applied
+  // tick within a frame or two of the first confirm landing — and the moment the gap is past the window
+  // the aged-out test fires. This should be a handful of pumps, never the ninety the old rule waited.
+  const promptBound = RESYNC_AFTER_STALL_TICKS - 20;
+  let pumps = 0;
+  while (guest.stats.resyncsRequested === resyncsBefore && pumps < RESYNC_AFTER_STALL_TICKS + 30) {
+    driveSticks(700 + pumps, party);
+    answerCards(party);
+    party.host.step();
+    party.net.pump();
+    guest.pump();
+    pumps++;
+  }
+
+  check(
+    "no state-hash mismatch was involved — the guest's world was behind, not wrong",
+    guest.stats.hashMismatches === hashMismatchesBefore,
+    `${guest.stats.hashMismatches - hashMismatchesBefore} mismatches`,
+  );
+  check(
+    "the pump path asked for a resync well before the old ninety-tick ceiling",
+    guest.stats.resyncsRequested > resyncsBefore && pumps < promptBound,
+    `asked after ${pumps} pumps, old ceiling ${RESYNC_AFTER_STALL_TICKS}`,
+  );
+
+  const diverged = runChecked(party, 400);
+  check(
+    "and the world agrees after the snap-forward",
+    diverged.tick < 0 && !guest.resyncing,
+    diverged.tick < 0 ? `guest ${guest.tick}, host ${party.host.tick}` : `tick ${diverged.tick}`,
+  );
+}
+
 /** How many weapon slots a given player's own store holds. */
 function countWeaponsFor(run: Run, player: number): number {
   let n = 0;
@@ -657,6 +914,9 @@ testSoloIsFree();
 testMessageSizes();
 testAwfulConnection();
 testResyncRepair();
+testStallBurstCatchup();
+testStallSnapForward();
+testStallSnapForwardWithoutNudge();
 
 console.log(`\n${failures === 0 ? "PASS" : `FAIL (${failures})`}`);
 if (failures > 0) {

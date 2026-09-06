@@ -45,6 +45,7 @@ import {
   readRunInto,
   touchSummonsStick,
   type HudInput,
+  type ProgLike,
   type RunLike,
 } from "./hud";
 
@@ -442,6 +443,9 @@ section("reading a live run");
     timeLimitTicks: 0,
     kills: 431,
     prog: { level: 14, xp: 30, xpToNext: 60, pending: 2, gold: 1250 },
+    progFor() {
+      return { level: 14, xp: 30, xpToNext: 60, pending: 2, gold: 1250 };
+    },
     players: {
       count: 3,
       health: Float32Array.from([80, 0, 45, 0]),
@@ -483,6 +487,62 @@ section("reading a live run");
   // A caller passing a seat the run does not have must not read past the party.
   const wild = readRunInto(run, 9, 120, connected, characters, -1, createHudInput());
   check("an impossible seat is clamped into the party", wild.localSlot === 2);
+}
+
+section("the experience bar and level follow the LOCAL seat, not slot 0");
+{
+  // Each phone banks its own experience. The bug this pins: a guest on slot 1 gaining experience used
+  // to advance the host's (slot 0's) visible bar, because the HUD read the shared `run.prog` — slot 0 —
+  // regardless of which seat this device is. Here slot 0 sits at level 1 with an empty bar while slot 1
+  // is at level 4 with a half-full bar; the HUD must report whichever seat it was asked for.
+  const perSlot: readonly ProgLike[] = [
+    { level: 1, xp: 0, xpToNext: 5, pending: 0, gold: 10 },
+    { level: 4, xp: 15, xpToNext: 30, pending: 1, gold: 250 },
+  ];
+  const run: RunLike = {
+    runTicks: 0,
+    timeLimitTicks: 0,
+    kills: 0,
+    // `prog` stays slot 0, exactly as the real Run's `prog === progFor(0)`.
+    prog: perSlot[0] as ProgLike,
+    progFor(player: number): ProgLike {
+      return (perSlot[player] ?? perSlot[0]) as ProgLike;
+    },
+    players: {
+      count: 2,
+      health: Float32Array.from([100, 100, 0, 0]),
+      state: Int32Array.from([PLAYER_STATE.alive, PLAYER_STATE.alive, PLAYER_STATE.alive, PLAYER_STATE.alive]),
+      downTicks: new Int32Array(MAX_PLAYERS),
+      reviveTicks: new Int32Array(MAX_PLAYERS),
+    },
+    stats: { get: () => 1 },
+    weapons: { typeIndex: new Int32Array(MAX_PLAYERS * MAX_WEAPONS).fill(SLOT_EMPTY), level: new Int32Array(MAX_PLAYERS * MAX_WEAPONS) },
+    passives: { typeIndex: new Int32Array(MAX_PLAYERS * MAX_PASSIVES).fill(SLOT_EMPTY), level: new Int32Array(MAX_PLAYERS * MAX_PASSIVES) },
+  };
+  const connected = Uint8Array.from([1, 1, 1, 1]);
+  const characters = new Uint8Array(MAX_PLAYERS);
+  const hud = resolveHud(stored(), device({ playerCount: 2 }));
+
+  // The guest on slot 1: its own level and half-full bar.
+  const guestView = new HudView();
+  const guestInput = readRunInto(run, 1, 100, connected, characters, -1, createHudInput());
+  guestView.update(guestInput, hud);
+  check("a slot-1 guest reports its own level 4", guestView.frame.level === 4, `${guestView.frame.level}`);
+  check("a slot-1 guest's bar is half full, not slot 0's empty one", Math.abs(guestView.frame.xpFraction - 0.5) < 1e-6, `${guestView.frame.xpFraction}`);
+  check("a slot-1 guest sees its own pending pick", guestView.frame.levelPending === true);
+  check("a slot-1 guest reads its own banked gold", guestView.frame.gold === 250, `${guestView.frame.gold}`);
+
+  // The host on slot 0: still level 1, empty bar. This is the byte-identical solo path.
+  const hostView = new HudView();
+  const hostInput = readRunInto(run, 0, 100, connected, characters, -1, createHudInput());
+  hostView.update(hostInput, hud);
+  check("a slot-0 host stays at level 1", hostView.frame.level === 1, `${hostView.frame.level}`);
+  check("a slot-0 host's bar is empty", hostView.frame.xpFraction === 0, `${hostView.frame.xpFraction}`);
+  check("a slot-0 host reads its own gold", hostView.frame.gold === 10, `${hostView.frame.gold}`);
+
+  // The regression guard: had the code reverted to reading slot 0, the guest would show level 1 and an
+  // empty bar. These assertions are exactly that difference, so a revert turns them red.
+  check("the two seats disagree, proving the bar is not shared", guestView.frame.level !== hostView.frame.level && guestView.frame.xpFraction !== hostView.frame.xpFraction);
 }
 
 console.log(failures === 0 ? "\nPASS" : `\nFAIL (${failures})`);
