@@ -20,9 +20,11 @@
  *  12. The daily reminder is asked on the second run, once, ever.
  */
 
-import { CHAT_KEYBOARD, HUD_ALIGN, defaultSettings, type SaveSettings } from "../save/schema";
+import { CHAT_KEYBOARD, FRAME_RATE_MODE, HUD_ALIGN, defaultSettings, type SaveSettings } from "../save/schema";
+import { DYNAMIC_TARGET_FPS } from "../core/frame-gate";
 import {
   BATTERY_SAVER_FPS,
+  HIGH_FPS,
   HUD_BASE,
   INTENSITY_MAX,
   NORMAL_FPS,
@@ -33,6 +35,7 @@ import {
   STICK_MIN,
   WEAPON_SLOTS,
   type DeviceFacts,
+  fpsForMode,
   inGameKeyboardSupports,
   languageOf,
   resetLayout,
@@ -130,11 +133,13 @@ section("chat switches, where the narrower one cannot outrank the broader one");
 
 section("battery saver only ever takes away");
 {
-  const base = stored({ damageNumbers: 100, screenFlash: 60, screenShake: 21, vfxLevel: 0 });
+  // Pin the frame-rate mode to 60 here so this section is only about the intensity/vfx trimming; the
+  // frame-rate resolution has its own section below.
+  const base = stored({ damageNumbers: 100, screenFlash: 60, screenShake: 21, vfxLevel: 0, frameRateMode: FRAME_RATE_MODE.HZ_60 });
   const normal = resolve(base, device());
   check("with it off, intensities are the player's own", normal.damageNumbers === 100);
   check("an odd value is untouched when it is off", normal.screenShake === 21);
-  check("frame rate is full", normal.targetFps === NORMAL_FPS);
+  check("frame rate is what the player chose", normal.targetFps === NORMAL_FPS);
   check("effect level is what the player chose", normal.vfxLevel === 0);
 
   const saved = resolve({ ...base, batterySaver: true }, device());
@@ -155,6 +160,33 @@ section("battery saver only ever takes away");
   check("a slider above the range is capped", wild.damageNumbers === INTENSITY_MAX);
   check("a negative slider is floored at zero", wild.screenFlash === 0);
   check("an out-of-range colourblind mode is clamped", wild.colorblindMode === 3);
+}
+
+section("the frame-rate mode resolves to a render cap the sim never sees");
+{
+  // The mode maps straight to a cap, with DYNAMIC as the uncapped sentinel the render loop reads as
+  // "follow the display". The simulation is 60Hz regardless of any of these.
+  check("60 resolves to 60", fpsForMode(FRAME_RATE_MODE.HZ_60) === NORMAL_FPS);
+  check("120 resolves to 120", fpsForMode(FRAME_RATE_MODE.HZ_120) === HIGH_FPS);
+  check("dynamic resolves to the uncapped sentinel", fpsForMode(FRAME_RATE_MODE.DYNAMIC) === DYNAMIC_TARGET_FPS);
+  check("an unknown mode falls back to dynamic, never to a fixed cap", fpsForMode(99) === DYNAMIC_TARGET_FPS);
+
+  const at60 = resolve(stored({ frameRateMode: FRAME_RATE_MODE.HZ_60 }), device());
+  check("resolve carries a 60 choice to targetFps", at60.targetFps === NORMAL_FPS);
+  const at120 = resolve(stored({ frameRateMode: FRAME_RATE_MODE.HZ_120 }), device());
+  check("resolve carries a 120 choice to targetFps", at120.targetFps === HIGH_FPS);
+  const dyn = resolve(stored({ frameRateMode: FRAME_RATE_MODE.DYNAMIC }), device());
+  check("resolve carries dynamic through as the uncapped sentinel", dyn.targetFps === DYNAMIC_TARGET_FPS);
+  check("the shipped default is dynamic", resolve(stored(), device()).targetFps === DYNAMIC_TARGET_FPS);
+
+  // Battery saver CAPS to 30 and never raises — even from a 120 choice, and even from DYNAMIC, which is
+  // otherwise the highest of all.
+  const saver120 = resolve(stored({ frameRateMode: FRAME_RATE_MODE.HZ_120, batterySaver: true }), device());
+  check("battery saver caps a 120 choice to 30", saver120.targetFps === BATTERY_SAVER_FPS);
+  const saverDyn = resolve(stored({ frameRateMode: FRAME_RATE_MODE.DYNAMIC, batterySaver: true }), device());
+  check("battery saver caps dynamic to 30 too", saverDyn.targetFps === BATTERY_SAVER_FPS);
+  const saver60 = resolve(stored({ frameRateMode: FRAME_RATE_MODE.HZ_60, batterySaver: true }), device());
+  check("battery saver never raises a 60 choice above 30", saver60.targetFps === BATTERY_SAVER_FPS);
 }
 
 section("the plain pass-through switches");

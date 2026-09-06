@@ -28,6 +28,7 @@ import {
 } from "./codec";
 import {
   CHAT_KEYBOARD,
+  FRAME_RATE_MODE,
   HUD_ALIGN,
   SAVE_LIMITS,
   SAVE_OLDEST_READABLE,
@@ -97,6 +98,7 @@ function populated() {
     customNameOptIn: true,
     chatKeyboard: CHAT_KEYBOARD.IN_GAME,
     batterySaver: true,
+    frameRateMode: FRAME_RATE_MODE.HZ_120,
     chatEnabled: false,
     dailyReminderAsked: true,
     insectFreeSprites: true,
@@ -197,6 +199,7 @@ section("round trip");
     "the switches decided after v1 survive too",
     s.chatKeyboard === CHAT_KEYBOARD.IN_GAME &&
       s.batterySaver === true &&
+      s.frameRateMode === FRAME_RATE_MODE.HZ_120 &&
       s.chatEnabled === false &&
       s.chatFromNonFriends === true &&
       s.dailyReminderOptIn === false &&
@@ -271,6 +274,49 @@ section("round trip");
     })(),
     "no allocation needed per save",
   );
+}
+
+/* ---- 2b. the frame-rate mode and its reserved-byte default -------------------------------------- */
+
+section("frame-rate mode round trip and default");
+{
+  // Each of the three modes survives a round trip unchanged.
+  for (const mode of [FRAME_RATE_MODE.HZ_60, FRAME_RATE_MODE.HZ_120, FRAME_RATE_MODE.DYNAMIC]) {
+    const save = createSaveData();
+    save.settings = { ...defaultSettings(), frameRateMode: mode };
+    const back = decodeSave(encodeSave(save));
+    check(`mode ${mode} survives a round trip`, back.save.settings.frameRateMode === mode);
+  }
+
+  // The shipped default is DYNAMIC, so a 120Hz phone is smooth out of the box.
+  check("the default ships as DYNAMIC", defaultSettings().frameRateMode === FRAME_RATE_MODE.DYNAMIC);
+
+  // THE UPGRADE CASE. A save written before this setting existed has a zero in byte 37 of the settings
+  // block (it was reserved and left zero). That zero must read back as the DYNAMIC default, NOT as
+  // HZ_60 — otherwise a 120Hz phone would silently drop to 60 on upgrade. Simulate it by zeroing that
+  // byte in an otherwise-valid current save and re-checksumming, exactly as an old blob would look.
+  {
+    const save = createSaveData();
+    // Deliberately store something other than the default first, so if the byte were NOT zeroed the
+    // test would see HZ_120 rather than the default and fail loudly.
+    save.settings = { ...defaultSettings(), frameRateMode: FRAME_RATE_MODE.HZ_120 };
+    const bytes = encodeSave(save);
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    // Settings live at the tail of the body; the frame-rate byte is 37 bytes into that block. Recompute
+    // its absolute offset the same way the codec lays the body out: header + body - settings + 37.
+    const settingsAt = bytes.length - 48;
+    view.setUint8(settingsAt + 37, 0); // an "unset" reserved byte, like a pre-setting save
+    // `saveChecksum` already treats the checksum field (bytes 52..55) as zero, so re-stamping it with
+    // the recomputed value produces exactly what a legitimately written save carries.
+    view.setUint32(52, saveChecksum(bytes), true);
+    const back = decodeSave(bytes);
+    check("a pre-setting save decodes cleanly", back.error === SAVE_ERROR.NONE, describeSaveError(back.error));
+    check(
+      "and an unset frame-rate byte reads as the DYNAMIC default, not 60",
+      back.save.settings.frameRateMode === FRAME_RATE_MODE.DYNAMIC,
+      `${back.save.settings.frameRateMode}`,
+    );
+  }
 }
 
 /* ---- 3. corruption ------------------------------------------------------------------------------ */

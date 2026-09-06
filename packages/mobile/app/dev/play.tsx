@@ -49,6 +49,7 @@ import { saveStore } from "@/hooks/use-settings";
 import { Palette } from "@/constants/theme";
 
 import { FixedLoop } from "@/game/core/loop";
+import { RefreshEstimator, shouldDrawFrame } from "@/game/core/frame-gate";
 import { type Atlas } from "@/game/render/atlas";
 import { loadRunAtlas } from "@/lib/load-atlas";
 import {
@@ -166,6 +167,13 @@ interface Readout {
    */
   lead: number;
   snaps: number;
+  /**
+   * The render frame-rate cap in Hz, and — on DYNAMIC only — the refresh actually measured from the
+   * display. `cap` is 60, 120, or 0 for DYNAMIC/uncapped; `detectedHz` is the rolling median rate the
+   * `RefreshEstimator` observed, which is how "detect 60, 120, and higher" is made visible on-device.
+   */
+  cap: number;
+  detectedHz: number;
 }
 
 const EMPTY_READOUT: Readout = {
@@ -188,6 +196,8 @@ const EMPTY_READOUT: Readout = {
   stickY: 0,
   lead: 0,
   snaps: 0,
+  cap: 0,
+  detectedHz: 0,
 };
 
 /** What the card overlay needs. Copied out of the sim so React never holds a live sim reference. */
@@ -364,6 +374,12 @@ export default function PlayScreen() {
   const stickRef = useRef<StickState>({ x: 0, y: 0, active: false, originX: 0, originY: 0, knobX: 0, knobY: 0 });
   /** Resolved HUD geometry and the live HUD frame, for the touch handlers to read. */
   const hudRef = useRef<ResolvedHud>(settings.resolved.hud);
+  /**
+   * The live render frame-rate cap the loop reads, in Hz (0 = DYNAMIC/uncapped). Held in a ref because
+   * the render loop is built once, in an effect, and would otherwise capture the value settings had at
+   * mount — changing the setting mid-session would then do nothing until a remount.
+   */
+  const targetFpsRef = useRef(settings.resolved.targetFps);
   const frameRef = useRef<HudFrame | null>(null);
   const pausedRef = useRef(false);
   const partyRef = useRef(partySize);
@@ -379,6 +395,7 @@ export default function PlayScreen() {
   hurryRef.current = hurry;
   hyperRef.current = hyper;
   hudRef.current = settings.resolved.hud;
+  targetFpsRef.current = settings.resolved.targetFps;
   pausedRef.current = paused;
   partyRef.current = partySize;
 
@@ -688,7 +705,11 @@ export default function PlayScreen() {
       // in its own closure. The render loop below still reads the local `loop`; they are one object.
       loopRef.current = loop;
 
-      let lastFrame = -1;
+      // The last frame we actually DREW, which the frame gate measures against. The rAF callback fires
+      // every display refresh, but under a 60/120 cap only some of them draw; frame-time stats and the
+      // refresh estimate are measured between DRAWN frames so the reported fps is what the player sees.
+      // Starts negative so the very first callback always draws.
+      let lastDrawn = -1;
       let frameMsSum = 0;
       let frameMsCount = 0;
       let lastReport = 0;
@@ -696,17 +717,39 @@ export default function PlayScreen() {
       let cardsWereOpen = false;
       let arcanaWasOpen = false;
       let reportedEnd: number = RUN_END.running;
+      // Measures the display's true refresh from the intervals between DRAWN frames. Only meaningful on
+      // DYNAMIC, where every rAF callback draws and so the intervals are the panel's own cadence; that
+      // is how the readout can show 60, 120, or a higher number on a phone that exceeds 120Hz.
+      const refresh = new RefreshEstimator();
 
       const frame = () => {
+        // Reschedule FIRST and unconditionally. A skipped draw must never skip the next callback, or the
+        // frame gate would stall the whole loop instead of merely thinning the drawn frames.
         rafRef.current = requestAnimationFrame(frame);
         const now = nowMs();
-        if (lastFrame >= 0) {
-          frameMsSum += now - lastFrame;
-          frameMsCount++;
-        }
-        lastFrame = now;
 
         try {
+          // The sim is advanced on EVERY callback with the true clock, before any draw decision. This is
+          // the decoupling: `FixedLoop.advance` accumulates real elapsed ms and steps the fixed 60Hz
+          // tick from it, so thinning drawn frames (a 60Hz cap on a 120Hz panel, say) changes how often
+          // the screen is painted but never how many sim ticks run over a given wall-clock span.
+          if (pausedRef.current) loop.reset(now, loop.stats.tick);
+          loop.advance(now);
+
+          // Should this callback draw? DYNAMIC (targetFps 0) always does; 60/120 gate to their interval.
+          const targetFps = targetFpsRef.current;
+          if (!shouldDrawFrame(now, lastDrawn, targetFps)) return;
+
+          // From here down this callback is a DRAWN frame. Frame-time stats and the refresh estimate are
+          // measured between drawn frames, not rAF callbacks, so the reported fps is the rate the player
+          // actually sees.
+          if (lastDrawn >= 0) {
+            frameMsSum += now - lastDrawn;
+            frameMsCount++;
+          }
+          lastDrawn = now;
+          refresh.sample(now);
+
           if (seenRestart !== restartRef.current) {
             seenRestart = restartRef.current;
             run.seed = seedRef.current;
@@ -724,11 +767,9 @@ export default function PlayScreen() {
             reportedEnd = RUN_END.running;
           }
 
-          // Paused means paused. Rather than freezing the loop and letting it owe itself a second of
-          // ticks on resume, the clock is re-anchored to now every paused frame — the sim's tick count
-          // is kept, so unpausing does not fast-forward and does not rewind either.
-          if (pausedRef.current) loop.reset(now, loop.stats.tick);
-          loop.advance(now);
+          // The sim was already advanced (and, if paused, re-anchored) above, before the draw gate, so a
+          // thinned render never starves the fixed 60Hz tick. All that is left here is to read how far
+          // between ticks we landed and start painting.
           const alpha = loop.stats.alpha;
           renderer.beginFrame(alpha);
 
@@ -1010,6 +1051,8 @@ export default function PlayScreen() {
             stickY: stickRef.current.y,
             lead: netRunRef.current?.lead ?? 0,
             snaps: netRunRef.current?.snaps ?? 0,
+            cap: targetFpsRef.current,
+            detectedHz: refresh.hz,
           });
         }
       };
@@ -1127,6 +1170,14 @@ export default function PlayScreen() {
             {readout.enemies} enemies · {readout.gems} gems · {readout.projectiles} shots ·{" "}
             {readout.fps.toFixed(0)} fps
             {readout.droppedTicks > 0 ? ` · ${readout.droppedTicks} dropped` : ""}
+          </Text>
+          <Text style={styles.dim}>
+            {/* The render cap and, on DYNAMIC, the refresh actually measured from the display — this is
+                where "detect 60, 120, and higher" is visible on-device. The sim is always 60Hz. */}
+            render {readout.cap > 0 ? `${readout.cap}Hz cap` : "dynamic"}
+            {readout.cap === 0 && readout.detectedHz > 0
+              ? ` · ${readout.detectedHz.toFixed(0)}Hz display`
+              : ""}
           </Text>
           <Text style={styles.dim}>
             {readout.kills} kills · {Math.round(readout.damage)} damage · {readout.gold} gold ·

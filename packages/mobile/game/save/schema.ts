@@ -142,6 +142,27 @@ export const HUD_ALIGN = {
 
 export type HudAlign = (typeof HUD_ALIGN)[keyof typeof HUD_ALIGN];
 
+/**
+ * The render frame-rate the player chose. The SIMULATION is always a fixed 60Hz tick regardless — this
+ * only decides how often the screen is drawn, and 120/DYNAMIC are free because rendering interpolates
+ * between ticks (see `core/loop.ts`).
+ *
+ * DYNAMIC is the default: it follows the display's own cadence, so a 120Hz phone gets 120 out of the box
+ * (iOS needs `CADisableMinimumFrameDuration` in `app.json`, which is set) and a 60Hz phone gets 60,
+ * with no setting to find. The numeric codes are chosen so DYNAMIC is 2 rather than 0 — see the codec,
+ * where a stored zero in the reserved byte of an old save is deliberately read as DYNAMIC, not "60Hz".
+ */
+export const FRAME_RATE_MODE = {
+  /** Cap the render loop to 60 frames a second. */
+  HZ_60: 0,
+  /** Cap the render loop to 120 frames a second. */
+  HZ_120: 1,
+  /** Uncapped: draw every frame the display offers, and detect its rate (60, 120, or higher). */
+  DYNAMIC: 2,
+} as const;
+
+export type FrameRateMode = (typeof FRAME_RATE_MODE)[keyof typeof FRAME_RATE_MODE];
+
 export interface SaveSettings {
   masterVolume: number; // 0..100
   musicVolume: number; // 0..100
@@ -178,6 +199,12 @@ export interface SaveSettings {
   chatKeyboard: number;
   /** Caps the frame rate and trims effects to save battery. Off by default. */
   batterySaver: boolean;
+  /**
+   * `FRAME_RATE_MODE`. The render frame-rate cap. DYNAMIC by default so a 120Hz phone is smooth without
+   * the player finding a setting. Lives in the reserved tail of the settings block, so no SAVE_VERSION
+   * bump — an old save with a zero in that byte is read back as DYNAMIC, the intended default.
+   */
+  frameRateMode: number;
   /**
    * Chat comfort switch. On by default. Turning it off does NOT lower the age rating — the rating is set
    * by what the app can do, not by what one player switched off — it exists so a player who does not want
@@ -244,6 +271,7 @@ export function defaultSettings(): SaveSettings {
     customNameOptIn: false,
     chatKeyboard: CHAT_KEYBOARD.PHONE,
     batterySaver: false,
+    frameRateMode: FRAME_RATE_MODE.DYNAMIC,
     chatEnabled: true,
     chatFromNonFriends: true,
     dailyReminderOptIn: false,
