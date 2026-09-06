@@ -66,6 +66,7 @@ import {
 import { Renderer } from "@/game/render/renderer";
 import { COLOR_WHITE, packHex, withAlpha } from "@/game/render/batcher";
 import { WalkTracker, createStepPose, stepPose } from "@/game/render/step-anim";
+import { EntityView } from "@/game/render/entity-view";
 import { legLiftY, legOffsetX, splitBody } from "@/game/render/body-split";
 import {
   SEQUENCE_SECONDS,
@@ -575,6 +576,13 @@ export default function PlayScreen() {
 
       renderer.camera.snapTo(run.players.x[localSlot], run.players.y[localSlot]);
 
+      // Display-only interpolation for the crowd, sized to the enemy pool. Sampled once per applied
+      // tick beside the camera, read back by alpha in the enemy draw. Like `walk` it lives entirely on
+      // the drawing side — it holds no position the simulation reads and never reaches the wire — so it
+      // is safe on a guest, where its whole point is to glide enemies between the confirmed ticks a
+      // `GuestSession.pump()` applies in bursts instead of letting them strobe from tick to tick.
+      const enemyView = new EntityView(run.enemies.capacity);
+
       const loop = new FixedLoop(() => {
         const s = stickRef.current;
         // Read before the tick, because the counter on screen has to start from what the player had
@@ -632,6 +640,15 @@ export default function PlayScreen() {
         } else {
           renderer.camera.tick(run.players.x[localSlot], run.players.y[localSlot]);
         }
+
+        // Snapshot the crowd's authoritative positions for this applied tick, exactly where the sim
+        // rolls a player's prevX/prevY. The enemy draw reads it back by alpha so the crowd glides
+        // between ticks instead of jumping — the same interpolation the players and camera already
+        // get, extended to the 800 sprites that carry no prev of their own. On a guest a frame that
+        // applies two or three confirmed ticks at once still spreads the crowd's motion across the
+        // frames that follow rather than teleporting it, which is the lag left once the local player
+        // is predicted. Display-only: `enemyView` never feeds the sim or the wire.
+        enemyView.sample(run.enemies.slots, run.enemies.count, run.enemies.x, run.enemies.y);
       });
 
       let lastFrame = -1;
@@ -658,6 +675,7 @@ export default function PlayScreen() {
             run.seed = seedRef.current;
             startRun(run);
             walk.reset();
+            enemyView.reset();
             chestClock = -1;
             chestRows.length = 0;
             // Snap to the seat this phone plays, matching the initial snap above. A restart is a
@@ -743,12 +761,19 @@ export default function PlayScreen() {
               const boss = (e.flags[s] & ENEMY_FLAG.boss) !== 0;
               const r = e.radius[s];
               const scale = ((r * 2) / 32) * ENEMY_DRAW_SCALE;
+              // Interpolated by the same alpha the player and camera use, so the crowd glides between
+              // ticks rather than jumping. `enemyView` snapshotted this slot's authoritative position
+              // when the tick was applied; here we draw part-way from its previous one. On a guest that
+              // is what turns the bursty catch-up of `pump()` into smooth motion. A freshly spawned or
+              // recycled slot was snapped by `enemyView`, so it appears on the truth, never sliding in.
+              const ex = enemyView.renderX(s, alpha);
+              const ey = enemyView.renderY(s, alpha);
               // The drawn picture, untinted. A boss is drawn bigger; it keeps the gold wash, because a
               // boss has to be readable through a screen full of everything else.
               b.drawScaled(
                 enemyFrames[e.typeIndex[s]] ?? white,
-                e.x[s],
-                e.y[s],
+                ex,
+                ey,
                 boss ? (scale / ENEMY_DRAW_SCALE) * BOSS_DRAW_SCALE : scale,
                 boss ? (scale / ENEMY_DRAW_SCALE) * BOSS_DRAW_SCALE : scale,
                 boss ? C.boss : COLOR_WHITE,
