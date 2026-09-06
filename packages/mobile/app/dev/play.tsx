@@ -631,8 +631,9 @@ export default function PlayScreen() {
       const loop = new FixedLoop(() => {
         const s = stickRef.current;
         // Read before the tick, because the counter on screen has to start from what the player had
-        // rather than from what they ended the tick with.
-        const goldBefore = run.prog.gold;
+        // rather than from what they ended the tick with. Read the local seat's own gold, not slot 0's:
+        // a guest is not slot 0, and the coin-throw animation must reflect the gold THIS phone banked.
+        const goldBefore = run.progFor(localSlot).gold;
         const netRun = netRunRef.current;
         if (netRun !== null) {
           // Co-op. The stick is fed to the net session, not straight into the run: the session seals it
@@ -671,7 +672,7 @@ export default function PlayScreen() {
           chestSpec.x = run.cues.x[cue];
           chestSpec.y = run.cues.y[cue];
           chestSpec.goldFrom = goldBefore;
-          chestSpec.goldTo = run.prog.gold;
+          chestSpec.goldTo = run.progFor(localSlot).gold;
           chestSpec.rows = chestRows.length;
           chestSpec.evolved = evolved;
           // The run's own seed, so two phones in a party throw the same coins in the same directions.
@@ -1021,7 +1022,7 @@ export default function PlayScreen() {
           } else {
             // The simulation has already written its own summary by this point — `finish()` does that,
             // once, and refuses to do it twice. All this does is hand that summary over and change screen.
-            setEnded(describeEnd(run));
+            setEnded(describeEnd(run, localSlot));
             showResultsRef.current(run);
           }
         }
@@ -1497,7 +1498,7 @@ function readArcana(run: Run): ArcanaView {
   return { open: deck.open, numerals, names, blurbs };
 }
 
-function describeEnd(run: Run): string {
+function describeEnd(run: Run, localSlot: number): string {
   const label =
     run.end === RUN_END.defeat
       ? "Killed"
@@ -1506,7 +1507,8 @@ function describeEnd(run: Run): string {
         : run.end === RUN_END.survived
           ? "Survived"
           : "Run over";
-  return `${label} at ${formatRunTime(run.runTicks)} · level ${run.prog.level} · ${run.kills} kills`;
+  // The local seat's own level, not slot 0's — a guest sees the run it actually played.
+  return `${label} at ${formatRunTime(run.runTicks)} · level ${run.progFor(localSlot).level} · ${run.kills} kills`;
 }
 
 /** One line of "what am I actually holding", so a build can be read without a proper HUD. */
