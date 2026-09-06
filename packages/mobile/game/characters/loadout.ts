@@ -193,6 +193,49 @@ export function characterRecordCount(index: number, level: number): number {
 }
 
 /**
+ * One seat's growth quirk, recovered from the character *base* record its resync restores.
+ *
+ * `ladder` is the same array `CHARACTER_GROWTH_MODIFIERS[position]` holds — one folded record per tier —
+ * and `everyLevels` is the spacing between steps. Together they are everything `run.ts` keeps in its
+ * per-slot `growthLadders`/`growthEverys`, so a run can re-establish a seat's ladder from nothing but the
+ * wire id it already restored to the modifier stack.
+ */
+export interface CharacterGrowthLadder {
+  readonly ladder: readonly RunModifier[];
+  readonly everyLevels: number;
+}
+
+/**
+ * Recover a character's growth ladder from a wire id, for a resync that has the ids but not the ladders.
+ *
+ * This closes the one gap in "growth is derived, not carried": the growth *records* are re-derived from the
+ * character and the level, but which ladder a seat climbs — and how far apart its steps are — used to live
+ * only on the run object from `begin()`. A phone that reached a live run without `begin()`'s per-slot config
+ * (a future join or resync path) would restore correct current stats yet hold an empty ladder and drift on
+ * the next growth step. So the ladder itself is made recoverable from the same data a resync already carries:
+ * the character base record wire id.
+ *
+ * Only a character's *base* record (slot 0) names a survivor; a growth-tier id (slot 1..48) is a folded step,
+ * not an identity, and returns `undefined` so a caller cannot mistake it for a seat's character. A wire id
+ * outside the character range, or one the roster cannot explain, also returns `undefined` — the same "a
+ * number I do not trust must not become a stat" rule the rest of this file follows.
+ *
+ * Pure content lookup, so `run.ts` calls it the way it already calls the wire-id registry `rehydrate` is
+ * handed: the character layer resolves the ladder, and the dependency arrow keeps pointing away from the run.
+ */
+export function characterGrowthLadderForWireId(wireId: number): CharacterGrowthLadder | undefined {
+  if (!Number.isSafeInteger(wireId)) return undefined;
+  const offset = wireId - CHARACTER_WIRE_BASE;
+  if (offset < 0 || offset >= CHARACTERS.length * CHARACTER_WIRE_STRIDE) return undefined;
+  const slot = offset % CHARACTER_WIRE_STRIDE;
+  if (slot !== CHARACTER_SLOT_BASE) return undefined;
+  const index = (offset - slot) / CHARACTER_WIRE_STRIDE;
+  const character = CHARACTERS[index];
+  if (character === undefined) return undefined;
+  return { ladder: CHARACTER_GROWTH_MODIFIERS[index] ?? [], everyLevels: character.growth.everyLevels };
+}
+
+/**
  * The weapon a character starts holding, falling back to the run's configured weapon.
  *
  * A fallback rather than a refusal because `run.ts` treats a missing starting weapon as "no weapon", and a

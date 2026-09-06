@@ -30,9 +30,11 @@ import {
   CHARACTER_GROWTH_MODIFIERS,
   CHARACTER_MODIFIERS,
   CHARACTER_MODIFIERS_BY_WIRE_ID,
+  characterGrowthLadderForWireId,
   characterLoadout,
   characterStartingWeaponId,
 } from "./loadout";
+import { restoreRun, snapshotRun, SNAPSHOT_ERROR } from "../save/snapshot";
 
 import type { RunModifier } from "../sim/modifiers";
 
@@ -492,6 +494,204 @@ function coopConfig(ids: readonly number[]) {
     diverged.tick < 0 ? `in lockstep for ${done} ticks` : `slot ${diverged.slot} at tick ${diverged.tick}`,
   );
   check("and at least one seat answered a card screen while they ran", screensAnswered > 0, `${screensAnswered}`);
+}
+
+// -------------------------------------------------------------------------------------------------
+section("co-op: a resync reconstructs each seat's growth ladder without begin()");
+
+/**
+ * The latent invariant the review flagged, pinned as a test.
+ *
+ * Growth is derived, not carried: the growth *records* are re-derived from the character and the level, but
+ * WHICH ladder a seat climbs — and how far apart its steps are — used to live only on the run object from
+ * `begin()`. In the shipped flow that is fine: every phone calls `begin()` with the roster before the run and
+ * a resync reuses the same run object. The risk is a future path that reaches a live run WITHOUT `begin()`'s
+ * per-slot config — it would restore correct current stats yet hold an empty ladder and drift on the next
+ * growth step, invisibly until two state hashes disagree.
+ *
+ * `characterGrowthLadderForWireId` closes that: the character base record wire id — which a resync already
+ * carries and restores to the stack — names the survivor, so the ladder is recoverable from it. This section
+ * proves the reconstruction two ways: a bare `rehydrate` from wire ids alone onto a run whose ladders were
+ * NEVER established for these characters, and a full snapshot round-trip onto a fresh run begun without the
+ * per-slot config. Both must (a) agree loadout-with-stats per seat and (b) land FURTHER growth steps for
+ * each seat afterwards — proof the ladder was rebuilt, not lost.
+ */
+{
+  // Two survivors whose growth quirks touch different stats, so a per-seat ladder is distinguishable from a
+  // shared one. Vesna grows damage every 5 levels; Bram grows effect lifetime (duration) every 6.
+  const A = CHARACTERS.findIndex((c) => c.id === "vesna");
+  const B = CHARACTERS.findIndex((c) => c.id === "bram");
+  const ids = [A, B];
+  const cfg = coopConfig(ids);
+  const charA = CHARACTERS[A];
+  const charB = CHARACTERS[B];
+
+  // The source run: begun with the per-slot config the app derives from the roster, then advanced past the
+  // first growth step for EACH seat off its own level.
+  const source = new Run();
+  source.begin({ seed: 8642, playerCount: 2, record: true, ...cfg });
+  const dmgAtOne = source.stats.values[charA.growth.stat];
+  const durAtOne = source.stats.values[charB.growth.stat];
+
+  const s0 = source.progFor(0);
+  const s1 = source.progFor(1);
+  let guard = 0;
+  while (s0.level < charA.growth.everyLevels + 1 && guard++ < 10_000) s0.addXp(s0.xpToNext - s0.xp, source.stats);
+  guard = 0;
+  while (s1.level < charB.growth.everyLevels + 1 && guard++ < 10_000) s1.addXp(s1.xpToNext - s1.xp, source.stats);
+  s0.pending = 0;
+  s0.droppedPending = 0;
+  s1.pending = 0;
+  s1.droppedPending = 0;
+  source.tick();
+  check(
+    "source: seat 0 earned its first damage step",
+    source.stats.values[charA.growth.stat] === dmgAtOne + charA.growth.add,
+    `${source.stats.values[charA.growth.stat]}`,
+  );
+  check(
+    "source: seat 1 earned its first duration step",
+    source.stats.values[charB.growth.stat] === durAtOne + charB.growth.add,
+    `${source.stats.values[charB.growth.stat]}`,
+  );
+
+  // --- Path 1: bare rehydrate onto a run whose ladders were NEVER these characters' ---------------
+  // The target is begun with NO per-slot config at all — a plain solo-shaped begin() — so its growthLadders
+  // are empty for slots 1..3 and slot 0 is the default. This is the strongest stand-in for "a phone reached
+  // the run without begin()'s per-slot config": if the ladder were only ever established by begin(), the
+  // reconstruction below would have nothing to work from. We copy the wire list and the restored numbers
+  // that a resync carries (modifier ids, per-seat levels), then rehydrate WITH the growth resolver.
+  const target = new Run();
+  target.begin({ seed: 8642, playerCount: 2, record: true });
+
+  // A resync restores the modifier wire ids and the per-seat progression. Mirror exactly that much by hand:
+  // copy the source's wire list onto the target, and bring each seat's level across. Nothing here hands the
+  // target a ladder — only the ids and the levels, which is all a snapshot carries.
+  const wire = new Int32Array(128);
+  const n = source.writeModifierWireIds(wire);
+  const targetWire = (target as unknown as { modifierWire: Int32Array; modifierCount: number });
+  for (let i = 0; i < n; i++) targetWire.modifierWire[i] = wire[i];
+  targetWire.modifierCount = n;
+  const t0 = target.progFor(0);
+  const t1 = target.progFor(1);
+  guard = 0;
+  while (t0.level < s0.level && guard++ < 10_000) t0.addXp(t0.xpToNext - t0.xp, target.stats);
+  guard = 0;
+  while (t1.level < s1.level && guard++ < 10_000) t1.addXp(t1.xpToNext - t1.xp, target.stats);
+  t0.pending = 0;
+  t0.droppedPending = 0;
+  t1.pending = 0;
+  t1.droppedPending = 0;
+
+  // The reconstruction under test: rehydrate with the resolver re-establishes each seat's ladder from the
+  // base record wire ids on the list, in slot order — so the target now climbs the right ladders even though
+  // begin() never handed it these characters' per-slot config.
+  target.rehydrate(ALL_BY_WIRE_ID, characterGrowthLadderForWireId);
+  // Resolve the REBUILT stack into a fresh table and read it directly. (`loadoutAgreesWithStats` compares
+  // against the live `stats`, which this hand-built mock never restored byte-for-byte — the realistic
+  // snapshot round-trip below is what proves that agreement. Here we read the reconstructed stack itself,
+  // which is exactly what the resolver's ladder feeds.)
+  const reAfter = new Stats();
+  target.loadoutAgreesWithStats(reAfter);
+  check(
+    "begin()-less rehydrate: seat 0's damage step was reconstructed",
+    reAfter.values[charA.growth.stat] === dmgAtOne + charA.growth.add,
+    `${reAfter.values[charA.growth.stat]}`,
+  );
+  check(
+    "begin()-less rehydrate: seat 1's duration step was reconstructed",
+    reAfter.values[charB.growth.stat] === durAtOne + charB.growth.add,
+    `${reAfter.values[charB.growth.stat]}`,
+  );
+
+  // Now the real proof the ladder itself was rebuilt, not just the current step: advance EACH seat one more
+  // growth gap and tick. If the ladder had been lost, the tier would never move again and these would stay
+  // flat. They must climb to a SECOND step per seat.
+  guard = 0;
+  while (t0.level < charA.growth.everyLevels * 2 + 1 && guard++ < 10_000) t0.addXp(t0.xpToNext - t0.xp, target.stats);
+  guard = 0;
+  while (t1.level < charB.growth.everyLevels * 2 + 1 && guard++ < 10_000) t1.addXp(t1.xpToNext - t1.xp, target.stats);
+  t0.pending = 0;
+  t0.droppedPending = 0;
+  t1.pending = 0;
+  t1.droppedPending = 0;
+  target.tick();
+  check(
+    "begin()-less rehydrate: seat 0 climbs to its SECOND damage step after the restore",
+    target.stats.values[charA.growth.stat] === dmgAtOne + charA.growth.add * 2,
+    `${target.stats.values[charA.growth.stat]} vs ${dmgAtOne + charA.growth.add * 2}`,
+  );
+  check(
+    "begin()-less rehydrate: seat 1 climbs to its SECOND duration step after the restore",
+    target.stats.values[charB.growth.stat] === durAtOne + charB.growth.add * 2,
+    `${target.stats.values[charB.growth.stat]} vs ${durAtOne + charB.growth.add * 2}`,
+  );
+
+  // --- Path 2: a full snapshot round-trip onto a fresh run begun without the per-slot config -------
+  // This is the realistic resync carrier: `snapshotRun`/`restoreRun` capture and rebuild the whole world,
+  // and `restoreRun` now hands `rehydrate` the growth resolver. The receiving run is begun with NO per-slot
+  // config, so its ladders start wrong for these seats; the restore must fix them.
+  const snapSource = new Run();
+  snapSource.begin({ seed: 24680, playerCount: 2, record: true, ...cfg });
+  const sd0 = snapSource.progFor(0);
+  const sd1 = snapSource.progFor(1);
+  guard = 0;
+  while (sd0.level < charA.growth.everyLevels + 1 && guard++ < 10_000) sd0.addXp(sd0.xpToNext - sd0.xp, snapSource.stats);
+  guard = 0;
+  while (sd1.level < charB.growth.everyLevels + 1 && guard++ < 10_000) sd1.addXp(sd1.xpToNext - sd1.xp, snapSource.stats);
+  sd0.pending = 0;
+  sd0.droppedPending = 0;
+  sd1.pending = 0;
+  sd1.droppedPending = 0;
+  snapSource.tick();
+  const snapDmgStep = snapSource.stats.values[charA.growth.stat];
+  const snapDurStep = snapSource.stats.values[charB.growth.stat];
+  const snapDmgBase = snapDmgStep - charA.growth.add;
+  const snapDurBase = snapDurStep - charB.growth.add;
+
+  const bytes = snapshotRun(snapSource);
+  const restored = new Run();
+  restored.begin({ seed: 24680, playerCount: 2, record: true });
+  const code = restoreRun(restored, bytes);
+  check("snapshot round-trip: restore accepted", code === SNAPSHOT_ERROR.NONE, `${code}`);
+  check(
+    "snapshot round-trip: the restored stats follow from the contents",
+    restored.loadoutAgreesWithStats(new Stats()),
+  );
+  check(
+    "snapshot round-trip: seat 0's damage step survived the restore",
+    restored.stats.values[charA.growth.stat] === snapDmgStep,
+    `${restored.stats.values[charA.growth.stat]} vs ${snapDmgStep}`,
+  );
+  check(
+    "snapshot round-trip: seat 1's duration step survived the restore",
+    restored.stats.values[charB.growth.stat] === snapDurStep,
+    `${restored.stats.values[charB.growth.stat]} vs ${snapDurStep}`,
+  );
+
+  // And again the ladder proof: advance each seat past a second gap on the RESTORED run and confirm the
+  // next step lands. Only a correctly reconstructed ladder can do this.
+  const r0 = restored.progFor(0);
+  const r1 = restored.progFor(1);
+  guard = 0;
+  while (r0.level < charA.growth.everyLevels * 2 + 1 && guard++ < 10_000) r0.addXp(r0.xpToNext - r0.xp, restored.stats);
+  guard = 0;
+  while (r1.level < charB.growth.everyLevels * 2 + 1 && guard++ < 10_000) r1.addXp(r1.xpToNext - r1.xp, restored.stats);
+  r0.pending = 0;
+  r0.droppedPending = 0;
+  r1.pending = 0;
+  r1.droppedPending = 0;
+  restored.tick();
+  check(
+    "snapshot round-trip: seat 0 climbs to its SECOND damage step after the restore",
+    restored.stats.values[charA.growth.stat] === snapDmgBase + charA.growth.add * 2,
+    `${restored.stats.values[charA.growth.stat]} vs ${snapDmgBase + charA.growth.add * 2}`,
+  );
+  check(
+    "snapshot round-trip: seat 1 climbs to its SECOND duration step after the restore",
+    restored.stats.values[charB.growth.stat] === snapDurBase + charB.growth.add * 2,
+    `${restored.stats.values[charB.growth.stat]} vs ${snapDurBase + charB.growth.add * 2}`,
+  );
 }
 
 console.log(failures === 0 ? "\nPASS — a character inside a real run" : `\nFAIL — ${failures} check(s) failed`);

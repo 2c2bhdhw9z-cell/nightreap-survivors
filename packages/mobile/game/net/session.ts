@@ -842,6 +842,12 @@ export class GuestSession {
    *
    * Read-only and display-facing: it reports the same `want` `sendInput` computes, so recording at it
    * lines the prediction up with the very inputs the host will confirm. It never changes what is sent.
+   *
+   * DISPLAY-ONLY, NOT A SIM INPUT. This getter folds in live `clock.rttMs`, which is wall-clock and
+   * differs phone to phone — so it must never feed the simulation, the confirmed record, `hashState`, or
+   * anything on the wire. It exists purely to tell `LocalView` (and the dev panel) how far ahead to
+   * dead-reckon the local sprite. If a future refactor is tempted to read `predictTick` inside `Run.tick`
+   * or an encoder, that is the bug: the sim advances only from seed + confirmed records, never from RTT.
    */
   get predictTick(): number {
     return Math.max(this.horizon + this.leadTicks(), this.sendTick + 1);

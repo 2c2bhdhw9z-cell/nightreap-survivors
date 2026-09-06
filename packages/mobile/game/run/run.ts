@@ -621,15 +621,44 @@ export class Run {
    * disagreement between the two into a silent behaviour change instead of a test failure. The test
    * asserts they agree; production trusts the bytes.
    *
-   * Called by `restoreRun`. The registry is passed in rather than imported so that `run.ts` keeps no
-   * dependency on the save layer, and the dependency arrow keeps pointing one way.
+   * Called by `restoreRun`. The registry — and the growth-ladder resolver below — are passed in rather
+   * than imported so that `run.ts` keeps no dependency on the save or character layer, and the dependency
+   * arrow keeps pointing one way.
+   *
+   * `growthByWireId`, when supplied, closes the one gap the co-op review flagged: each seat's growth ladder
+   * and spacing used to be established only by `begin()`, so a phone that reached a live run WITHOUT
+   * `begin()`'s per-slot config would restore correct current stats yet drift on the next growth step. The
+   * ladder is not on the wire — but the character *base* record that names it is — so a resync can recover
+   * the ladder from the same wire ids it already restored to the stack. Given the resolver, `rehydrate`
+   * re-establishes each seat's ladder from the base record wire ids on `modifierWire`, in slot order, so
+   * every path into a live run (join, resync, snapshot restore) holds the same ladders `begin()` would have.
+   * Omitting it keeps the old behaviour — the run trusts the ladders `begin()` left on the object — so a
+   * caller that has just called `begin()` on this same object (the shipped flow) is unaffected.
    */
-  rehydrate(byWireId: ReadonlyMap<number, RunModifier>): void {
+  rehydrate(
+    byWireId: ReadonlyMap<number, RunModifier>,
+    growthByWireId?: (wireId: number) => { ladder: readonly RunModifier[]; everyLevels: number } | undefined,
+  ): void {
     this.stack.clear();
     this.stack.clearLoadout();
     for (let i = 0; i < this.modifierCount; i++) {
       const mod = byWireId.get(this.modifierWire[i]);
       if (mod !== undefined) this.stack.add(mod);
+    }
+    // Re-establish each seat's growth ladder from the character base record wire ids on the list. The base
+    // records were written in slot order at `begin()`, so walking the list and handing each one to the next
+    // seat rebuilds the identical per-slot ladders — no matter whether `begin()` ran with the per-slot config
+    // on this phone. A wire id that is not a character base record (a mode, a shop rank, a growth tier) is
+    // skipped by the resolver, so only genuine survivor identities claim a slot.
+    if (growthByWireId !== undefined) {
+      let slot = 0;
+      for (let i = 0; i < this.modifierCount && slot < MAX_PLAYERS; i++) {
+        const found = growthByWireId(this.modifierWire[i]);
+        if (found === undefined) continue;
+        this.growthLadders[slot] = found.ladder;
+        this.growthEverys[slot] = Math.max(1, found.everyLevels | 0);
+        slot++;
+      }
     }
     this.rebuildLoadout();
     // Each open per-player card screen relabels for its OWN slot, so a restored co-op run gets every

@@ -39,7 +39,7 @@
 
 import { MODIFIERS_BY_WIRE_ID, type RunModifier } from "../sim/modifiers";
 import { POWERUP_MODIFIERS_BY_WIRE_ID } from "../shop/loadout";
-import { CHARACTER_MODIFIERS_BY_WIRE_ID } from "../characters/loadout";
+import { CHARACTER_MODIFIERS_BY_WIRE_ID, characterGrowthLadderForWireId } from "../characters/loadout";
 
 /**
  * Every modifier a wire id can name: the mode catalogue plus the generated shop and character records.
@@ -642,9 +642,11 @@ export function restoreRun(run: Run, bytes: Uint8Array): SnapshotError {
   run.recorder.restoreStream(payload.subarray(offset, offset + streamBytes));
 
   // Everything above restored the *numbers*. This rebuilds the handful of things that are object
-  // references rather than numbers — which modifier records are folded in, and the text on any card
-  // screen that was open — from those numbers.
-  run.rehydrate(ALL_MODIFIERS_BY_WIRE_ID);
+  // references rather than numbers — which modifier records are folded in, the text on any card screen
+  // that was open, and each seat's growth ladder — from those numbers. The growth resolver lets a restore
+  // re-establish every seat's ladder from the character base record wire ids it just restored, so a resync
+  // never depends on `begin()` having stashed the ladders on this phone.
+  run.rehydrate(ALL_MODIFIERS_BY_WIRE_ID, characterGrowthLadderForWireId);
 
   return SNAPSHOT_ERROR.NONE;
 }
