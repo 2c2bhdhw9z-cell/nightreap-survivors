@@ -97,7 +97,7 @@ const COUNT_CEILING = new Map<number, number>([
 // -------------------------------------------------------------------------------------------------
 section("the shipped roster");
 
-check("has twelve characters", CHARACTER_COUNT === 12, `${CHARACTER_COUNT}`);
+check("has thirteen characters (twelve launch + Mord)", CHARACTER_COUNT === 13, `${CHARACTER_COUNT}`);
 check("passes its own content check", contentFaults().length === 0, contentFaults().join("; ") || "clean");
 
 {
@@ -128,7 +128,7 @@ check("passes its own content check", contentFaults().length === 0, contentFault
 }
 
 {
-  // Twelve characters sharing four starting weapons would be twelve coats of paint on four openings. The
+  // Thirteen characters sharing four starting weapons would be twelve coats of paint on four openings. The
   // floor is deliberately low — a shared starting weapon with different stats is a real difference — but a
   // roster this size has to open in more than a handful of ways.
   const starters = new Set(CHARACTERS.map((c) => c.startingWeaponId));
