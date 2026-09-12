@@ -1,1 +1,1 @@
-LOAD_FROM_DISK
+file:///workspace/nightreap-work/out/packages/mobile/game/sim/waves.ts
