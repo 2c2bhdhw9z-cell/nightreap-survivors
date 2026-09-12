@@ -1,29 +1,3 @@
-/**
- * The results screen — what a run *was*, once it is over.
- *
- * WHY THIS IS A SIM FILE AND NOT A UI FILE
- * The numbers on the results screen are also the numbers that go into the save, into achievement
- * checks, into a leaderboard submission and into a bug report. If the screen computed them itself,
- * "the screen said 12:04 but the save recorded 11:58" becomes possible, and that is the kind of
- * discrepancy players screenshot. So a run summary is produced once, from the stores, and everything
- * downstream reads that one record.
- *
- * WHY IT IS A PREALLOCATED RECORD FILLED IN PLACE
- * Summarising happens once per run, so allocation would be harmless here — except that the same
- * function runs at 60Hz inside replay revalidation on the server, where a fresh object and a fresh
- * sorted array per run would be the whole cost. Fill-in-place costs nothing and forces the harder
- * question anyway: what exactly is in a summary?
- *
- * WHY THE WEAPON BREAKDOWN IS SORTED HERE
- * "Which of my weapons was actually doing the work" is the single most-read thing on the screen, and
- * it drives what the player builds next run. Sorting in the summary means the screen, the replay
- * validator and the co-op end-of-run panel all rank it identically.
- *
- * WHAT THIS FILE DELIBERATELY DOES NOT DO
- * It does not write the save, does not submit anything, and does not decide ladder eligibility. Taint
- * comes in as a value it copies; `isLadderEligible` in `replay/format.ts` remains the only judge.
- */
-
 import { MAX_PLAYERS } from "./player";
 import type { PlayerStore } from "./player";
 import type { Progression } from "./progression";
@@ -35,29 +9,16 @@ const TICKS_PER_SECOND = 60;
 
 /** How a run ended. Append-only: written into saves and replay footers. */
 export const RUN_END = {
-  /** Still going. A summary in this state is a mid-run snapshot for the dev menu. */
   running: 0,
-  /** Every player died. The ordinary ending. */
   defeat: 1,
-  /** The White Hand arrived and ended it. Counts as a completed run, not a death. */
   whiteHand: 2,
-  /** The player survived the whole wave table. */
   survived: 3,
-  /** The player quit to the menu on purpose. */
   quit: 4,
-  /** Connection lost in co-op with no host to migrate to. */
   disconnected: 5,
 } as const;
 
 export type RunEnd = (typeof RUN_END)[keyof typeof RUN_END];
 
-/**
- * Player-facing wording per ending.
- *
- * The distinction that matters: the White Hand is not a death. A player who reached 30 minutes and got
- * erased by an unkillable Reaper did not fail, and telling them they did is the fastest way to make
- * the best run of their week feel bad.
- */
 export const RUN_END_LABELS: readonly string[] = [
   "In progress",
   "Overwhelmed",
@@ -71,34 +32,24 @@ export function describeRunEnd(end: number): string {
   return RUN_END_LABELS[end] ?? "Unknown";
 }
 
-/** True when the ending counts as finishing the run rather than losing it. */
 export function isCompletion(end: number): boolean {
   return end === RUN_END.whiteHand || end === RUN_END.survived;
 }
 
-/** One row of the damage breakdown. */
 export interface WeaponResult {
-  /** Index into `WEAPON_TYPES`, or -1 for an unused row. */
   typeIndex: number;
   level: number;
   damage: number;
-  /** Share of this player's total damage, in permille. */
   sharePermille: number;
-  /** Weapon name, by reference from content. */
   name: string;
 }
 
-/** Everything a run was, for one player and for the party. */
 export class RunSummary {
   end: RunEnd = RUN_END.running;
-  /** Run ticks elapsed. The authoritative duration; seconds are derived. */
   ticks = 0;
-  /** Stage and seed, so a run can be replayed or shared. */
   stageId = 0;
   seed = 0;
-  /** Taint bits copied from the run header. Informational here. */
   tainted = 0;
-  /** How many players were in the party. */
   playerCount = 1;
 
   levelReached = 0;
@@ -107,14 +58,18 @@ export class RunSummary {
   kills = 0;
   damageDealt = 0;
   damageTaken = 0;
-  /** Times any player went down, and times a down was reversed. */
   downs = 0;
   revives = 0;
-  /** Card screens shown and picks made, for the "what did I actually choose" line. */
   screensShown = 0;
   picksMade = 0;
 
-  /** Damage breakdown for the summarised player, sorted highest first. */
+  /** Golden Eggs earned this run by killing Reapers. Banked onto characterId at handoff. */
+  eggsEarned = 0;
+  /** How many Reapers this run killed. First kill unlocks Mord Vane. */
+  reaperKills = 0;
+  /** Seat-0 character index — eggs and the secret unlock attach here. */
+  characterId = 0;
+
   readonly weapons: WeaponResult[] = Array.from({ length: MAX_WEAPONS }, () => ({
     typeIndex: -1,
     level: 0,
@@ -122,10 +77,8 @@ export class RunSummary {
     sharePermille: 0,
     name: "",
   }));
-  /** Populated rows in `weapons`. */
   weaponCount = 0;
 
-  /** Per-player survival, so a co-op screen can say who fell and when. */
   readonly playerAlive = new Uint8Array(MAX_PLAYERS);
   readonly playerDownTick = new Int32Array(MAX_PLAYERS).fill(-1);
 
@@ -133,7 +86,6 @@ export class RunSummary {
     return Math.floor(this.ticks / TICKS_PER_SECOND);
   }
 
-  /** Whole minutes and seconds, for the clock on the screen. */
   get minutes(): number {
     return Math.floor(this.seconds / 60);
   }
@@ -155,6 +107,9 @@ export class RunSummary {
     this.revives = 0;
     this.screensShown = 0;
     this.picksMade = 0;
+    this.eggsEarned = 0;
+    this.reaperKills = 0;
+    this.characterId = 0;
     this.weaponCount = 0;
     for (const w of this.weapons) {
       w.typeIndex = -1;
@@ -168,7 +123,6 @@ export class RunSummary {
   }
 }
 
-/** The counters a summary needs that live outside the stores it reads. */
 export interface RunTotals {
   kills: number;
   damageDealt: number;
@@ -181,7 +135,6 @@ export interface RunTotals {
   tainted: number;
 }
 
-/** Formats run ticks as `M:SS`. The one place the run clock is turned into words. */
 export function formatRunTime(ticks: number): string {
   const total = Math.floor(Math.max(0, ticks) / TICKS_PER_SECOND);
   const m = Math.floor(total / 60);
@@ -189,12 +142,6 @@ export function formatRunTime(ticks: number): string {
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 }
 
-/**
- * Fill `out` from the live stores.
- *
- * `player` selects whose weapon breakdown is reported; the party-wide figures (kills, gold, level) are
- * shared by design, because experience and gold are shared in co-op.
- */
 export function summariseRun(
   out: RunSummary,
   end: RunEnd,
@@ -228,8 +175,6 @@ export function summariseRun(
     out.playerAlive[i] = players.upright[i];
   }
 
-  // Weapon rows, then a descending insertion sort. `MAX_WEAPONS` is 6: anything cleverer than
-  // insertion sort would be slower and would allocate a comparator.
   const base = player * MAX_WEAPONS;
   let n = 0;
   let sum = 0;
@@ -266,8 +211,6 @@ export function summariseRun(
     out.weapons[j + 1].name = name;
   }
 
-  // Shares, in permille of this player's own damage. Truncated, so they can sum to slightly under
-  // 1000 — which is honest, where rounding one row up to make the total look tidy would not be.
   for (let i = 0; i < n; i++) {
     const row = out.weapons[i];
     row.sharePermille = sum > 0 ? Math.trunc((row.damage * 1000) / sum) : 0;
@@ -276,12 +219,7 @@ export function summariseRun(
   return out;
 }
 
-/** What a finished run contributes to the profile. Applied by the save layer, not here. */
 export interface ProfileDelta {
-  /**
-   * Which stage the run happened on. Carried so the profile can keep a best time per place, which is
-   * what opens the next stage — a single best time anywhere cannot answer "have they cleared the marsh".
-   */
   stageId: number;
   gold: number;
   runsStarted: number;
@@ -291,13 +229,6 @@ export interface ProfileDelta {
   everTainted: number;
 }
 
-/**
- * Turn a summary into the profile changes it earns.
- *
- * Deliberately counts a *quit* run's gold and time: a player who bailed at 20 minutes still played 20
- * minutes, and confiscating that is the sort of thing that makes people stop opening the game. Only
- * `runsCompleted` is reserved for real endings.
- */
 export function profileDeltaFor(summary: RunSummary, out: ProfileDelta): ProfileDelta {
   out.stageId = summary.stageId;
   out.gold = summary.gold;
