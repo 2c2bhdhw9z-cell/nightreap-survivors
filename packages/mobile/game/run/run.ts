@@ -65,6 +65,7 @@ import { MAX_PLAYERS, PlayerStore } from "../sim/player";
 import { Progression } from "../sim/progression";
 import { ProjectileStore, type OwnerPositions } from "../sim/projectiles";
 import { RUN_END, RunSummary, summariseRun, type RunEnd, type RunTotals } from "../sim/results";
+import { EGGS_PER_REAPER_KILL } from "../sim/eggs";
 import { STAT, STAT_COUNT, STAT_SCALE, Stats } from "../sim/stats";
 import { stageAt, wavesForStage } from "../sim/stages";
 import { TICKS_PER_SECOND, WaveDirector } from "../sim/waves";
@@ -75,10 +76,11 @@ import { RNG_STREAMS, Rng, RngSet, hashName } from "../core/rng";
 export const SPAWN_RING_RADIUS = 12;
 
 /**
- * How long the White Hand takes to close after the Reaper is due.
+ * How long the White Hand takes to close after a Reaper is killed.
  *
- * Twelve seconds, because the bell tolls twelve times. The run is already over at this point — this
- * window exists so the ending is a moment rather than a cut to a results screen.
+ * Twelve seconds, because the bell tolls twelve times. This window is the hard-path ending — it does
+ * NOT start when the first Reaper arrives (that would leave no time to fight, and no room for one more
+ * Reaper every minute). Dying to a Reaper is a normal stage clear; killing one starts this sequence.
  */
 export const WHITE_HAND_TICKS = 12 * TICKS_PER_SECOND;
 
@@ -97,8 +99,8 @@ export const BOMB_DAMAGE = 1_000_000;
  */
 export const CHEST_GOLD = 100;
 
-/** Enemy the Reaper uses until it gets its own record in Phase 4. */
-const REAPER_ENEMY_ID = "gravewarden";
+/** The Reaper — distinct from the five-minute gravewarden boss so a kill is unambiguous. */
+const REAPER_ENEMY_ID = "nightreaper";
 
 /** Configuration for one run. Everything here is fixed at run start and never changes mid-run. */
 export interface RunConfig {
@@ -291,6 +293,15 @@ export class Run {
   /** Ticks left in the White Hand sequence, or -1 when it has not begun. */
   whiteHandTicks = -1;
 
+  /** How many Reapers this run has killed. First kill starts the White Hand and unlocks the secret. */
+  reaperKills = 0;
+
+  /** Golden Eggs earned this run (banked onto the save after the results screen). */
+  eggsEarned = 0;
+
+  /** Character the player picked for this run (seat 0). Eggs bank onto this index. */
+  primaryCharacterId = 0;
+
   /** Resolved run flags — endless, early reaper, no card draw. Read every tick, never per entity. */
   private flags = 0;
 
@@ -473,6 +484,9 @@ export class Run {
     this.damageDealt = 0;
     this.revives = 0;
     this.whiteHandTicks = -1;
+    this.reaperKills = 0;
+    this.eggsEarned = 0;
+    this.primaryCharacterId = (c.characterIds[0] ?? 0) | 0;
     this.chestsOpened = 0;
     this.evolutionsEarned = 0;
     resetChestReport(this.chestReport);
@@ -938,7 +952,12 @@ export class Run {
     props.resetBreaks();
   }
 
-  /** Spawn the Reaper when it is due, then count down to the White Hand. */
+  /**
+   * Spawn Reapers when due, and run the White Hand countdown once a Reaper has been killed.
+   *
+   * Arrival does NOT start the Hand — that was the bug that ended every run ~12s after the first
+   * spawn and made "+1 per minute" and "kill for eggs" impossible. The Hand starts on a kill.
+   */
   private tickReaper(): void {
     if (this.whiteHandTicks >= 0) {
       this.whiteHandTicks--;
@@ -952,13 +971,49 @@ export class Run {
     }
     if (!this.waves.reaperDue(this.stats, (this.flags & RUN_FLAG.earlyReaper) !== 0)) return;
 
-    this.waves.reaperSpawned = true;
+    this.waves.noteReaperSpawned();
     this.cues.emit(CUE.reaperArrived, this.players.x[0], this.players.y[0]);
     const type = ENEMY_TYPE_BY_ID.get(REAPER_ENEMY_ID);
     if (type !== undefined) {
+      // Spawn above the player, same place the original Reaper used — readable, not on top of them.
       this.enemies.spawn(type, this.players.x[0], this.players.y[0] - 120, this.stats);
     }
-    this.whiteHandTicks = WHITE_HAND_TICKS;
+    // Deliberately no White Hand here. Fight, flee, or die — the Hand waits for a kill.
+  }
+
+  /**
+   * Test helper: kill every live nightreaper through the combat drain path.
+   *
+   * Headless tests cannot aim weapons reliably at a 900hp boss in one tick, so they call this after
+   * spawning. Production code never calls it.
+   */
+  forceKillReapersForTest(): void {
+    const type = ENEMY_TYPE_BY_ID.get(REAPER_ENEMY_ID);
+    if (type === undefined) return;
+    const slots = this.enemies.slots;
+    const doomed: number[] = [];
+    for (let i = 0; i < this.enemies.count; i++) {
+      const s = slots[i] as number;
+      if (this.enemies.typeIndex[s] === type) doomed.push(s);
+    }
+    for (const s of doomed) {
+      const x = this.enemies.x[s] as number;
+      const y = this.enemies.y[s] as number;
+      this.enemies.kill(s);
+      this.onReaperKilled(x, y);
+    }
+  }
+
+  /** Shared kill payoff: eggs, unlock fact, and the White Hand. */
+  private onReaperKilled(x: number, y: number): void {
+    this.reaperKills++;
+    this.eggsEarned += EGGS_PER_REAPER_KILL;
+    this.kills++;
+    this.cues.emit(CUE.bossDied, x, y, ENEMY_TYPE_BY_ID.get(REAPER_ENEMY_ID) ?? 0);
+    // First kill this run starts the Hand. Further kills during the countdown still pay eggs.
+    if (this.whiteHandTicks < 0) {
+      this.whiteHandTicks = WHITE_HAND_TICKS;
+    }
   }
 
   /** Fold this tick's hits and deaths into run totals, and turn deaths into loot. */
@@ -971,8 +1026,15 @@ export class Run {
     }
 
     const kills = proj.killCount;
+    const reaperType = ENEMY_TYPE_BY_ID.get(REAPER_ENEMY_ID);
     for (let i = 0; i < kills; i++) {
       const type = proj.killType[i];
+      // Reaper kills take the special path: eggs + White Hand. They still count as kills.
+      if (reaperType !== undefined && type === reaperType) {
+        this.onReaperKilled(proj.killX[i], proj.killY[i]);
+        // Eggs are meta, not floor loot — no rollDrops. The bossDied cue is emitted inside onReaperKilled.
+        continue;
+      }
       const boss = (ENEMY_TYPES[type].flags & ENEMY_FLAG.boss) !== 0;
       this.cues.emit(
         boss ? CUE.bossDied : CUE.enemyDied,
@@ -988,8 +1050,8 @@ export class Run {
         this.stats,
         this.dropRng,
       );
+      this.kills++;
     }
-    this.kills += kills;
   }
 
   /** Apply everything collected this tick. Collection is an event; this is where it takes effect. */
@@ -1129,7 +1191,9 @@ export class Run {
   private checkEnd(): void {
     if (this.end !== RUN_END.running) return;
     if (this.players.runOver) {
-      this.finish(RUN_END.defeat);
+      // Dying after the Reaper has arrived is a stage clear — you lasted the night. The White Hand
+      // is reserved for the kill path; a silent defeat at 30:01 would be the wrong reading.
+      this.finish(this.waves.reaperSpawned ? RUN_END.survived : RUN_END.defeat);
       return;
     }
     if (this.timeLimitTicks > 0 && this.waves.runTicks >= this.timeLimitTicks) {
@@ -1311,6 +1375,9 @@ export class Run {
       this.prog,
       t,
     );
+    this.summary.eggsEarned = this.eggsEarned;
+    this.summary.reaperKills = this.reaperKills;
+    this.summary.characterId = this.primaryCharacterId;
 
     if (this.recording) this.recorder.end(this.hashState(0x811c9dc5));
     return this.summary;
