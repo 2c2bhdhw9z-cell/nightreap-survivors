@@ -45,6 +45,8 @@ export const PLAYER_FRAME: Readonly<Record<string, string>> = {
   hessa: "characters/icon-10",
   orin: "characters/icon-11",
   calla: "characters/icon-12",
+  // Secret unlock — shares sable's body until dedicated art ships. Declared in SHARED_PLAYER_FRAMES.
+  mord: "characters/icon-06",
 };
 
 /** The picture each kind of enemy is drawn as. Keyed by the enemy type's own id. */
@@ -55,6 +57,8 @@ export const ENEMY_FRAME: Readonly<Record<string, string>> = {
   hound: "enemies/icon-11",
   wisp: "enemies/icon-06",
   gravewarden: "bosses/icon-04",
+  // Shares the gravewarden cell on purpose — one body, two roles. Declared in SHARED_ENEMY_FRAMES.
+  nightreaper: "bosses/icon-04",
   // The rest of the crowd, taking the cells of the enemy sheet nobody had claimed. Twenty-six rows
   // against twenty-six drawn cells: the table has to cover the roster exactly, and no two rows may
   // wear the same picture, or two different monsters would be indistinguishable mid-crowd.
@@ -79,6 +83,12 @@ export const ENEMY_FRAME: Readonly<Record<string, string>> = {
   plagueChoir: "bosses/icon-07",
   graveTyrant: "bosses/icon-08",
 };
+
+/** Characters that knowingly share a body until dedicated art ships. */
+export const SHARED_PLAYER_FRAMES: readonly string[] = Object.freeze(["sable", "mord"]);
+
+/** Enemies that knowingly share a cell (Reaper reuses gravewarden art). */
+export const SHARED_ENEMY_FRAMES: readonly string[] = Object.freeze(["gravewarden", "nightreaper"]);
 
 /**
  * The picture each weapon's shot is drawn as, keyed by the weapon's own id — evolutions included, because
