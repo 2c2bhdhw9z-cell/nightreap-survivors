@@ -20,6 +20,7 @@ import {
   MISSING_FRAME,
   PORTRAIT_FRAME,
   POWERUP_FRAME,
+  SHARED_PORTRAIT_ICONS,
   SHARED_POWERUP_ICONS,
   allNamedFrames,
   arcanaFrame,
@@ -110,10 +111,21 @@ check(
   "the table names no character the game does not have",
   Object.keys(PORTRAIT_FRAME).every((id) => CHARACTERS.some((who) => who.id === id)),
 );
-check(
-  "no two characters wear the same face",
-  new Set(Object.values(PORTRAIT_FRAME)).size === Object.keys(PORTRAIT_FRAME).length,
-);
+{
+  const faceOwners = new Map<string, string[]>();
+  for (const [id, frame] of Object.entries(PORTRAIT_FRAME)) {
+    const owners = faceOwners.get(frame) ?? [];
+    owners.push(id);
+    faceOwners.set(frame, owners);
+  }
+  const faceSharers = [...faceOwners.values()].filter((o) => o.length > 1).flat().sort();
+  const declaredFaces = [...SHARED_PORTRAIT_ICONS].sort();
+  check(
+    "the only characters sharing a face are the ones we said would",
+    faceSharers.length === new Set(faceSharers).size && faceSharers.every((id) => declaredFaces.includes(id)),
+    `sharing: ${faceSharers.join(", ")} / declared: ${declaredFaces.join(", ")}`,
+  );
+}
 check(
   "every portrait comes from the portraits sheet",
   Object.values(PORTRAIT_FRAME).every((frame) => frame.startsWith("portraits/")),

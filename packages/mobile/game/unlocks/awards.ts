@@ -1,43 +1,3 @@
-/**
- * Handing out unlocks, in one place, so nothing can be earned twice and nothing can be taken back.
- *
- * WHY THIS IS A SEPARATE LAYER
- *
- * Every content list already knows how to answer "is this thing available to this save" — `roster.ts` does
- * it for characters, `powerups.ts` does it for shop rows. Those answers are *derived*: they look at lifetime
- * gold, runs finished and best time, and say yes or no on the spot. Derived answers are the right default
- * because they survive a broken save, a migration and a sync from a device with a shorter history.
- *
- * What a derived answer cannot do is tell the player *when* something happened. "Unlocked" is a moment: it
- * belongs on the results screen right after the run that earned it, with a name and a line of text. That
- * moment only exists if somebody writes it down. This file is where it gets written down: it walks the
- * content, compares what the profile has plainly earned against the bits already stored, sets the missing
- * bits, and reports what it just set.
- *
- * WHY BITS ARE ONLY EVER SET
- *
- * A stored bit outranks the condition (see `isCharacterUnlocked`), which means a bit is a promise: whatever
- * happens to the numbers later, the player keeps the thing. So nothing in this file clears a bit, and there
- * is no function that can. That rules out a whole family of bugs whose shape is always the same — a rebalance
- * moves a threshold, or a sync arrives from a phone with less progress, and a player who unlocked somebody
- * last month opens the game to find them locked. Gold can go down. Unlocks cannot.
- *
- * WHY THE STARTERS ARE SEEDED SILENTLY
- *
- * Three characters are available on a brand new save. If the sweep reported those as "newly unlocked", the
- * first results screen a player ever sees would announce three unlocks they had before they pressed play.
- * `seedStarters` writes those bits without reporting them, so the bitset is honest — `bitCount` means
- * something — while the report only ever carries things the player actually just earned.
- *
- * WHY THE REPORT IS A FIXED-SIZE, CALLER-OWNED RECORD
- *
- * Same reason as the payout receipt: the results screen must be able to draw without doing arithmetic, and
- * the sweep must be safe to call from anywhere without allocating. A report holds up to `AWARD_LIMIT` rows;
- * if more than that lands at once, the extra ones are *counted* in `overflow` and their bits are still set.
- * Losing an unlock because a screen ran out of rows would be unforgivable; not listing it is merely untidy,
- * and the screen can say "and 3 more".
- */
-
 import { bitGet, bitSet, SAVE_LIMITS, type SaveData } from "../save/schema";
 import { CHAR_UNLOCK, CHARACTERS, type Character } from "../characters/roster";
 import { ARCANA_TYPES } from "../sim/arcanas";
@@ -54,12 +14,6 @@ import {
 import { arcanaConditionMetFor, arcanaEarnedLine } from "./arcana-records";
 import { stageConditionMet, stageEarnedLine } from "./stage-records";
 
-/**
- * The lists a save keeps unlock bits for.
- *
- * These numbers are stored nowhere, so they are free to change; they exist so one function can be told which
- * bitset to write, instead of four near-identical functions drifting apart.
- */
 export const TRACK = {
   CHARACTER: 0,
   WEAPON: 1,
@@ -78,13 +32,6 @@ export const TRACK_NAMES: Readonly<Record<TrackId, string>> = {
   [TRACK.ACHIEVEMENT]: "achievement",
 };
 
-/**
- * Why a grant did not happen.
- *
- * `ALREADY_HELD` is not a failure and deliberately has its own code rather than sharing `OK`: a caller that
- * wants to know whether it just changed anything — a screen deciding whether to play a sound — must be able
- * to tell "I gave them this" from "they had it". Codes are internal, so this list may be reordered.
- */
 export const AWARD = {
   OK: 0,
   UNKNOWN_TRACK: 1,
@@ -109,16 +56,8 @@ export function describeAward(code: number): string {
   return AWARD_NAMES[code as AwardCode] ?? `unknown award code ${code}`;
 }
 
-/** How many rows a single report can carry. A results screen has no room for more than a handful anyway. */
 export const AWARD_LIMIT = 16;
 
-/**
- * What a sweep just handed out.
- *
- * Parallel arrays rather than an array of objects, because a report is reused between runs and an array of
- * objects would allocate on every sweep. `count` is how many rows are filled; `overflow` is how many further
- * unlocks were granted but had nowhere to be listed.
- */
 export interface AwardReport {
   count: number;
   overflow: number;
@@ -139,13 +78,6 @@ export function createAwardReport(): AwardReport {
   };
 }
 
-/**
- * Empty a report.
- *
- * Wipes the text as well as the counters. A report is reused between runs, and a stale name left behind a
- * lowered `count` is exactly the bug the payout receipt already had once: the numbers say nothing happened
- * and the strings still describe last time.
- */
 export function resetAwardReport(report: AwardReport): void {
   report.count = 0;
   report.overflow = 0;
@@ -157,7 +89,6 @@ export function resetAwardReport(report: AwardReport): void {
   }
 }
 
-/** The bitset a track lives in, or `undefined` for a track this save does not keep. */
 export function setFor(save: SaveData, track: number): Uint8Array | undefined {
   switch (track) {
     case TRACK.CHARACTER:
@@ -175,7 +106,6 @@ export function setFor(save: SaveData, track: number): Uint8Array | undefined {
   }
 }
 
-/** How many positions a track's bitset can hold. Bytes are fixed by `SAVE_LIMITS`, so this is a constant. */
 export function capacityOf(track: number): number {
   switch (track) {
     case TRACK.CHARACTER:
@@ -193,7 +123,6 @@ export function capacityOf(track: number): number {
   }
 }
 
-/** Does this save already hold a position on a track? A position it cannot describe is not held. */
 export function isHeld(save: SaveData, track: number, index: number): boolean {
   const set = setFor(save, track);
   if (set === undefined) return false;
@@ -201,10 +130,6 @@ export function isHeld(save: SaveData, track: number, index: number): boolean {
   return bitGet(set, index);
 }
 
-/**
- * Add a row to a report, or count it as overflow. Never refuses — the bit is already set by the time this
- * runs, and a report that quietly disagreed with the save would be worse than a report that says "and more".
- */
 function note(report: AwardReport, track: number, index: number, name: string, line: string): void {
   if (report.count >= AWARD_LIMIT) {
     report.overflow++;
@@ -218,16 +143,6 @@ function note(report: AwardReport, track: number, index: number, name: string, l
   report.count++;
 }
 
-/**
- * Grant one position on one track.
- *
- * Refuses a position the save cannot store rather than writing nothing and claiming success: an out-of-range
- * bit is how a content list that outgrew its bitset would fail, and it must be loud. `report` may be omitted
- * for a grant nobody needs to be told about.
- *
- * A grant is idempotent by construction: the bit is set, and setting a set bit changes nothing, so a caller
- * that runs twice hands out one unlock and reports it once.
- */
 export function grant(
   save: SaveData,
   track: number,
@@ -247,16 +162,6 @@ export function grant(
   return AWARD.OK;
 }
 
-/* ---- what the profile has earned ---------------------------------------------------------------- */
-
-/**
- * Has this save plainly earned a character, ignoring whatever bit is stored?
- *
- * Deliberately not `isCharacterUnlocked`: that one answers "can they play this", which is true the moment the
- * bit is set. Here the question is "have the numbers reached the bar", which is the only thing that can turn a
- * bit on. Keeping the two apart is what stops the sweep from congratulating a player for an unlock that was
- * granted some other way — a gift, an achievement, a future promotion.
- */
 export function characterConditionMet(save: SaveData, character: Character): boolean {
   switch (character.unlock) {
     case CHAR_UNLOCK.ALWAYS:
@@ -267,18 +172,13 @@ export function characterConditionMet(save: SaveData, character: Character): boo
       return save.runsCompleted >= character.unlockValue;
     case CHAR_UNLOCK.BEST_SECONDS:
       return save.bestSurvivalSeconds >= character.unlockValue;
+    case CHAR_UNLOCK.REAPER_KILL:
+      return false;
     default:
       return false;
   }
 }
 
-/**
- * Write the bits for everybody who is available on a brand new save, without reporting them.
- *
- * Called once when a profile is created and again after a migration, because a v1 save has no character bits
- * at all. Returns how many bits it had to write, which is zero on every call after the first — a non-zero
- * answer on an established save means something arrived with bits missing, which is worth a log line.
- */
 export function seedStarters(save: SaveData, list: readonly Character[] = CHARACTERS): number {
   let written = 0;
   for (let i = 0; i < list.length; i++) {
@@ -288,7 +188,6 @@ export function seedStarters(save: SaveData, list: readonly Character[] = CHARAC
   return written;
 }
 
-/** One line of plain English for why a character just showed up. Drawn under the name on the results screen. */
 export function earnedLine(character: Character): string {
   switch (character.unlock) {
     case CHAR_UNLOCK.LIFETIME_GOLD:
@@ -297,20 +196,13 @@ export function earnedLine(character: Character): string {
       return character.unlockValue === 1 ? "Finished a run." : `Finished ${character.unlockValue} runs.`;
     case CHAR_UNLOCK.BEST_SECONDS:
       return `Survived ${Math.floor(character.unlockValue / 60)} minutes in one run.`;
+    case CHAR_UNLOCK.REAPER_KILL:
+      return "Killed the Reaper.";
     default:
       return "Unlocked.";
   }
 }
 
-/**
- * Compare the whole roster against the profile, set every bit that has been earned, and report the new ones.
- *
- * Call this *after* the run's gold and time have been banked, never before: the sweep reads the profile and
- * nothing else, so running it first would hand out last run's unlocks and then announce them again next time.
- *
- * Starters are skipped rather than reported, for the reason at the top of this file. The return value is how
- * many bits were newly set, which includes any that overflowed the report's rows.
- */
 export function sweepUnlocks(
   save: SaveData,
   report: AwardReport,
@@ -325,16 +217,11 @@ export function sweepUnlocks(
     const code = grant(save, TRACK.CHARACTER, i, character.name, earnedLine(character), report);
     if (code === AWARD.OK) granted++;
   }
-  // Places open the same way people do: the profile has plainly earned it, so the bit goes on and the
-  // results screen gets to say so. The first place is skipped for the same reason the starting characters
-  // are — nobody wants to be congratulated for something they had before they pressed play.
   for (let i = 1; i < STAGE_TYPES.length; i++) {
     if (!stageConditionMet(save, i)) continue;
     const code = grant(save, TRACK.STAGE, i, STAGE_TYPES[i].name, stageEarnedLine(i), report);
     if (code === AWARD.OK) granted++;
   }
-  // Arcanas, the same way again. The first one is skipped because it is there from the start, and being
-  // congratulated for a card you already had reads as a bug.
   for (let i = 1; i < ARCANA_TYPES.length; i++) {
     if (!arcanaConditionMetFor(save, i)) continue;
     const code = grant(save, TRACK.ARCANA, i, ARCANA_TYPES[i].name, arcanaEarnedLine(i), report);
@@ -343,18 +230,6 @@ export function sweepUnlocks(
   return granted;
 }
 
-/**
- * Hand out every achievement the profile has just earned.
- *
- * Deliberately separate from `sweepUnlocks` and deliberately does NOT empty the report: both sweeps run
- * one after the other into the same report, so a run that opens a place and earns three badges shows all
- * four on one screen.
- *
- * `run` is the run that just ended, or null when nothing just ended — the settings screen catching up an
- * old profile, say. With no run in hand the questions about a single run are SKIPPED rather than answered
- * "no", because a "no" here is indistinguishable from a "not yet" and neither one is written down; the
- * danger is the opposite mistake, granting a run badge off a profile number that only looks similar.
- */
 export function sweepAchievements(
   save: SaveData,
   report: AwardReport,
@@ -380,18 +255,21 @@ export function sweepAchievements(
   return granted;
 }
 
-/** How many rows a screen can draw, and how many it has to summarise as "and N more". */
+export function grantReaperKillUnlock(save: SaveData, report: AwardReport): number {
+  let granted = 0;
+  for (let i = 0; i < CHARACTERS.length; i++) {
+    const character = CHARACTERS[i];
+    if (character.unlock !== CHAR_UNLOCK.REAPER_KILL) continue;
+    const code = grant(save, TRACK.CHARACTER, i, character.name, earnedLine(character), report);
+    if (code === AWARD.OK) granted++;
+  }
+  return granted;
+}
+
 export function reportRows(report: AwardReport): number {
   return Math.min(report.count, AWARD_LIMIT);
 }
 
-/**
- * Self-check, run at import. Prints and never throws, like the other content checks.
- *
- * What it is really guarding is the pair of assumptions the rest of the file rests on: that every track's
- * content fits inside the bitset the save reserved for it, and that a brand new profile is not a wall of
- * locked rows.
- */
 export function contentFaults(list: readonly Character[] = CHARACTERS): readonly string[] {
   const faults: string[] = [];
 

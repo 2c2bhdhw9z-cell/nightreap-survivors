@@ -96,6 +96,9 @@ import { coopHandoff, type CoopLaunch } from "@/game/net/coop-handoff";
 import { NetRun, netRunFromLaunch } from "@/game/net/net-run";
 import { CARD_ACTION } from "@/game/net/messages";
 import { powerUpLoadout } from "@/game/shop/loadout";
+import { eggLoadout } from "@/game/sim/eggs";
+import { WhiteHandPresenter } from "@/game/render/white-hand";
+import { WHITE_HAND_TICKS } from "@/game/run/run";
 import {
   CHARACTER_GROWTH_MODIFIERS,
   characterLoadout,
@@ -328,6 +331,8 @@ export default function PlayScreen() {
    */
   const saveRef = useRef(settings.save);
   const powerUpsRef = useRef<RunModifier[]>([]);
+  const eggModsRef = useRef<RunModifier[]>([]);
+  const whiteHandRef = useRef(new WhiteHandPresenter());
   // Who the player picked on the character screen. A route parameter rather than a saved field, because
   // "the character you last played" is a save migration and this is not it: an unreadable or locked choice
   // falls back to somebody the profile definitely owns rather than refusing to start.
@@ -658,6 +663,10 @@ export default function PlayScreen() {
 
         // Cues live for exactly one tick, so a chest has to be noticed here and not in the drawing
         // frame — at thirty frames a second the drawing frame misses half of them.
+        whiteHandRef.current.observe(run.cues, run.whiteHandTicks, WHITE_HAND_TICKS);
+        whiteHandRef.current.paint();
+        renderer.camera.zoom = whiteHandRef.current.view.zoom;
+
         const cue = run.cues.indexOf(CUE.chestOpened);
         if (cue >= 0 && run.cues.flag[cue] === 0) {
           const report = run.chestReport;
@@ -951,6 +960,22 @@ export default function PlayScreen() {
             // The one bridge between the two coordinate systems: settings resolve in layout points, the
             // HUD layer draws in screen units.
             L.hudPerDp = renderer.camera.worldViewW / L.w;
+            // White Hand crimson veil — display only, driven by the presenter that consumes the cues.
+            {
+              const wh = whiteHandRef.current.view;
+              if (wh.active && wh.redden > 0.001) {
+                const b = renderer.layer("hud");
+                const a = Math.min(255, Math.max(0, Math.trunc(wh.redden * 255)));
+                const flash = Math.min(40, Math.max(0, Math.trunc(wh.tollFlash * 40)));
+                const tint = withAlpha(packHex("#B01018"), Math.min(255, a + flash));
+                const cx = renderer.camera.centerX(alpha);
+                const cy = renderer.camera.centerY(alpha);
+                const w = renderer.camera.worldViewW;
+                const h = renderer.camera.worldViewH;
+                b.drawScaled(white, cx, cy, w / 32, h / 32, tint);
+              }
+            }
+
             const k = L.hudPerDp;
 
             readRunInto(
@@ -1374,12 +1399,16 @@ export default function PlayScreen() {
         startingWeaponIdBySlot.push(characterStartingWeaponId(id, "reapersLash"));
       }
     }
+    // Golden Eggs for the seat(s) in this run — same stack path as shop powerups so replays keep them.
+    eggLoadout(saveRef.current, characterIds, eggModsRef.current);
+    const powerAndEggs = powerUpsRef.current.concat(eggModsRef.current);
+    whiteHandRef.current.reset();
     run.begin({
       seed: coop !== null ? coop.seed : seedRef.current,
       playerCount: coop !== null ? Math.max(1, coop.playerCount) : partyRef.current,
       stageId: coop !== null ? coop.stageId : stageRef.current,
       modifiers: mods,
-      powerUps: powerUpsRef.current,
+      powerUps: powerAndEggs,
       characters: characterModsRef.current,
       characterGrowth: growth,
       characterGrowthEvery: CHARACTERS[pick]?.growth.everyLevels ?? 1,

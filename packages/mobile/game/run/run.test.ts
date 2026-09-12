@@ -40,7 +40,7 @@ import { STAT, STAT_SCALE } from "../sim/stats";
 import { MAX_WEAPON_LEVEL, WEAPON_BY_ID, WEAPON_TYPES } from "../sim/weapons";
 import { TICKS_PER_SECOND } from "../sim/waves";
 import { REAPER_SECOND } from "../sim/waves";
-import { Run } from "./run";
+import { Run, WHITE_HAND_TICKS } from "./run";
 
 let failures = 0;
 
@@ -368,14 +368,19 @@ section("7. every ending produces a summary");
   check("a time limit ends the run as a survival", survived.end === RUN_END.survived);
   check("survival is a completion", isCompletion(survived.summary.end));
 
-  // The White Hand: jump the clock to the Reaper and let the bell finish.
+  // The White Hand: spawn the Reaper, kill it, then let the bells finish.
+  // Arrival alone must NOT end the run — that was the silent 12-second bug.
   const taken = new Run();
   taken.begin({ seed: 10, modifiers: [MOD_DEV_GODMODE], record: false });
   taken.waves.jumpToSecond(REAPER_SECOND);
-  drive(taken, 20 * TICKS_PER_SECOND);
-  check("the White Hand ends the run", taken.end === RUN_END.whiteHand, `end=${taken.end}`);
-  check("being taken counts as completing the run", isCompletion(taken.summary.end));
+  drive(taken, 2);
   check("the Reaper was actually spawned", taken.waves.reaperSpawned);
+  check("White Hand has not started on spawn alone", taken.whiteHandTicks < 0, `${taken.whiteHandTicks}`);
+  taken.forceKillReapersForTest();
+  drive(taken, WHITE_HAND_TICKS + TICKS_PER_SECOND);
+  check("the White Hand ends the run after a kill", taken.end === RUN_END.whiteHand, `end=${taken.end}`);
+  check("being taken counts as completing the run", isCompletion(taken.summary.end));
+  check("eggs were earned from the kill", taken.eggsEarned > 0, `${taken.eggsEarned}`);
 
   // Finishing twice must not produce two records of one run.
   const before = taken.summary.end;

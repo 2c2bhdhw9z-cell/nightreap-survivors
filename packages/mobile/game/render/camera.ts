@@ -33,6 +33,12 @@ export class Camera {
   /** Integer pixel scale. Set by `chooseScale`, never fractional. */
   scale = 1;
 
+  /**
+   * Display-only zoom multiplier (>= 1). White Hand push-in lives here.
+   * Never feeds the simulation — cull/follow still use the unzoomed centre.
+   */
+  zoom = 1;
+
   /** Sim-space camera centre, in world pixels. Updated once per tick. */
   private curX = 0;
   private curY = 0;
@@ -81,13 +87,15 @@ export class Camera {
     this.scale = scale >= 1 ? scale | 0 : 1;
   }
 
-  /** World-pixel size of the visible area at the current scale. */
+  /** World-pixel size of the visible area at the current scale (and zoom). */
   get worldViewW(): number {
-    return this.viewW / this.scale;
+    const z = this.zoom > 0.01 ? this.zoom : 1;
+    return this.viewW / this.scale / z;
   }
 
   get worldViewH(): number {
-    return this.viewH / this.scale;
+    const z = this.zoom > 0.01 ? this.zoom : 1;
+    return this.viewH / this.scale / z;
   }
 
   /** Hard cut — spawn, teleport, stage load. Kills interpolation so there is no smear. */

@@ -48,6 +48,8 @@ export const CHAR_UNLOCK = {
   RUNS_COMPLETED: 2,
   /** Best survival time in seconds reaches `unlockValue`. */
   BEST_SECONDS: 3,
+  /** Kill a Reaper once. The VS Red Death analogue — granted by bit, not a live threshold. */
+  REAPER_KILL: 4,
 } as const;
 
 export type CharUnlockKind = (typeof CHAR_UNLOCK)[keyof typeof CHAR_UNLOCK];
@@ -107,7 +109,7 @@ const PCT = STAT_SCALE / 100;
 const HP = STAT_SCALE;
 
 /**
- * The twelve launch characters.
+ * The twelve launch characters, plus the secret thirteenth unlocked by killing a Reaper.
  *
  * Read as: a starting hand that is clearly good at one thing and clearly bad at another, plus one thing that
  * arrives later. Nobody is strictly better than anybody — every positive shift is paid for — because a
@@ -376,6 +378,28 @@ export const CHARACTERS: readonly Character[] = [
     unlock: CHAR_UNLOCK.RUNS_COMPLETED,
     unlockValue: 15,
   },
+  {
+    id: "mord",
+    name: "Mord Vane",
+    title: "The Crimson Toll",
+    blurb: "What the White Hand could not keep. Hits harder the longer the night runs.",
+    startingWeaponId: "reapersLash",
+    // +20% damage, +10% move, -25 health — glass cannon with the Reaper's own weapon.
+    shifts: [
+      { stat: STAT.damage, add: 20 * PCT },
+      { stat: STAT.moveSpeed, add: 10 * PCT },
+      { stat: STAT.maxHealth, add: -25 * HP },
+    ],
+    growth: {
+      stat: STAT.damage,
+      everyLevels: 4,
+      add: 5 * PCT,
+      maxTiers: 10,
+      blurb: "+5% damage every 4 levels, up to ten times.",
+    },
+    unlock: CHAR_UNLOCK.REAPER_KILL,
+    unlockValue: 1,
+  },
 ];
 
 /** How many characters ship. Screens count rows off this, never off a hard-coded eight. */
@@ -435,6 +459,9 @@ export function isCharacterUnlocked(save: SaveData, index: number, list: readonl
       return save.runsCompleted >= character.unlockValue;
     case CHAR_UNLOCK.BEST_SECONDS:
       return save.bestSurvivalSeconds >= character.unlockValue;
+    case CHAR_UNLOCK.REAPER_KILL:
+      // Bit-only: the kill grants the bit via awards. There is no live threshold to re-derive.
+      return false;
     default:
       return false;
   }
@@ -451,6 +478,8 @@ export function unlockHint(character: Character): string {
       return character.unlockValue === 1 ? "Finish a run." : `Finish ${character.unlockValue} runs.`;
     case CHAR_UNLOCK.BEST_SECONDS:
       return `Survive ${Math.floor(character.unlockValue / 60)} minutes in one run.`;
+    case CHAR_UNLOCK.REAPER_KILL:
+      return "Kill the Reaper.";
     default:
       return "Locked.";
   }

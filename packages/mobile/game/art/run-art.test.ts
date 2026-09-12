@@ -20,6 +20,8 @@ import {
   ENEMY_FRAME,
   PICKUP_FRAME,
   PLAYER_FRAME,
+  SHARED_ENEMY_FRAMES,
+  SHARED_PLAYER_FRAMES,
   SHOT_FRAME,
   STAGE_ART,
   WHITE_FRAME,
@@ -116,10 +118,28 @@ function duplicates(values: string[]): string[] {
 }
 
 const samePlayer = duplicates(Object.values(PLAYER_FRAME));
-ok(`no two characters wear the same body${samePlayer.length ? ` (${samePlayer.join(", ")})` : ""}`, samePlayer.length === 0);
+const playerShareOk =
+  samePlayer.length === 0 ||
+  (samePlayer.length === 1 &&
+    Object.entries(PLAYER_FRAME)
+      .filter(([, f]) => f === samePlayer[0])
+      .every(([id]) => SHARED_PLAYER_FRAMES.includes(id)));
+ok(
+  `no two characters wear the same body unless declared${samePlayer.length ? ` (${samePlayer.join(", ")})` : ""}`,
+  playerShareOk,
+);
 
 const sameEnemy = duplicates(Object.values(ENEMY_FRAME));
-ok(`no two enemies wear the same picture${sameEnemy.length ? ` (${sameEnemy.join(", ")})` : ""}`, sameEnemy.length === 0);
+const enemyShareOk =
+  sameEnemy.length === 0 ||
+  (sameEnemy.length === 1 &&
+    Object.entries(ENEMY_FRAME)
+      .filter(([, f]) => f === sameEnemy[0])
+      .every(([id]) => SHARED_ENEMY_FRAMES.includes(id)));
+ok(
+  `no two enemies wear the same picture unless declared${sameEnemy.length ? ` (${sameEnemy.join(", ")})` : ""}`,
+  enemyShareOk,
+);
 
 // A weapon and its own evolution sharing a picture would make the evolution land flat, which is the whole
 // point of it. This is the one place a duplicate would be invisible in play, so it gets its own check.

@@ -88,6 +88,8 @@ export const PORTRAIT_FRAME: Readonly<Record<string, string>> = Object.freeze({
   hessa: "portraits/icon-10", // leather hood, gold tooth, coins at the throat
   orin: "portraits/icon-11", // gaunt, eyes closed, throat wrapped in bandages
   calla: "portraits/icon-12", // wide hood, violet eyes, a card in the hood band
+  // Secret — shares sable until a thirteenth portrait is painted. Declared in SHARED_PORTRAIT_ICONS.
+  mord: "portraits/icon-08",
 });
 
 /**
@@ -119,6 +121,9 @@ export const SHARED_POWERUP_ICONS: readonly string[] = Object.freeze([
   // Empty on purpose. Every upgrade has its own icon now, so any repeat in the table above is a mistake
   // and the check will say so. If a future pair really must share, both ids go here, in the same commit.
 ]);
+
+/** Characters that knowingly share a portrait until dedicated art ships. */
+export const SHARED_PORTRAIT_ICONS: readonly string[] = Object.freeze(["sable", "mord"]);
 
 /** The icon for an upgrade, or the blank socket when the id is not one we know. */
 export function powerupFrame(id: string): string {
