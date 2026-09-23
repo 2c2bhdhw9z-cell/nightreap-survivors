@@ -66,11 +66,21 @@ section("the flag table");
   check("the table covers every declared flag", Object.values(FLAG).every((id) => ids.includes(id)));
   check("the table has no flag that is not declared", ids.every((id) => Object.values(FLAG).includes(id)));
 
+  // Two flags default on today: ladder posting (permanent — its *absence* would be the bug) and
+  // co-op (TEMPORARY, so the game is playable with no remote-config server behind it; see the
+  // `TEMP test default` note on FLAG.COOP in remote-config.ts). When co-op goes back to being
+  // server-controlled, this returns to expecting exactly one, and the co-op lines below flip back.
   const on = FLAG_SPECS.filter((s) => s.fallback);
-  check("exactly one flag defaults on", on.length === 1, String(on.length));
-  check("and it is ladder posting", on[0]?.id === FLAG.LADDER_POSTING, String(on[0]?.id));
+  const onIds = new Set(on.map((s) => s.id));
+  check("exactly two flags default on", on.length === 2, String(on.length));
+  check(
+    "and they are ladder posting plus the temporary co-op test default",
+    onIds.has(FLAG.LADDER_POSTING) && onIds.has(FLAG.COOP),
+    [...onIds].join(", "),
+  );
 
-  check("everything gated defaults off", fallbackOf(FLAG.COOP) === false && fallbackOf(FLAG.DEV_MENU) === false);
+  check("co-op is on by default only as a temporary test posture", fallbackOf(FLAG.COOP) === true);
+  check("everything else gated still defaults off", fallbackOf(FLAG.DEV_MENU) === false);
   check("a flag this build has never heard of defaults off", fallbackOf("someFutureThing") === false);
   check("looking up an unknown id finds nothing", flagSpec("someFutureThing") === undefined);
   check("looking up a known id finds it", flagSpec(FLAG.CHAT)?.id === FLAG.CHAT);
@@ -83,7 +93,8 @@ section("a build that has never reached the server");
   const rc = new RemoteConfigState({ build: 100, accountId: "acct-1" });
   check("holds nothing", rc.held === undefined && rc.revision === -1);
   check("says so", rc.from === SOURCE.NONE);
-  check("co-op is locked", rc.isOn(FLAG.COOP, T0) === false);
+  // Co-op reaches the baked default here, which is temporarily ON (see the flag-table section).
+  check("co-op falls back to its temporary on default", rc.isOn(FLAG.COOP, T0) === true);
   check("the dev menu is locked", rc.isOn(FLAG.DEV_MENU, T0) === false);
   check("posting a run still works", rc.isOn(FLAG.LADDER_POSTING, T0) === true);
   check("and the reason is honest", rc.reason(FLAG.COOP, T0).why === WHY.NO_CONFIG);
@@ -92,7 +103,7 @@ section("a build that has never reached the server");
 
   const shot = rc.snapshot(T0);
   check("a snapshot covers every flag", shot.length === FLAG_SPECS.length, String(shot.length));
-  check("and only ladder posting is on", shot.filter((e) => e.on).length === 1);
+  check("and the two default-on flags are on", shot.filter((e) => e.on).length === 2);
 }
 
 /* ---- parsing ----------------------------------------------------------------------------------- */
@@ -190,21 +201,24 @@ section("where a document came from");
 
 section("going stale, then expiring");
 {
+  // Uses co-op *matchmaking* as the gated example rather than co-op itself: this section proves an
+  // expired document stops turning a feature ON, which needs a flag whose baked default is off.
+  // Co-op's default is temporarily on (see the flag-table section), which would mask the behaviour.
   const rc = new RemoteConfigState({ build: 100, accountId: "acct-1" });
-  rc.apply(docOf({ coop: { on: true }, ladderPosting: { on: false } }, 1), T0);
+  rc.apply(docOf({ coopMatchmaking: { on: true }, ladderPosting: { on: false } }, 1), T0);
 
   check("fresh is not stale", rc.stale(T0 + 1000) === false);
   check("one tick short of the refetch time is not stale", rc.stale(T0 + CONFIG_TTL_MS - 1) === false);
   check("at the refetch time it is stale", rc.stale(T0 + CONFIG_TTL_MS) === true);
   check("stale is not expired", rc.expired(T0 + CONFIG_TTL_MS) === false);
-  check("a stale document still decides", rc.isOn(FLAG.COOP, T0 + CONFIG_TTL_MS) === true);
+  check("a stale document still decides", rc.isOn(FLAG.COOP_MATCHMAKING, T0 + CONFIG_TTL_MS) === true);
 
   check("one tick short of the max age is not expired", rc.expired(T0 + CONFIG_MAX_AGE_MS - 1) === false);
   check("at the max age it is expired", rc.expired(T0 + CONFIG_MAX_AGE_MS) === true);
 
   const late = T0 + CONFIG_MAX_AGE_MS;
-  check("an expired document stops turning things on", rc.isOn(FLAG.COOP, late) === false);
-  check("and the reason says why", rc.reason(FLAG.COOP, late).why === WHY.EXPIRED);
+  check("an expired document stops turning things on", rc.isOn(FLAG.COOP_MATCHMAKING, late) === false);
+  check("and the reason says why", rc.reason(FLAG.COOP_MATCHMAKING, late).why === WHY.EXPIRED);
   check("an expired kill of a default-on flag falls back to on", rc.isOn(FLAG.LADDER_POSTING, late) === true);
   check("the document is kept for display", rc.held?.revision === 1);
   check("an expired document is also stale", rc.stale(late) === true);
@@ -245,7 +259,9 @@ section("a kill beats an allow, and a deny beats everything");
   check("a plain on is on", rc.isOn(FLAG.COOP, T0) === true && rc.reason(FLAG.COOP, T0).why === WHY.ENABLED);
 
   rc.apply(docOf({ chat: { on: true } }, 6), T0);
-  check("a flag the document ignores keeps its default", rc.isOn(FLAG.COOP, T0) === false);
+  // Asserted against the baked default rather than a literal, so this stays true whatever co-op's
+  // default currently is — the claim is "silence leaves the default alone", not "co-op is off".
+  check("a flag the document ignores keeps its default", rc.isOn(FLAG.COOP, T0) === fallbackOf(FLAG.COOP));
   check("and says the document was silent", rc.reason(FLAG.COOP, T0).why === WHY.NOT_IN_CONFIG);
   check("the flag the document did mention is on", rc.isOn(FLAG.CHAT, T0) === true);
 
@@ -258,24 +274,26 @@ section("a kill beats an allow, and a deny beats everything");
 
 section("a document cannot talk an old build into anything");
 {
+  // Gated example is co-op *matchmaking*, whose baked default is off: a build rule refusing a
+  // feature can only be observed on a flag that is off when the rule does not apply.
   const old = new RemoteConfigState({ build: 40, accountId: "me" });
-  const doc = docOf({ coop: { on: true, minBuild: 50 }, ladderPosting: { on: true, minBuild: 50 } }, 1);
+  const doc = docOf({ coopMatchmaking: { on: true, minBuild: 50 }, ladderPosting: { on: true, minBuild: 50 } }, 1);
   old.apply(doc, T0);
-  check("an old build does not get the feature", old.isOn(FLAG.COOP, T0) === false);
-  check("and is told why", old.reason(FLAG.COOP, T0).why === WHY.BUILD_TOO_OLD);
+  check("an old build does not get the feature", old.isOn(FLAG.COOP_MATCHMAKING, T0) === false);
+  check("and is told why", old.reason(FLAG.COOP_MATCHMAKING, T0).why === WHY.BUILD_TOO_OLD);
   check("a default-on flag stays on rather than being switched off by a build rule", old.isOn(FLAG.LADDER_POSTING, T0) === true);
 
   const newer = new RemoteConfigState({ build: 50, accountId: "me" });
   newer.apply(doc, T0);
-  check("the exact minimum build qualifies", newer.isOn(FLAG.COOP, T0) === true);
+  check("the exact minimum build qualifies", newer.isOn(FLAG.COOP_MATCHMAKING, T0) === true);
 
   const denied = new RemoteConfigState({ build: 40, accountId: "me" });
-  denied.apply(docOf({ coop: { on: false, minBuild: 999 } }, 1), T0);
-  check("a kill still applies to a build too old for the rule", denied.reason(FLAG.COOP, T0).why === WHY.KILLED);
+  denied.apply(docOf({ coopMatchmaking: { on: false, minBuild: 999 } }, 1), T0);
+  check("a kill still applies to a build too old for the rule", denied.reason(FLAG.COOP_MATCHMAKING, T0).why === WHY.KILLED);
 
   const allowedOld = new RemoteConfigState({ build: 40, accountId: "me" });
-  allowedOld.apply(docOf({ coop: { allow: ["me"], minBuild: 50 } }, 1), T0);
-  check("an allow list cannot bypass the build rule", allowedOld.isOn(FLAG.COOP, T0) === false);
+  allowedOld.apply(docOf({ coopMatchmaking: { allow: ["me"], minBuild: 50 } }, 1), T0);
+  check("an allow list cannot bypass the build rule", allowedOld.isOn(FLAG.COOP_MATCHMAKING, T0) === false);
 }
 
 /* ---- rollouts ---------------------------------------------------------------------------------- */
@@ -356,8 +374,10 @@ section("a rollout with nobody to bucket");
   check("a global switch does not need an account", global.isOn(FLAG.COOP, T0) === true);
 
   const listed = new RemoteConfigState({ build: 100 });
-  listed.apply(docOf({ coop: { allow: ["somebody-else"] }, chat: { deny: ["somebody-else"] } }, 1), T0);
-  check("an anonymous client matches nobody's allow list", listed.isOn(FLAG.COOP, T0) === false);
+  // Default-off flag again, so "not on the allow list" is visible as off rather than hidden by
+  // co-op's temporarily-on baked default.
+  listed.apply(docOf({ coopMatchmaking: { allow: ["somebody-else"] }, chat: { deny: ["somebody-else"] } }, 1), T0);
+  check("an anonymous client matches nobody's allow list", listed.isOn(FLAG.COOP_MATCHMAKING, T0) === false);
   check("nor anybody's deny list", listed.reason(FLAG.CHAT, T0).why === WHY.NOT_IN_CONFIG);
 }
 
@@ -367,7 +387,10 @@ section("forcing a flag by hand");
 {
   const pub = new RemoteConfigState({ build: 100, accountId: "me" });
   check("a public build refuses to force anything", pub.setOverride(FLAG.COOP, true) === false);
-  check("and nothing changed", pub.isOn(FLAG.COOP, T0) === false && pub.overrideCount === 0);
+  check(
+    "and nothing changed",
+    pub.isOn(FLAG.COOP, T0) === fallbackOf(FLAG.COOP) && pub.overrideCount === 0,
+  );
 
   const dev = new RemoteConfigState({ build: 100, accountId: "me", internal: true });
   check("an internal build allows it", dev.setOverride(FLAG.COOP, true) === true);
@@ -481,7 +504,10 @@ section("writing a document out");
   check("the empty document parses", parseConfig(stringifyConfig(empty)).code === PARSE.OK);
   const rc = new RemoteConfigState({ build: 100, accountId: "me" });
   rc.apply(empty, T0);
-  check("and behaves exactly like a fresh install", rc.isOn(FLAG.COOP, T0) === false && rc.isOn(FLAG.LADDER_POSTING, T0) === true);
+  check(
+    "and behaves exactly like a fresh install",
+    rc.isOn(FLAG.COOP, T0) === fallbackOf(FLAG.COOP) && rc.isOn(FLAG.LADDER_POSTING, T0) === true,
+  );
 }
 
 /* ---- words ------------------------------------------------------------------------------------- */

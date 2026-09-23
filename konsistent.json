@@ -112,7 +112,6 @@
           "src/api/database/__client.ts",
           "src/web/__main.tsx",
           "src/web/__vite-env.d.ts",
-          "src/web/types/__analytics.d.ts",
           "vite/__plugins/asset-optimizer-plugin.ts",
           "vite/__plugins/hono-dev-plugin.ts",
           "website.config.json"

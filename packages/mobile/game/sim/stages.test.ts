@@ -23,7 +23,7 @@
 
 import { Rng } from "../core/rng";
 import { ARCANA_MINUTE_MARKS, arcanaReachabilityFaults } from "./arcanas";
-import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore } from "./enemies";
+import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore, UNSCHEDULED_BOSS_IDS } from "./enemies";
 import { ModifierStack } from "./modifiers";
 import {
   MAX_LIVE_CAP,
@@ -180,7 +180,11 @@ for (const s of STAGE_TYPES) {
   }
 }
 const allWalkers = ENEMY_TYPES.filter((e) => (e.flags & ENEMY_FLAG.boss) === 0).map((e) => e.id);
-const allBosses = ENEMY_TYPES.filter((e) => (e.flags & ENEMY_FLAG.boss) !== 0).map((e) => e.id);
+// Named fights that the wave director is responsible for. The Reaper is excluded because the run's
+// own Reaper timer spawns it, never a stage wave table — see UNSCHEDULED_BOSS_IDS in sim/enemies.
+const allBosses = ENEMY_TYPES.filter(
+  (e) => (e.flags & ENEMY_FLAG.boss) !== 0 && !UNSCHEDULED_BOSS_IDS.includes(e.id),
+).map((e) => e.id);
 
 check(
   "every ordinary enemy walks on at least one stage",

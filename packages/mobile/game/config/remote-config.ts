@@ -96,9 +96,13 @@ export interface FlagSpec {
 }
 
 /**
- * The baked-in table. Its order is meaningless; its contents are the contract. Exactly one flag defaults
- * on — posting to a ladder — because that is the one whose *absence* would be the bug rather than the
- * safe state.
+ * The baked-in table. Its order is meaningless; its contents are the contract.
+ *
+ * One flag defaults on permanently — posting to a ladder — because that is the one whose *absence*
+ * would be the bug rather than the safe state. Co-op additionally defaults on **temporarily**, so the
+ * game is playable with no remote-config server standing behind it; that is a testing posture, not the
+ * shipping one, and it returns to false / server-controlled once that infra exists. `remote-config.test.ts`
+ * asserts both, so flipping co-op back will fail the table test until the expectation is flipped with it.
  */
 export const FLAG_SPECS: readonly FlagSpec[] = [
   { id: FLAG.DEV_MENU, fallback: false },

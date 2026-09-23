@@ -363,6 +363,22 @@ export const ENEMY_TYPES: readonly EnemyType[] = [
     flags: ENEMY_FLAG.heavy | ENEMY_FLAG.boss | ENEMY_FLAG.persistent,
   },
 ];
+
+/**
+ * The Reaper. Distinct from the five-minute `gravewarden` boss so that killing one is unambiguous,
+ * and deliberately **absent from every stage's wave table**: it is spawned by the run's own Reaper
+ * timer at the end of a run, not scheduled by the wave director. `run/` imports this rather than
+ * repeating the string, and `validateStages` exempts it from the "every named fight is scheduled"
+ * coverage rule — without that exemption the rule reports a fault for content that is working.
+ */
+export const REAPER_ENEMY_ID = "nightreaper";
+
+/**
+ * Named fights that arrive from somewhere other than a stage wave table, and so are exempt from the
+ * stage-coverage rule. Add to this only when the spawner is something other than the wave director.
+ */
+export const UNSCHEDULED_BOSS_IDS: readonly string[] = Object.freeze([REAPER_ENEMY_ID]);
+
 export const ENEMY_TYPE_BY_ID: ReadonlyMap<string, number> = new Map(
   ENEMY_TYPES.map((t, i) => [t.id, i]),
 );

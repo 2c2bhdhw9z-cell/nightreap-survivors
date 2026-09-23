@@ -27,7 +27,7 @@
  * and nothing ever moves.
  */
 
-import { ENEMY_FLAG, ENEMY_TYPE_BY_ID, ENEMY_TYPES } from "./enemies";
+import { ENEMY_FLAG, ENEMY_TYPE_BY_ID, ENEMY_TYPES, UNSCHEDULED_BOSS_IDS } from "./enemies";
 import type { WaveEntry } from "./waves";
 
 /** Ticks per simulated second. Mirrors the director's own constant; the check below proves they agree. */
@@ -829,10 +829,13 @@ export function stageContentFaults(list: readonly StageType[] = STAGE_TYPES): re
     if (stageBosses.size < 2) faults.push(`${where}: fewer than two named fights in a whole run`);
   }
 
-  // Coverage: content nobody can see is content that was not made.
+  // Coverage: content nobody can see is content that was not made. The exception is a named fight
+  // that something other than the wave director spawns — the Reaper arrives on the run's own timer,
+  // so demanding a stage schedule for it would report a fault against working content.
   for (const e of ENEMY_TYPES) {
     const isBoss = (e.flags & ENEMY_FLAG.boss) !== 0;
     if (isBoss) {
+      if (UNSCHEDULED_BOSS_IDS.includes(e.id)) continue;
       if (!bossesSeen.has(e.id)) faults.push(`the named fight "${e.id}" is never scheduled on any stage`);
     } else if (!enemiesSeen.has(e.id)) {
       faults.push(`the enemy "${e.id}" never appears on any stage`);

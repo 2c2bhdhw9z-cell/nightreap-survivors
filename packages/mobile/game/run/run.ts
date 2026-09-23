@@ -43,7 +43,7 @@ import {
   type ChestReport,
 } from "../sim/chests";
 import { CUE, CueBus } from "../sim/cues";
-import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore } from "../sim/enemies";
+import { ENEMY_FLAG, ENEMY_TYPES, ENEMY_TYPE_BY_ID, EnemyStore, REAPER_ENEMY_ID } from "../sim/enemies";
 import { ModifierStack, RUN_FLAG, type RunModifier } from "../sim/modifiers";
 import {
   BOSS_DROP_RULE,
@@ -99,8 +99,8 @@ export const BOMB_DAMAGE = 1_000_000;
  */
 export const CHEST_GOLD = 100;
 
-/** The Reaper — distinct from the five-minute gravewarden boss so a kill is unambiguous. */
-const REAPER_ENEMY_ID = "nightreaper";
+// The Reaper's id now lives in sim/enemies alongside the enemy table, so the stage validator and this
+// file cannot disagree about which enemy the Reaper is. Imported above as REAPER_ENEMY_ID.
 
 /** Configuration for one run. Everything here is fixed at run start and never changes mid-run. */
 export interface RunConfig {
