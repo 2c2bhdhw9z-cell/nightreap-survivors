@@ -91,26 +91,21 @@ jobs:
 
       - name: Package unsigned .ipa
         run: |
-          echo "Searching the whole runner for a built .app (excluding Pods/intermediate bundles)..."
-          # Search everywhere the build could have written, not one guessed folder.
-          # Prefer an app whose name contains Nightreap; otherwise take the first
-          # top-level product .app. Skip .app bundles nested inside other .app or
-          # framework/plugin folders.
-          mapfile -t CANDIDATES < <(find "$RUNNER_TEMP" "$HOME/Library/Developer/Xcode/DerivedData" \
+          echo "Searching for a built .app (excluding Pods/intermediate/nested bundles)..."
+          # Portable (no mapfile): write matches to a file, then read the list.
+          find "$RUNNER_TEMP" "$HOME/Library/Developer/Xcode/DerivedData" \
             -type d -name "*.app" 2>/dev/null \
             | grep -viE "/(Pods|Frameworks|PlugIns|Watch)/" \
-            | grep -viE "\.app/.*\.app")
+            | grep -viE "\.app/.*\.app" > "$RUNNER_TEMP/apps.txt" || true
           echo "Candidates found:"
-          printf '  %s\n' "${CANDIDATES[@]:-<none>}"
-          APP_PATH=""
-          for c in "${CANDIDATES[@]}"; do
-            case "$c" in *[Nn]ightreap*) APP_PATH="$c"; break;; esac
-          done
-          [ -z "$APP_PATH" ] && APP_PATH="${CANDIDATES[0]:-}"
+          cat "$RUNNER_TEMP/apps.txt" || true
+          # Prefer an app whose name contains Nightreap; otherwise the first candidate.
+          APP_PATH=$(grep -i "nightreap" "$RUNNER_TEMP/apps.txt" | head -n1)
+          [ -z "$APP_PATH" ] && APP_PATH=$(head -n1 "$RUNNER_TEMP/apps.txt")
           if [ -z "$APP_PATH" ]; then
-            echo "No .app anywhere. Full Build/Products tree for diagnosis:"
-            find "$RUNNER_TEMP/dd/Build" -maxdepth 3 2>/dev/null || true
-            find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 4 -name "*.app" 2>/dev/null || true
+            echo "No .app anywhere. Diagnostic listing of the build output:"
+            find "$RUNNER_TEMP/dd/Build" -maxdepth 4 2>/dev/null || true
+            find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 5 -name "*.app" 2>/dev/null || true
             exit 1
           fi
           echo "Using app: $APP_PATH"
