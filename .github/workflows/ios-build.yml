@@ -1,0 +1,109 @@
+name: Build iOS IPA
+
+# Manual-trigger only. Produces a signed .ipa via EAS Build.
+# EAS runs the macOS compile in the cloud; this runner just orchestrates,
+# provisions signing (packages/mobile/scripts/generate-ios-certs.py) and
+# uploads the resulting .ipa as a workflow artifact you can sideload.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        required: true
+        default: preview
+        type: choice
+        options:
+          - preview       # ad-hoc / internal distribution — installs on your registered devices (sideload)
+          - production    # App Store / TestFlight build
+          - simulator     # unsigned .app for the iOS Simulator (no Apple account needed)
+      wait:
+        description: "Wait for the build to finish and download the .ipa here"
+        required: true
+        default: true
+        type: boolean
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/mobile
+    env:
+      # --- Expo ---
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      EXPO_ACCOUNT: ${{ vars.EXPO_ACCOUNT || 'fuckyouniggerbitch' }}
+      EXPO_BUNDLE_ID: ${{ vars.EXPO_BUNDLE_ID || 'com.nightreap.survivors' }}
+      # --- Apple / App Store Connect (for signing via the cert script) ---
+      EXPO_ASC_KEY_ID: ${{ secrets.EXPO_ASC_KEY_ID }}
+      EXPO_ASC_ISSUER_ID: ${{ secrets.EXPO_ASC_ISSUER_ID }}
+      EXPO_APPLE_TEAM_ID: ${{ secrets.EXPO_APPLE_TEAM_ID }}
+      EXPO_ASC_API_KEY_PATH: ./keys/AuthKey.p8
+      # For ad-hoc sideload builds the cert script must make an ad-hoc profile,
+      # not an App Store one. The script reads this to pick the profile type.
+      EXPO_PROFILE_TYPE: ${{ github.event.inputs.profile == 'production' && 'IOS_APP_STORE' || 'IOS_APP_ADHOC' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        working-directory: .
+        run: bun install --frozen-lockfile
+
+      - name: Write App Store Connect API key
+        if: ${{ github.event.inputs.profile != 'simulator' }}
+        run: |
+          mkdir -p keys
+          printf '%s' "${{ secrets.EXPO_ASC_API_KEY_BASE64 }}" | base64 -d > keys/AuthKey.p8
+          test -s keys/AuthKey.p8 || { echo "AuthKey.p8 is empty — check the EXPO_ASC_API_KEY_BASE64 secret"; exit 1; }
+
+      - name: Provision signing (cert + provisioning profile)
+        if: ${{ github.event.inputs.profile != 'simulator' }}
+        run: python3 scripts/generate-ios-certs.py
+
+      - name: Build the IPA
+        run: |
+          if [ "${{ github.event.inputs.wait }}" = "true" ]; then
+            eas build --platform ios --profile "${{ github.event.inputs.profile }}" \
+              --non-interactive --local --output "$RUNNER_TEMP/nightreap.ipa" || \
+            eas build --platform ios --profile "${{ github.event.inputs.profile }}" \
+              --non-interactive --wait
+          else
+            eas build --platform ios --profile "${{ github.event.inputs.profile }}" \
+              --non-interactive --no-wait
+          fi
+
+      - name: Fetch built artifact URL
+        if: ${{ github.event.inputs.wait == 'true' }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/nightreap.ipa" ]; then
+            URL=$(eas build:list --platform ios --limit 1 --json --non-interactive \
+              | python3 -c "import sys,json;print(json.load(sys.stdin)[0].get('artifacts',{}).get('applicationArchiveUrl',''))")
+            echo "Build artifact URL: $URL"
+            if [ -n "$URL" ]; then curl -fsSL "$URL" -o "$RUNNER_TEMP/nightreap.ipa"; fi
+          fi
+
+      - name: Upload IPA artifact
+        if: ${{ github.event.inputs.wait == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightreap-${{ github.event.inputs.profile }}-ipa
+          path: ${{ runner.temp }}/nightreap.ipa
+          if-no-files-found: warn
+          retention-days: 14
