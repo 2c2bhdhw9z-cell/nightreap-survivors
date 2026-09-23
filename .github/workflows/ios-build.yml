@@ -63,29 +63,11 @@ jobs:
         working-directory: packages/mobile/ios
         run: |
           WORKSPACE=$(ls -d *.xcworkspace | head -n1)
-          echo "All schemes:"
-          xcodebuild -workspace "$WORKSPACE" -list -json | python3 -c "import sys,json;print('\n'.join(json.load(sys.stdin)['workspace']['schemes']))"
-          # Pick the APP scheme, not a Pod/helper library. The app scheme is the one
-          # whose name is NOT a known Pods/React/Expo helper. Prefer a name that looks
-          # like the app (matches the .xcodeproj), else the first non-helper scheme.
           APPPROJ=$(ls -d *.xcodeproj | head -n1 | sed 's/\.xcodeproj$//')
+          echo "All schemes:"
+          xcodebuild -workspace "$WORKSPACE" -list
           SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json \
-            | python3 -c "
-import sys, json
-schemes = json.load(sys.stdin)['workspace']['schemes']
-proj = '$APPPROJ'
-helpers = ('Pods-', 'React', 'Expo', 'EASClient', 'hermes', 'RCT', 'glog', 'RNCAsyncStorage', 'Yoga', 'fmt', 'DoubleConversion')
-# 1) exact match to the app project name
-for s in schemes:
-    if s == proj:
-        print(s); sys.exit()
-# 2) first scheme that is not a known helper/pod
-for s in schemes:
-    if not s.startswith(helpers):
-        print(s); sys.exit()
-# 3) fallback: first scheme
-print(schemes[0])
-")
+            | python3 ../scripts/pick-app-scheme.py "$APPPROJ")
           echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
           echo "scheme=$SCHEME"       >> "$GITHUB_OUTPUT"
           echo "Chosen app scheme: $SCHEME"
