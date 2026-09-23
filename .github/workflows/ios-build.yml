@@ -1,109 +1,106 @@
-name: Build iOS IPA
+name: Build unsigned iOS IPA
 
-# Manual-trigger only. Produces a signed .ipa via EAS Build.
-# EAS runs the macOS compile in the cloud; this runner just orchestrates,
-# provisions signing (packages/mobile/scripts/generate-ios-certs.py) and
-# uploads the resulting .ipa as a workflow artifact you can sideload.
+# Manual-trigger only. Produces an UNSIGNED .ipa for sideloading with ESign / Feather.
+# No Apple Developer account, no certificates, no secrets. ESign/Feather do the signing
+# on-device with your own Distribution.p12 + Distribution.mobileprovision.
+#
+# Runs on a macOS runner because building a real device .ipa needs Xcode. This repo is
+# private, so macOS minutes are metered (~10x Linux). Trigger it when you actually want a build.
 
 on:
   workflow_dispatch:
     inputs:
-      profile:
-        description: "EAS build profile"
+      configuration:
+        description: "Xcode build configuration"
         required: true
-        default: preview
+        default: Release
         type: choice
         options:
-          - preview       # ad-hoc / internal distribution — installs on your registered devices (sideload)
-          - production    # App Store / TestFlight build
-          - simulator     # unsigned .app for the iOS Simulator (no Apple account needed)
-      wait:
-        description: "Wait for the build to finish and download the .ipa here"
-        required: true
-        default: true
-        type: boolean
+          - Release
+          - Debug
 
 concurrency:
   group: ios-build-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-15
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: packages/mobile
     env:
-      # --- Expo ---
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-      EXPO_ACCOUNT: ${{ vars.EXPO_ACCOUNT || 'fuckyouniggerbitch' }}
-      EXPO_BUNDLE_ID: ${{ vars.EXPO_BUNDLE_ID || 'com.nightreap.survivors' }}
-      # --- Apple / App Store Connect (for signing via the cert script) ---
-      EXPO_ASC_KEY_ID: ${{ secrets.EXPO_ASC_KEY_ID }}
-      EXPO_ASC_ISSUER_ID: ${{ secrets.EXPO_ASC_ISSUER_ID }}
-      EXPO_APPLE_TEAM_ID: ${{ secrets.EXPO_APPLE_TEAM_ID }}
-      EXPO_ASC_API_KEY_PATH: ./keys/AuthKey.p8
-      # For ad-hoc sideload builds the cert script must make an ad-hoc profile,
-      # not an App Store one. The script reads this to pick the profile type.
-      EXPO_PROFILE_TYPE: ${{ github.event.inputs.profile == 'production' && 'IOS_APP_STORE' || 'IOS_APP_ADHOC' }}
+      # expo prebuild needs SOME bundle id / owner; these never leave the runner and
+      # nothing here is signed, so they're just metadata for the generated Xcode project.
+      EXPO_NO_TELEMETRY: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app/Contents/Developer
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
 
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
       - name: Install dependencies
         working-directory: .
         run: bun install --frozen-lockfile
 
-      - name: Write App Store Connect API key
-        if: ${{ github.event.inputs.profile != 'simulator' }}
+      - name: Generate native iOS project (prebuild)
+        run: bunx expo prebuild --platform ios --no-install --clean
+
+      - name: Install CocoaPods
+        working-directory: packages/mobile/ios
+        run: pod install --repo-update
+
+      - name: Resolve scheme and workspace
+        id: xc
+        working-directory: packages/mobile/ios
         run: |
-          mkdir -p keys
-          printf '%s' "${{ secrets.EXPO_ASC_API_KEY_BASE64 }}" | base64 -d > keys/AuthKey.p8
-          test -s keys/AuthKey.p8 || { echo "AuthKey.p8 is empty — check the EXPO_ASC_API_KEY_BASE64 secret"; exit 1; }
+          WORKSPACE=$(ls -d *.xcworkspace | head -n1)
+          SCHEME=$(xcodebuild -workspace "$WORKSPACE" -list -json \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['workspace']['schemes'][0])")
+          echo "workspace=$WORKSPACE" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME"       >> "$GITHUB_OUTPUT"
+          echo "Using workspace=$WORKSPACE scheme=$SCHEME"
 
-      - name: Provision signing (cert + provisioning profile)
-        if: ${{ github.event.inputs.profile != 'simulator' }}
-        run: python3 scripts/generate-ios-certs.py
-
-      - name: Build the IPA
+      - name: Archive without signing
+        working-directory: packages/mobile/ios
         run: |
-          if [ "${{ github.event.inputs.wait }}" = "true" ]; then
-            eas build --platform ios --profile "${{ github.event.inputs.profile }}" \
-              --non-interactive --local --output "$RUNNER_TEMP/nightreap.ipa" || \
-            eas build --platform ios --profile "${{ github.event.inputs.profile }}" \
-              --non-interactive --wait
-          else
-            eas build --platform ios --profile "${{ github.event.inputs.profile }}" \
-              --non-interactive --no-wait
-          fi
+          xcodebuild \
+            -workspace "${{ steps.xc.outputs.workspace }}" \
+            -scheme "${{ steps.xc.outputs.scheme }}" \
+            -configuration "${{ github.event.inputs.configuration }}" \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            -destination 'generic/platform=iOS' \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_ENTITLEMENTS="" \
+            DEVELOPMENT_TEAM="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
 
-      - name: Fetch built artifact URL
-        if: ${{ github.event.inputs.wait == 'true' }}
+      - name: Package unsigned .ipa
         run: |
-          if [ ! -f "$RUNNER_TEMP/nightreap.ipa" ]; then
-            URL=$(eas build:list --platform ios --limit 1 --json --non-interactive \
-              | python3 -c "import sys,json;print(json.load(sys.stdin)[0].get('artifacts',{}).get('applicationArchiveUrl',''))")
-            echo "Build artifact URL: $URL"
-            if [ -n "$URL" ]; then curl -fsSL "$URL" -o "$RUNNER_TEMP/nightreap.ipa"; fi
-          fi
+          APP_PATH=$(ls -d "$RUNNER_TEMP/app.xcarchive/Products/Applications/"*.app | head -n1)
+          echo "App: $APP_PATH"
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
+          ( cd "$RUNNER_TEMP" && zip -qry nightreap-unsigned.ipa Payload )
+          ls -lh "$RUNNER_TEMP/nightreap-unsigned.ipa"
 
-      - name: Upload IPA artifact
-        if: ${{ github.event.inputs.wait == 'true' }}
+      - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: nightreap-${{ github.event.inputs.profile }}-ipa
-          path: ${{ runner.temp }}/nightreap.ipa
-          if-no-files-found: warn
+          name: nightreap-unsigned-ipa
+          path: ${{ runner.temp }}/nightreap-unsigned.ipa
+          if-no-files-found: error
           retention-days: 14

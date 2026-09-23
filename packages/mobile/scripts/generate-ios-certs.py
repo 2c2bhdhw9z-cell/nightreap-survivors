@@ -26,10 +26,6 @@ KEY_PATH = os.environ.get("EXPO_ASC_API_KEY_PATH")
 TEAM_ID = os.environ.get("EXPO_APPLE_TEAM_ID")
 EXPO_ACCOUNT = os.environ.get("EXPO_ACCOUNT")
 BUNDLE_ID = os.environ.get("EXPO_BUNDLE_ID")
-# Provisioning-profile type. IOS_APP_STORE for App Store / TestFlight builds;
-# IOS_APP_ADHOC for internal-distribution builds that sideload onto registered
-# devices. Defaults to App Store to preserve prior behaviour.
-PROFILE_TYPE = os.environ.get("EXPO_PROFILE_TYPE", "IOS_APP_STORE")
 OUTPUT_DIR = "./ios/certs"
 P12_FILE = f"{OUTPUT_DIR}/dist-cert.p12"
 UPLOAD_PENDING = f"{OUTPUT_DIR}/.expo_upload_pending"
@@ -400,23 +396,6 @@ def resolve_certificate():
     return cert_id, ""
 
 
-# ── Devices (ad-hoc only) ──
-
-def enabled_device_ids():
-    """All ENABLED device IDs on the Apple account. Ad-hoc profiles must list the
-    devices allowed to install the build; an ad-hoc profile with no devices installs
-    nowhere. App Store profiles ignore devices entirely."""
-    ids, url = [], "/devices?filter[status]=ENABLED&limit=200"
-    while url:
-        status, resp = apple_api("GET", url)
-        if status != 200:
-            die(f"Could not list devices (HTTP {status})")
-        ids += [d["id"] for d in (resp.get("data") or [])]
-        nxt = dig(resp, "links", "next")
-        url = nxt if nxt else None
-    return ids
-
-
 # ── Main ──
 
 def save_metadata(cert_id, password):
@@ -460,25 +439,15 @@ def main():
     print(f"   Found: {bundle_res_id}")
 
     # Step 3: Create provisioning profile
-    print(f"3/3 Creating provisioning profile ({PROFILE_TYPE})...")
-    relationships = {
-        "bundleId": {"data": {"type": "bundleIds", "id": bundle_res_id}},
-        "certificates": {"data": [{"type": "certificates", "id": apple_cert_id}]},
-    }
-    # Ad-hoc profiles must enumerate the devices allowed to install; without them
-    # the .ipa installs on nothing. Store profiles must NOT carry a devices list.
-    if PROFILE_TYPE == "IOS_APP_ADHOC":
-        device_ids = enabled_device_ids()
-        if not device_ids:
-            die("No ENABLED devices on the account — register your device's UDID at "
-                "developer.apple.com before building an ad-hoc .ipa")
-        print(f"   Attaching {len(device_ids)} device(s)")
-        relationships["devices"] = {"data": [{"type": "devices", "id": d} for d in device_ids]}
+    print("3/3 Creating provisioning profile...")
     _, resp = apple_api("POST", "/profiles", {
         "data": {
             "type": "profiles",
-            "attributes": {"name": f"EAS_{BUNDLE_ID}_{PROFILE_TYPE}_{int(time.time())}", "profileType": PROFILE_TYPE},
-            "relationships": relationships,
+            "attributes": {"name": f"EAS_{BUNDLE_ID}_{int(time.time())}", "profileType": "IOS_APP_STORE"},
+            "relationships": {
+                "bundleId": {"data": {"type": "bundleIds", "id": bundle_res_id}},
+                "certificates": {"data": [{"type": "certificates", "id": apple_cert_id}]},
+            },
         }
     })
     if "errors" in (resp or {}):
