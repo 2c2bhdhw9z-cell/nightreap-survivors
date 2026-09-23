@@ -91,13 +91,29 @@ jobs:
 
       - name: Package unsigned .ipa
         run: |
-          echo "Looking for the built .app..."
-          find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name "*.app" -print
-          APP_PATH=$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name "*.app" | head -n1)
+          echo "Searching the whole runner for a built .app (excluding Pods/intermediate bundles)..."
+          # Search everywhere the build could have written, not one guessed folder.
+          # Prefer an app whose name contains Nightreap; otherwise take the first
+          # top-level product .app. Skip .app bundles nested inside other .app or
+          # framework/plugin folders.
+          mapfile -t CANDIDATES < <(find "$RUNNER_TEMP" "$HOME/Library/Developer/Xcode/DerivedData" \
+            -type d -name "*.app" 2>/dev/null \
+            | grep -viE "/(Pods|Frameworks|PlugIns|Watch)/" \
+            | grep -viE "\.app/.*\.app")
+          echo "Candidates found:"
+          printf '  %s\n' "${CANDIDATES[@]:-<none>}"
+          APP_PATH=""
+          for c in "${CANDIDATES[@]}"; do
+            case "$c" in *[Nn]ightreap*) APP_PATH="$c"; break;; esac
+          done
+          [ -z "$APP_PATH" ] && APP_PATH="${CANDIDATES[0]:-}"
           if [ -z "$APP_PATH" ]; then
-            echo "No .app was produced by the build"; exit 1
+            echo "No .app anywhere. Full Build/Products tree for diagnosis:"
+            find "$RUNNER_TEMP/dd/Build" -maxdepth 3 2>/dev/null || true
+            find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 4 -name "*.app" 2>/dev/null || true
+            exit 1
           fi
-          echo "App: $APP_PATH"
+          echo "Using app: $APP_PATH"
           rm -rf "$RUNNER_TEMP/Payload"
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
