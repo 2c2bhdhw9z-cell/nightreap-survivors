@@ -17,8 +17,7 @@
       }
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "cover",
+      "resizeMode": "contain",
       "backgroundColor": "#141320"
     },
     "name": "Nightreap Survivors (Preview)",

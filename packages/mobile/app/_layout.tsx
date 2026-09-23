@@ -14,14 +14,19 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ErrorBoundary } from "../components/ErrorBoundary";
-import { isWeb, startWebSafeArea } from "../lib/__web-safe-area";
 import { startRemoteConfig } from "../lib/remote-config-host";
+
+// NO PLATFORM CHROME IS INJECTED HERE, DELIBERATELY.
+// This file used to call `startWebSafeArea()`, which painted a fake iPhone status bar and Dynamic
+// Island into the web build and stamped the hosting platform's id attributes into the DOM. That
+// existed so the game looked phone-shaped inside a vendor's web preview. The preview is gone, the
+// game is not a vendor's demo, and a real device already reports its own safe area through
+// SafeAreaProvider. Deleted rather than reimplemented: nothing the product needs was in it.
 
 const queryClient = new QueryClient();
 
 export default function RootLayout() {
   useEffect(() => {
-    if (isWeb) startWebSafeArea();
     // The cached config, then the server's. Both are best-effort: with neither, every gate stays shut,
     // which is the state this build was submitted to the store in.
     void startRemoteConfig();

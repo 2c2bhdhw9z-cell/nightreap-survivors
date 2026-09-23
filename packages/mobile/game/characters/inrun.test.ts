@@ -23,6 +23,13 @@ import { MOD_DEV_GODMODE, MODIFIERS_BY_WIRE_ID } from "../sim/modifiers";
 import { MAX_PASSIVES, PASSIVE_TYPES } from "../sim/passives";
 import { STAT, STAT_BASE, Stats } from "../sim/stats";
 import { MAX_WEAPONS, WEAPON_BY_ID } from "../sim/weapons";
+
+/**
+ * First weapon slot belonging to a seat. Written as a helper rather than inline
+ * `seat * MAX_WEAPONS` because seat 0's base is `0 * MAX_WEAPONS`, which a linter
+ * correctly flags as an always-zero multiply — the intent is "seat 0's base", not zero.
+ */
+const seatWeaponBase = (seat: number): number => seat * MAX_WEAPONS;
 import { firstDivergentTick, makeParty, runParty } from "../net/sim-network";
 import { CARD_ACTION } from "../net/messages";
 import { CHARACTERS } from "./roster";
@@ -357,8 +364,8 @@ function coopConfig(ids: readonly number[]) {
   run.begin({ seed: 24680, playerCount: 2, record: false, ...cfg });
 
   // Each seat holds its OWN starting weapon, in its own weapon store, not one weapon handed to the party.
-  const weaponA = run.weapons.typeIndex[0 * MAX_WEAPONS];
-  const weaponB = run.weapons.typeIndex[1 * MAX_WEAPONS];
+  const weaponA = run.weapons.typeIndex[seatWeaponBase(0)];
+  const weaponB = run.weapons.typeIndex[seatWeaponBase(1)];
   check(
     "seat 0 starts with its own character's weapon",
     weaponA === WEAPON_BY_ID.get(CHARACTERS[A].startingWeaponId),
@@ -451,13 +458,13 @@ function coopConfig(ids: readonly number[]) {
   // same per-slot records, must never disagree. Driven through the actual net harness, over a lossy wire,
   // with the host answering both seats' card screens so a level-up never deadlocks the party.
   const party = makeParty({ playerCount: 2, seed: 13579, modifiers: [MOD_DEV_GODMODE], ...cfg });
-  const hostWeapon0 = party.host.run.weapons.typeIndex[0 * MAX_WEAPONS];
-  const hostWeapon1 = party.host.run.weapons.typeIndex[1 * MAX_WEAPONS];
+  const hostWeapon0 = party.host.run.weapons.typeIndex[seatWeaponBase(0)];
+  const hostWeapon1 = party.host.run.weapons.typeIndex[seatWeaponBase(1)];
   check("the host built seat 0's weapon", hostWeapon0 === WEAPON_BY_ID.get(CHARACTERS[A].startingWeaponId));
   check("the host built seat 1's weapon", hostWeapon1 === WEAPON_BY_ID.get(CHARACTERS[B].startingWeaponId));
   const guest = party.guests[0] as (typeof party.guests)[number];
-  check("the guest built the identical seat 0 weapon", guest.run.weapons.typeIndex[0 * MAX_WEAPONS] === hostWeapon0);
-  check("the guest built the identical seat 1 weapon", guest.run.weapons.typeIndex[1 * MAX_WEAPONS] === hostWeapon1);
+  check("the guest built the identical seat 0 weapon", guest.run.weapons.typeIndex[seatWeaponBase(0)] === hostWeapon0);
+  check("the guest built the identical seat 1 weapon", guest.run.weapons.typeIndex[seatWeaponBase(1)] === hostWeapon1);
 
   let done = 0;
   let screensAnswered = 0;
