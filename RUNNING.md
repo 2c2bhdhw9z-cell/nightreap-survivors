@@ -136,11 +136,14 @@ harness, and the leak harness. The dev menu can jump to any minute, stage, chara
 
 ## Known, and not your fault
 
-- `bun run typecheck` fails in `packages/web` — two major versions of Vite in one workspace. It does
-  not affect the mobile app.
-- `bun run test:game` fails exactly one assertion, a replay-revalidation performance budget. Gameplay
-  is unaffected.
 - `bun run test:web` cannot run without `DATABASE_URL`, because the database client is constructed at
-  module load.
+  module load. Still open; it is a testability constraint, not a gameplay one.
 
-Both real issues are documented in `audit-handoff.md`.
+Everything else in this section has been fixed. `bun run lint`, `bun run typecheck` and
+`bun run test:game` all exit 0 — the two Vite major versions were collapsed to one declaration at the
+repo root, and the replay-revalidation budget was re-baselined against a measured floor. If any of the
+three goes red, that is a regression, not a known issue.
+
+`audit-handoff.md` is a historical record of an audit whose top two findings (cross-engine determinism
+and the replay budget) are now closed. Read it for the reasoning, not for current status — `plan.md`
+is the only place status is declared.

@@ -173,11 +173,12 @@ anything is left here it is art polish, not implementation.
 
 | Item | State |
 |---|---|
-| Replay revalidation is over its time budget — 7.76s against a 5s gate | Open. Decide: optimise, or re-baseline with a written reason. |
-| Cross-runtime replay proof (record on phone, revalidate on server, hashes match) | Open. **Must exist before anti-cheat rejects anybody.** |
+| Replay revalidation is over its time budget — 7.76s against a 5s gate | **Done.** Re-baselined against a measured throughput floor (6,000 ticks/s; currently ~13,500), with the note that an unbounded Endless run fits no fixed budget and revalidates as a background job. |
+| The simulation used unspecified maths (`Math.sin`/`cos`/`hypot`) on values that land in the state hash | **Done.** `sim/` now drives angles through the integer/fixed-point layer (`fxSinF`/`fxCosF` from `core/fx`) in `waves`, `enemies`, `projectiles`, `player` and `weapons`; `Math.hypot` is gone from the sim. The determinism claim and the code finally agree. |
+| Cross-runtime replay proof (record on phone, revalidate on server, hashes match) | Open. **Must exist before anti-cheat rejects anybody.** The fixed-point work above is what makes it winnable; it still has to be demonstrated end to end. |
 | `test:web` cannot run without a database (client is built at import time) | Open |
 | `hashState` walks pool slots in allocation order, not a canonical one | **Done.** Entity hashing is now order-independent (per-entity digest with the slot folded in, combined commutatively), so a desync report means real divergence only. |
-| Dropped ticks are invisible to the player (the game runs in slow motion, not stalled) | Open — surface it in the dev HUD |
+| Dropped ticks are invisible to the player (the game runs in slow motion, not stalled) | **Done.** `loop.stats.droppedTicks` is surfaced in the run HUD readout (`dev/play.tsx`) and in the bench harness, so slow motion is now visible rather than silent. |
 | Platform coupling in `packages/web` / `packages/desktop` | **Done.** No vendor packages, no injected badge, no analytics script. |
 
 ### Then
@@ -232,8 +233,8 @@ bun run build:web     # the API + web frontend
 from one package unassignable to the config of the other. If `typecheck` ever starts failing with
 `Plugin<any> is not assignable to PluginOption`, someone has re-added it to a package.
 
-`test:game` has **one** known failure — the revalidation budget in the table above. Anything else
-failing is new and is a regression.
+`test:game` is **fully green** — all 37 suites, no known failures. `lint` and `typecheck` also exit 0.
+Anything failing is new and is a regression.
 
 The engine also lints itself: `dev/lint.ts` reads all 165 engine files and rejects `Math.random`
 anywhere, and unspecified maths (`sin`, `cos`, `pow`, `hypot`, and 13 more) anywhere its result gets

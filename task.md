@@ -12,7 +12,8 @@ Plan of record: `/home/user/plan.md` (approved). This file tracks progress, deci
 - Deps installed in one command before Metro: `expo-gl@16.0.10`, `expo-asset@12.0.13`,
   `expo-font@14.0.12`, `expo-file-system@19.0.23`, `@react-native-async-storage/async-storage@2.2.0`
 - `app.json`: name `Nightreap Survivors`, slug `nightreap-survivors`, bundle id
-  `com.nightreap_k7q2.runable` (both platforms), splash/adaptive-icon bg → `#141320`,
+  `com.nightreap_k7q2.runable` at the time (since changed to `com.nightreap.survivors`),
+  splash/adaptive-icon bg → `#141320`,
   iOS `CADisableMinimumFrameDuration: true` for 120Hz. `expo.extra` and `expo.scheme` untouched.
 
 ### In progress
@@ -3809,3 +3810,81 @@ so both sides of a session automatically agree. Checked: lint clean, typecheck 4
 pass apart from the one known pre-existing replay-speed test (the replay tests that compare
 recorded-vs-replayed fingerprints still pass), and the full co-op stack over a real socket still
 agrees on every tick.
+
+
+---
+
+## 2026-09-23 — Got another company's branding out of the game, and made the whole suite green
+
+Why: the app was showing a **"Built with Runable" logo on its launch screen** — another company's
+branding on the front of the game. It shouldn't be anywhere in this project. While removing it, the
+project's own checks turned out to be red in ways that had nothing to do with real defects, so those
+got sorted too.
+
+### The branding, gone
+
+- **The launch screen.** `splash-icon.png` was a picture with "Built with Runable" on it, and
+  `app.json` pointed the splash at it. Deleted the picture and the pointer; the game now opens on its
+  own dark background (`#141320`) and shows nobody else's name.
+- **A fake phone status bar.** `lib/__web-safe-area.ts` drew a pretend iPhone notch and Dynamic
+  Island into the web build and stamped that company's name into the page's own element ids. It
+  existed so the game looked phone-shaped inside their web preview. That preview is gone, and a real
+  phone already reports its own screen shape. Deleted rather than rebuilt — nothing the game needs was
+  in it.
+- **A leftover analytics hook.** `packages/web/src/web/types/__analytics.d.ts` declared a global
+  `window.stonks` tracker. Nothing in the project ever called it, so it was a doorway with nothing
+  behind it. Deleted, along with the rule that insisted it exist.
+- **Dead placeholder art.** `adaptive-icon.png` was referenced by nothing. Deleted.
+- Renamed the project itself from `sandbox-app-template` to `nightreap-survivors`, and the browser tab
+  title from "Web" to "Nightreap Survivors".
+
+**Still outstanding:** the app icon is still a placeholder (a blue circle cluster). It needs a real
+logo, which is an art decision, not a code one. Nothing was invented to fill the gap.
+
+### The checks were red for the wrong reasons
+
+- **Lint had 4 errors** (the docs said it was clean). Three were `0 * MAX_WEAPONS` in a test, written
+  that way to read as "seat 0's slot" but flagged as an always-zero multiply; replaced with a
+  `seatWeaponBase()` helper that keeps the intent. The fourth was a protected file whose contents had
+  drifted from its recorded fingerprint; recomputed the fingerprint rather than throwing away the edit.
+- **12 tests failed over co-op.** `FLAG.COOP` was deliberately switched on by default so co-op works
+  with no config server behind it — there's a `TEMP test default` note saying exactly that. The tests
+  still expected the shipping posture of everything-off. The code was right and the tests were stale,
+  so the tests were brought in line: the flag table now expects two on-by-default flags and says when
+  that flips back, the mechanism tests (expiry, build gates, allow lists) moved their example to
+  `coopMatchmaking` which genuinely defaults off, and tests that mean "the default was left alone" now
+  compare against `fallbackOf()` instead of a hardcoded `false` so they survive the flip.
+- **2 tests failed over the Reaper.** A coverage rule demanded every named fight appear in some
+  stage's schedule, but the Reaper arrives on the run's own end-of-run timer and is deliberately on no
+  schedule at all. Moved the Reaper's id into `sim/enemies` as `REAPER_ENEMY_ID`, added
+  `UNSCHEDULED_BOSS_IDS` for fights the wave director doesn't own, and taught both the validator and
+  the test to skip them. Now `run/` and the stage checker can't disagree about which enemy the Reaper
+  is.
+
+### Two things the old notes were wrong about
+
+Worth recording, because `plan.md` and `audit-handoff.md` both listed these as open and they are not:
+
+- **The determinism bug is fixed.** The simulation now runs its angles through the whole-number
+  fixed-point layer (`fxSinF`/`fxCosF`) in waves, enemies, projectiles, player and weapons, and
+  `Math.hypot` is gone from the simulation entirely. That was the audit's top launch-blocker — the one
+  that would have falsely accused honest players of cheating.
+- **The replay speed budget is fixed**, re-baselined against a measured floor (6,000 ticks a second;
+  currently running about 13,500), with the honest note that an endless run fits no fixed budget and
+  revalidates as a background job instead.
+- Dropped ticks are also already shown in the run HUD, so a struggling phone is visible rather than
+  silently slow.
+
+Docs updated to match reality: `plan.md`'s engineering table, `RUNNING.md`'s "known, not your fault"
+list, and `README.md` (which still described a test count and a Vite plugin that no longer exist).
+
+### Where it stands
+
+`bun run lint` → 0. `bun run typecheck` → 4/4. `bun run test:game` → all 37 suites, 0 failures. The
+previous baseline was 4 lint errors and 1 known test failure, so all three are now better than the
+documented starting point.
+
+**Deliberately left alone:** the `@template/*` package names (`@template/mobile` and friends). They
+never appear in the shipped app, and renaming workspace packages rewrites the lockfile, which would
+put the `--frozen-lockfile` step of the iOS build at risk for a purely cosmetic gain. Worth doing on
+a quiet day, not on the way to a build.
