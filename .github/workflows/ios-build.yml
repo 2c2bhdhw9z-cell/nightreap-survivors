@@ -89,7 +89,14 @@ jobs:
 
       - name: Package unsigned .ipa
         run: |
-          APP_PATH=$(ls -d "$RUNNER_TEMP/app.xcarchive/Products/Applications/"*.app | head -n1)
+          # The built .app can land in a couple of places inside the archive depending on
+          # Xcode version, so search the whole archive for the first .app bundle.
+          echo "Archive contents:"
+          find "$RUNNER_TEMP/app.xcarchive/Products" -maxdepth 3 -name "*.app" -print
+          APP_PATH=$(find "$RUNNER_TEMP/app.xcarchive/Products" -maxdepth 3 -name "*.app" | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app found in the archive"; exit 1
+          fi
           echo "App: $APP_PATH"
           rm -rf "$RUNNER_TEMP/Payload"
           mkdir -p "$RUNNER_TEMP/Payload"
