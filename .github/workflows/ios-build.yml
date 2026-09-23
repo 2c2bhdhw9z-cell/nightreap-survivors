@@ -69,33 +69,33 @@ jobs:
           echo "scheme=$SCHEME"       >> "$GITHUB_OUTPUT"
           echo "Using workspace=$WORKSPACE scheme=$SCHEME"
 
-      - name: Archive without signing
+      - name: Build for device without signing
         working-directory: packages/mobile/ios
         run: |
+          # A plain build (not "archive") always leaves a real .app in a known
+          # build folder. Archiving with signing fully off can skip copying the
+          # .app into the archive, which is why we build directly instead.
           xcodebuild \
             -workspace "${{ steps.xc.outputs.workspace }}" \
             -scheme "${{ steps.xc.outputs.scheme }}" \
             -configuration "${{ github.event.inputs.configuration }}" \
             -sdk iphoneos \
-            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
             -destination 'generic/platform=iOS' \
-            archive \
+            build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGN_ENTITLEMENTS="" \
-            DEVELOPMENT_TEAM="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            DEVELOPMENT_TEAM=""
 
       - name: Package unsigned .ipa
         run: |
-          # The built .app can land in a couple of places inside the archive depending on
-          # Xcode version, so search the whole archive for the first .app bundle.
-          echo "Archive contents:"
-          find "$RUNNER_TEMP/app.xcarchive/Products" -maxdepth 3 -name "*.app" -print
-          APP_PATH=$(find "$RUNNER_TEMP/app.xcarchive/Products" -maxdepth 3 -name "*.app" | head -n1)
+          echo "Looking for the built .app..."
+          find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name "*.app" -print
+          APP_PATH=$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name "*.app" | head -n1)
           if [ -z "$APP_PATH" ]; then
-            echo "No .app found in the archive"; exit 1
+            echo "No .app was produced by the build"; exit 1
           fi
           echo "App: $APP_PATH"
           rm -rf "$RUNNER_TEMP/Payload"
