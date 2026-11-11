@@ -1,0 +1,48 @@
+name: MAIPA-G Autonomous
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Private MAIPA-G job id
+        required: true
+        type: string
+      target_ref:
+        description: Target branch
+        required: true
+        type: string
+      data_owner:
+        description: Private data owner
+        required: true
+        type: string
+      data_repo:
+        description: Private data repository
+        required: true
+        type: string
+      data_branch:
+        description: Private data branch
+        required: true
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+
+jobs:
+  agent:
+    uses: 2c2bhdhw9z-cell/MAIPA-G/.github/workflows/agent.yml@fccc47c36633b6d380a2765abe2d685549b43d62
+    with:
+      job_id: ${{ inputs.job_id }}
+      target_ref: ${{ inputs.target_ref }}
+      data_owner: ${{ inputs.data_owner }}
+      data_repo: ${{ inputs.data_repo }}
+      data_branch: ${{ inputs.data_branch }}
+      maipag_revision: fccc47c36633b6d380a2765abe2d685549b43d62
+    secrets:
+      MAIPAG_APP_ID: ${{ secrets.MAIPAG_APP_ID }}
+      MAIPAG_APP_PRIVATE_KEY: ${{ secrets.MAIPAG_APP_PRIVATE_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      MAIPAG_MCP_SECRETS: ${{ secrets.MAIPAG_MCP_SECRETS }}
