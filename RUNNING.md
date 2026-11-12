@@ -94,8 +94,12 @@ or corporate Wi-Fi.
 
 Expo Go must be a build that supports **SDK 58**. An older Expo Go will refuse the project outright.
 
-All four config plugins (`expo-router`, `expo-asset`, `expo-font`, `expo-localization`) and `expo-gl`
-ship inside Expo Go, so no custom dev client is needed.
+The configured native modules (`expo-router`, `expo-asset`, `expo-font`, `expo-localization`,
+`expo-splash-screen`, and `expo-gl`) ship inside Expo Go, so no custom dev client is needed.
+
+MAIPA-G's hosted preview opens anonymously in Expo Go; the computer does not need your Expo login.
+`app.config.js` applies this only when `EXPO_PACKAGER_PROXY_URL` is set for the hosted Metro server.
+Standalone builds and EAS updates keep the project owner and update settings from `app.json`.
 
 ## In a browser
 
