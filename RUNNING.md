@@ -1,6 +1,6 @@
 # Running the game
 
-Verified against Expo SDK 54 (`expo ~54.0.33`), managed workflow, no `android/` or `ios/` directory.
+Verified against Expo SDK 58 (`expo ~58.0.24`), managed workflow, no `android/` or `ios/` directory.
 The web bundle was confirmed to build: 908 modules, clean exit.
 
 ## Once, on your machine
@@ -56,7 +56,7 @@ After publishing:
 These are cross-referenced in `plan.md` and breaking either one disconnects the phone from updates:
 
 - **`runtimeVersion`** in `app.json` is set to `{ "policy": "sdkVersion" }`. This produces the
-  runtime version string `exposdk:54.0.0`, which is the value Expo Go matches against. Do not
+  runtime version string `exposdk:58.0.0`, which is the value Expo Go matches against. Do not
   hard-code a different value or change the policy.
 - **The `preview` channel** must stay connected to the **`preview` branch**. Publishing to a branch
   that has no channel pointed at it returns a 404 to the phone and the update never arrives.
@@ -92,10 +92,17 @@ bunx expo start --tunnel
 Tunnel routes through ngrok, so it works across networks — slower to boot, but reliable on locked-down
 or corporate Wi-Fi.
 
-Expo Go must be a build that supports **SDK 54**. An older Expo Go will refuse the project outright.
+Expo Go must be a build that supports **SDK 58**. An older Expo Go will refuse the project outright.
 
-All four config plugins (`expo-router`, `expo-asset`, `expo-font`, `expo-localization`) and `expo-gl`
-ship inside Expo Go, so no custom dev client is needed.
+The configured native modules (`expo-router`, `expo-asset`, `expo-font`, `expo-localization`,
+`expo-splash-screen`, and `expo-gl`) ship inside Expo Go, so no custom dev client is needed.
+
+On a physical iPhone, Expo Go and Expo CLI on the preview computer must be signed in to the
+**same Expo account**. This applies even if the project has no owner in its config. An unsigned
+manifest or a successful bundle download does not verify this device-side requirement.
+Use `bunx expo login --browser` on the preview computer and complete Expo's browser authorization
+with the account used in Expo Go. Published EAS updates do not use this live-server login check.
+See [Expo Go sign-in requirements](https://docs.expo.dev/troubleshooting/expo-go-sign-in-required/).
 
 ## In a browser
 

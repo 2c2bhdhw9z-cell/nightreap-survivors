@@ -440,7 +440,7 @@ export default function Leak() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.ink },
-  gl: { ...StyleSheet.absoluteFillObject },
+  gl: { ...StyleSheet.absoluteFill },
   panel: {
     flexGrow: 0,
     maxHeight: 340,

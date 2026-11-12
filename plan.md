@@ -42,7 +42,7 @@ EXPO_TOKEN=<token> bunx eas-cli update --branch preview --message "what changed"
 
 Force-close Expo Go and reopen to pick it up. Two things make this work and must not be changed
 casually: `runtimeVersion: { policy: "sdkVersion" }` in `app.json`, which produces
-`exposdk:54.0.0` — the value Expo Go matches on — and the `preview` **channel** being connected to
+`exposdk:58.0.0` — the value Expo Go matches on — and the `preview` **channel** being connected to
 the `preview` **branch**. Publishing to a branch with no channel pointed at it returns 404 to the
 phone.
 

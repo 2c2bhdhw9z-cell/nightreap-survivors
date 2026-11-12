@@ -601,7 +601,7 @@ function webglAvailable(): boolean {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.ink },
-  gl: { ...StyleSheet.absoluteFillObject },
+  gl: { ...StyleSheet.absoluteFill },
   // Opaque, not translucent: the panel sits over 8,000 moving sprites and has to stay readable at
   // a glance. An unreadable instrument is a broken instrument.
   panel: {
