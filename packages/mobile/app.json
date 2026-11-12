@@ -15,17 +15,12 @@
         "CADisableMinimumFrameDuration": true
       }
     },
-    "splash": {
-      "resizeMode": "contain",
-      "backgroundColor": "#141320"
-    },
     "name": "Nightreap Survivors (Preview)",
     "slug": "nightreap-survivors-preview",
     "version": "1.0.0",
     "scheme": "nightreap",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
@@ -34,7 +29,14 @@
       "expo-router",
       "expo-asset",
       "expo-font",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-splash-screen",
+        {
+          "resizeMode": "contain",
+          "backgroundColor": "#141320"
+        }
+      ]
     ],
     "extra": {
       "router": {},
