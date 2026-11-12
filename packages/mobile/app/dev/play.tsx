@@ -1570,8 +1570,8 @@ function webglAvailable(): boolean {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Palette.ink },
   fill: { flex: 1 },
-  gl: { ...StyleSheet.absoluteFillObject },
-  touchLayer: { ...StyleSheet.absoluteFillObject },
+  gl: { ...StyleSheet.absoluteFill },
+  touchLayer: { ...StyleSheet.absoluteFill },
   panelInner: { padding: 14, gap: 8 },
   hud: { position: "absolute", left: 8, top: 96, right: 8, gap: 2 },
   clock: {

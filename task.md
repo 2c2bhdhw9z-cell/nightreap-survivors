@@ -94,10 +94,10 @@ typecheck + lint pass after each change.
   `packages/mobile/game/replay/` instead. Do not put version-controlled code in `scripts/`.
 
 ## Native testing loop — CONFIRMED 2026-08-11
-- Metro serves a valid iOS manifest over the public HTTPS proxy (runtimeVersion exposdk:54.0.0).
+- Metro serves a valid iOS manifest over the public HTTPS proxy (runtimeVersion exposdk:58.0.0).
 - iOS Hermes bundle builds clean: HTTP 200, 7.3 MB, no transform errors.
 - `ExpoGL` + `ExponentGLObjectManager` present in the iOS bundle, and expo-gl ships inside the
-  Expo Go binary for SDK 54 -> **Gate A can be measured in Expo Go. No custom dev build needed.**
+  Expo Go binary for SDK 58 -> **Gate A can be measured in Expo Go. No custom dev build needed.**
   This closes the plan's open "does expo-gl work under Expo Go" assumption for iOS.
 - Expo Go URL (manual entry): exp://nightre-oqwfyiy-preview-4300.runable.site
 - Android/REVVL: same URL in Expo Go, or just Chrome for a browser-WebGL number.
@@ -114,7 +114,7 @@ typecheck + lint pass after each change.
 first native readout showed `17.0ms p50 / 17.0 p95 / 17.0 p99 / 17.0 worst` — four identical
 numbers are not four measurements, they are one quantised number printed four times. All sub-ms
 jitter was invisible and p50 vs p99 was meaningless.
-Fix: `nowMs()` helper prefers `performance.now()` (Hermes has it on RN 0.81 / SDK 54) and falls
+Fix: `nowMs()` helper prefers `performance.now()` (Hermes has it on RN 0.88 / SDK 58) and falls
 back to `Date.now()`. Used for both `timer.push()` and `loop.advance()`. `Date.now()` is kept only
 for the warm clock, where it measures minutes and 1ms resolution is fine.
 Verified in SwiftShader: percentiles now spread (147.5 / 477.8 / 542.8 / 717.7ms) instead of flat.

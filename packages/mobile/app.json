@@ -6,8 +6,7 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#141320"
-      },
-      "edgeToEdgeEnabled": true
+      }
     },
     "ios": {
       "bundleIdentifier": "com.nightreap.survivors",

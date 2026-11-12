@@ -4,7 +4,7 @@ This produces an **unsigned** `.ipa` you sideload with **ESign** or **Feather**.
 signing on-device with *your* certificate + provisioning profile, so the build itself needs **no Apple
 Developer account, no certificates, and no secrets**.
 
-Bundle id: `com.nightreap.survivors` · Expo owner: `fuckyouniggerbitch` · SDK 54.
+Bundle id: `com.nightreap.survivors` · Expo owner: `fuckyouniggerbitch` · SDK 58.
 
 ## Get the .ipa
 
@@ -37,7 +37,7 @@ is for. Nothing needs to be signed in CI.
 
 ## Invariant — don't break this
 
-`runtimeVersion` in `app.json` stays `{ "policy": "sdkVersion" }` → `exposdk:54.0.0`. It is what the
+`runtimeVersion` in `app.json` stays `{ "policy": "sdkVersion" }` → `exposdk:58.0.0`. It is what the
 Expo Go + EAS Update path (see `RUNNING.md`) matches on. Nothing in this build changes it, and neither
 should you.
 
