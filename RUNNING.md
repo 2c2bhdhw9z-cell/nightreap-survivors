@@ -97,9 +97,12 @@ Expo Go must be a build that supports **SDK 58**. An older Expo Go will refuse t
 The configured native modules (`expo-router`, `expo-asset`, `expo-font`, `expo-localization`,
 `expo-splash-screen`, and `expo-gl`) ship inside Expo Go, so no custom dev client is needed.
 
-MAIPA-G's hosted preview opens anonymously in Expo Go; the computer does not need your Expo login.
-`app.config.js` applies this only when `EXPO_PACKAGER_PROXY_URL` is set for the hosted Metro server.
-Standalone builds and EAS updates keep the project owner and update settings from `app.json`.
+On a physical iPhone, Expo Go and Expo CLI on the preview computer must be signed in to the
+**same Expo account**. This applies even if the project has no owner in its config. An unsigned
+manifest or a successful bundle download does not verify this device-side requirement.
+Use `bunx expo login --browser` on the preview computer and complete Expo's browser authorization
+with the account used in Expo Go. Published EAS updates do not use this live-server login check.
+See [Expo Go sign-in requirements](https://docs.expo.dev/troubleshooting/expo-go-sign-in-required/).
 
 ## In a browser
 
